@@ -1,0 +1,28 @@
+{
+  "name": "legion",
+  "version": "0.0.0",
+  "description": "Legion — distributed multi-agent stock signal gestalt",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src test",
+    "format": "prettier --write \"**/*.{js,json,md}\"",
+    "db:migrate": "node src/db/migrate.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "nats": "^2.28.0",
+    "pg": "^8.20.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.9.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "vitest": "^2.0.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
