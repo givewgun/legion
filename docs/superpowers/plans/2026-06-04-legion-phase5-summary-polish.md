@@ -43,6 +43,7 @@ Default model per provider: local→'qwen2.5:7b', gemini→'gemini-2.5-flash', o
 ### Task 1: Summary builder (pure)
 
 **Files:**
+
 - Create: `src/summary/build.js`
 - Test: `test/summary/build.test.js`
 
@@ -160,6 +161,7 @@ git commit -m "feat(legion): add 6h signal summary builder"
 ### Task 2: Repo — signals window query
 
 **Files:**
+
 - Modify: `src/db/repo.js`
 - Test: `test/db/repo-summary.test.js`
 
@@ -239,6 +241,7 @@ git commit -m "feat(legion): add listSignalsSince repo query"
 ### Task 3: Summary runner + cron entrypoint
 
 **Files:**
+
 - Modify: `config/index.js` (add `summaryCron`, `summaryWindowHours`)
 - Create: `src/run/summary.js`
 - Test: `test/run/summary-runner.test.js`
@@ -264,7 +267,8 @@ describe('runSummaryOnce', () => {
     };
     const telegram = { send: async (text) => sent.push(text) };
     const out = await runSummaryOnce({
-      repo, telegram,
+      repo,
+      telegram,
       clock: () => new Date('2026-06-04T06:00:00Z'),
       windowHours: 6,
     });
@@ -279,7 +283,8 @@ describe('runSummaryOnce', () => {
     const repo = { listSignalsSince: async () => [] };
     const telegram = { send: async (t) => sent.push(t) };
     const out = await runSummaryOnce({
-      repo, telegram,
+      repo,
+      telegram,
       clock: () => new Date('2026-06-04T06:00:00Z'),
       windowHours: 6,
     });
@@ -308,7 +313,12 @@ In `config/index.js` add to the exported config object:
 import cron from 'node-cron';
 import { buildSummary } from '../summary/build.js';
 
-export async function runSummaryOnce({ repo, telegram, clock = () => new Date(), windowHours = 6 }) {
+export async function runSummaryOnce({
+  repo,
+  telegram,
+  clock = () => new Date(),
+  windowHours = 6,
+}) {
   const until = clock();
   const since = new Date(until.getTime() - windowHours * 3600000);
   const signals = await repo.listSignalsSince(since.toISOString());
@@ -360,6 +370,7 @@ git commit -m "feat(legion): add 6h Telegram summary runner"
 ### Task 4: Agent-config schema + repo methods
 
 **Files:**
+
 - Create: `migrations/phase5_agent_config.sql`
 - Modify: `src/db/repo.js`
 - Test: `test/db/repo-agent-config.test.js`
@@ -413,7 +424,9 @@ describe('agent_config repo', () => {
   });
 
   it('getAgentConfig returns one row or null', async () => {
-    const repo = createRepo(fakePool([{ agent_id: 'technical', provider: 'local', model: 'm', enabled: true }]));
+    const repo = createRepo(
+      fakePool([{ agent_id: 'technical', provider: 'local', model: 'm', enabled: true }]),
+    );
     const cfg = await repo.getAgentConfig('technical');
     expect(cfg).toEqual({ provider: 'local', model: 'm', enabled: true });
     const repo2 = createRepo(fakePool([]));
@@ -423,7 +436,11 @@ describe('agent_config repo', () => {
   it('upsertAgentConfig upserts provider/model/enabled', async () => {
     const pool = fakePool([]);
     const repo = createRepo(pool);
-    await repo.upsertAgentConfig('technical', { provider: 'gemini', model: 'gemini-2.5-flash', enabled: false });
+    await repo.upsertAgentConfig('technical', {
+      provider: 'gemini',
+      model: 'gemini-2.5-flash',
+      enabled: false,
+    });
     const { text, params } = pool.calls[0];
     expect(text.toLowerCase()).toContain('insert into legion.agent_config');
     expect(text.toLowerCase()).toContain('on conflict');
@@ -505,6 +522,7 @@ git commit -m "feat(legion): add per-agent provider config storage"
 ### Task 5: Provider router + per-cycle provider in the agent factory
 
 **Files:**
+
 - Modify: `src/llm/provider.js` (add `resolveProvider`, `DEFAULT_MODELS`)
 - Modify: `src/agents/factory.js` (optional `getProvider` per cycle; respect `enabled`)
 - Test: `test/llm/resolve-provider.test.js`, `test/agents/factory-provider.test.js`
@@ -521,21 +539,30 @@ import { resolveProvider, DEFAULT_MODELS } from '../../src/llm/provider.js';
 describe('resolveProvider', () => {
   it('fills the default model when none is given', () => {
     const calls = [];
-    const fakeFactory = (opts) => { calls.push(opts); return { generate: async () => '' }; };
+    const fakeFactory = (opts) => {
+      calls.push(opts);
+      return { generate: async () => '' };
+    };
     resolveProvider({ provider: 'local', model: null }, fakeFactory);
     expect(calls[0]).toEqual({ type: 'local', model: DEFAULT_MODELS.local });
   });
 
   it('passes an explicit model through', () => {
     const calls = [];
-    const fakeFactory = (opts) => { calls.push(opts); return { generate: async () => '' }; };
+    const fakeFactory = (opts) => {
+      calls.push(opts);
+      return { generate: async () => '' };
+    };
     resolveProvider({ provider: 'gemini', model: 'gemini-2.5-pro' }, fakeFactory);
     expect(calls[0]).toEqual({ type: 'gemini', model: 'gemini-2.5-pro' });
   });
 
   it('defaults to local for an unknown provider name', () => {
     const calls = [];
-    const fakeFactory = (opts) => { calls.push(opts); return { generate: async () => '' }; };
+    const fakeFactory = (opts) => {
+      calls.push(opts);
+      return { generate: async () => '' };
+    };
     resolveProvider({ provider: 'bogus', model: null }, fakeFactory);
     expect(calls[0].type).toBe('local');
   });
@@ -567,7 +594,10 @@ describe('factory per-cycle provider', () => {
     const used = [];
     const provider = { generate: async () => '{"stance":1,"conviction":0.7,"rationale":"r"}' };
     const deps = baseDeps({
-      getProvider: async ({ agentId }) => { used.push(agentId); return { provider, enabled: true }; },
+      getProvider: async ({ agentId }) => {
+        used.push(agentId);
+        return { provider, enabled: true };
+      },
     });
     const published = [];
     deps.bus.subscribe(voteSubject('NVDA', 1), (m) => published.push(m));
@@ -581,7 +611,12 @@ describe('factory per-cycle provider', () => {
 
   it('abstains (HOLD/0) without calling the LLM when disabled', async () => {
     let generated = false;
-    const provider = { generate: async () => { generated = true; return ''; } };
+    const provider = {
+      generate: async () => {
+        generated = true;
+        return '';
+      },
+    };
     const deps = baseDeps({
       getProvider: async () => ({ provider, enabled: false }),
     });
@@ -623,7 +658,12 @@ In `src/agents/factory.js`, update the cycle handler. The Phase 2 factory used a
 
 ```js
 export function createAgent({
-  id, weight, gather, buildPrompt, bus, gunvest,
+  id,
+  weight,
+  gather,
+  buildPrompt,
+  bus,
+  gunvest,
   provider = null,
   getProvider = null,
   logger = console,
@@ -646,7 +686,9 @@ export function createAgent({
       const prompt = buildPrompt(symbol, data, peers);
       const text = await activeProvider.generate(prompt);
       const { ok, vote } = parseVote(text, { agentId: id, weight });
-      const finalVote = ok ? vote : { agentId: id, stance: 0, conviction: 0, weight, rationale: 'parse-failed abstain' };
+      const finalVote = ok
+        ? vote
+        : { agentId: id, stance: 0, conviction: 0, weight, rationale: 'parse-failed abstain' };
       await publishVote(bus, symbol, round, { cycleId, symbol, round, vote: finalVote });
     } catch (err) {
       logger.error?.(`agent ${id} cycle failed for ${symbol}: ${err.message}`);
@@ -662,7 +704,12 @@ export function createAgent({
 }
 
 function abstain(cycleId, symbol, round, id, weight) {
-  return { cycleId, symbol, round, vote: { agentId: id, stance: 0, conviction: 0, weight, rationale: 'abstain' } };
+  return {
+    cycleId,
+    symbol,
+    round,
+    vote: { agentId: id, stance: 0, conviction: 0, weight, rationale: 'abstain' },
+  };
 }
 
 async function publishVote(bus, symbol, round, envelope) {
@@ -694,6 +741,7 @@ git commit -m "feat(legion): add runtime per-agent provider switching"
 ### Task 6: Agents config API
 
 **Files:**
+
 - Create: `src/api/routes/agents.js`
 - Modify: `src/api/app.js` (mount router)
 - Test: `test/api/agents.test.js`
@@ -712,14 +760,18 @@ function repoStub(initial = {}) {
   const store = { ...initial };
   return {
     getAllAgentConfig: async () => store,
-    upsertAgentConfig: async (id, cfg) => { store[id] = cfg; },
+    upsertAgentConfig: async (id, cfg) => {
+      store[id] = cfg;
+    },
     _store: store,
   };
 }
 
 describe('GET /api/agents', () => {
   it('returns the roster merged with persisted config', async () => {
-    const repo = repoStub({ technical: { provider: 'gemini', model: 'gemini-2.5-flash', enabled: true } });
+    const repo = repoStub({
+      technical: { provider: 'gemini', model: 'gemini-2.5-flash', enabled: true },
+    });
     const res = await request(createApp({ repo })).get('/api/agents');
     expect(res.status).toBe(200);
     const tech = res.body.find((a) => a.id === 'technical');
@@ -784,12 +836,14 @@ export function agentsRouter(repo) {
   router.get('/', async (req, res, next) => {
     try {
       const cfg = await repo.getAllAgentConfig();
-      res.json(ROSTER.map((a) => ({
-        ...a,
-        provider: cfg[a.id]?.provider ?? 'local',
-        model: cfg[a.id]?.model ?? null,
-        enabled: cfg[a.id]?.enabled ?? true,
-      })));
+      res.json(
+        ROSTER.map((a) => ({
+          ...a,
+          provider: cfg[a.id]?.provider ?? 'local',
+          model: cfg[a.id]?.model ?? null,
+          enabled: cfg[a.id]?.enabled ?? true,
+        })),
+      );
     } catch (err) {
       next(err);
     }
@@ -821,7 +875,7 @@ Mount in `src/api/app.js`:
 ```js
 import { agentsRouter } from './routes/agents.js';
 // inside createApp:
-  app.use('/api/agents', agentsRouter(repo));
+app.use('/api/agents', agentsRouter(repo));
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -846,6 +900,7 @@ git commit -m "feat(legion): add agent provider config API"
 ### Task 7: Web — provider-switch UI
 
 **Files:**
+
 - Modify: `web/src/api/client.js` (add `listAgents`, `setAgent`)
 - Create: `web/src/pages/AgentConfig.jsx`
 - Modify: `web/src/App.jsx` (add "Agents" tab)
@@ -886,7 +941,10 @@ describe('AgentConfig', () => {
     fireEvent.change(screen.getByLabelText('provider-technical'), { target: { value: 'gemini' } });
     fireEvent.click(screen.getByLabelText('save-technical'));
     await waitFor(() =>
-      expect(setAgent).toHaveBeenCalledWith('technical', expect.objectContaining({ provider: 'gemini' })),
+      expect(setAgent).toHaveBeenCalledWith(
+        'technical',
+        expect.objectContaining({ provider: 'gemini' }),
+      ),
     );
   });
 });
@@ -931,7 +989,10 @@ export default function AgentConfig() {
   const [agents, setAgents] = useState([]);
 
   useEffect(() => {
-    api.listAgents().then(setAgents).catch(() => setAgents([]));
+    api
+      .listAgents()
+      .then(setAgents)
+      .catch(() => setAgents([]));
   }, []);
 
   function update(id, patch) {
@@ -967,7 +1028,9 @@ export default function AgentConfig() {
                 className="border rounded px-1 py-0.5"
               >
                 {PROVIDERS.map((p) => (
-                  <option key={p} value={p}>{p}</option>
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
                 ))}
               </select>
             </td>
@@ -1034,6 +1097,7 @@ git commit -m "feat(legion): add provider-switch dashboard page"
 ### Task 8: Contributor guide — adding an agent
 
 **Files:**
+
 - Create: `docs/adding-an-agent.md`
 - Test: `test/docs/adding-an-agent.test.js`
 
@@ -1075,8 +1139,9 @@ Expected: FAIL — `ENOENT ... docs/adding-an-agent.md`
 
 - [ ] **Step 3: Write the guide**
 
-````markdown
+```markdown
 <!-- docs/adding-an-agent.md -->
+
 # Adding a Legion Agent
 
 A Legion agent is one process built from four small parts plus a roster entry. The
@@ -1086,12 +1151,12 @@ consensus core never changes — agents are pure data + a persona.
 
 Create `src/agents/<name>/`:
 
-| File | Responsibility |
-|------|----------------|
-| `config.js` | Exports `{ id, weight }` — the agent id and its static prior weight `w_i`. |
-| `gather.js` | Exports `gather(gunvest, symbol)` → a plain data object pulled from GunVest endpoints. No LLM, no consensus. |
-| `prompt.js` | Exports `buildPrompt(symbol, data, peers)` → the persona + `RESPONSE_SPEC` + optional `dissentBlock(peers)`. |
-| `index.js` | Wires the above into `createAgent({ id, weight, gather, buildPrompt, bus, gunvest, getProvider })` and `start()`s it. |
+| File        | Responsibility                                                                                                        |
+| ----------- | --------------------------------------------------------------------------------------------------------------------- |
+| `config.js` | Exports `{ id, weight }` — the agent id and its static prior weight `w_i`.                                            |
+| `gather.js` | Exports `gather(gunvest, symbol)` → a plain data object pulled from GunVest endpoints. No LLM, no consensus.          |
+| `prompt.js` | Exports `buildPrompt(symbol, data, peers)` → the persona + `RESPONSE_SPEC` + optional `dissentBlock(peers)`.          |
+| `index.js`  | Wires the above into `createAgent({ id, weight, gather, buildPrompt, bus, gunvest, getProvider })` and `start()`s it. |
 
 Reuse `src/agents/format.js` (`RESPONSE_SPEC`, `dissentBlock`) and `src/agents/parse.js`
 (`parseVote`) — do not re-implement the JSON contract or parsing.
@@ -1123,7 +1188,7 @@ after adding an agent whose stance distribution is wide.
 
 The agent inherits per-agent provider switching for free via `getProvider({ agentId })`
 (Phase 5). Its default provider is `local`; change it at runtime on the **Agents** tab.
-````
+```
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -1142,6 +1207,7 @@ git commit -m "docs(legion): add contributor guide for adding an agent"
 ### Task 9: Architecture Decision Records
 
 **Files:**
+
 - Create: `docs/adr/0001-consensus-protocol.md`
 - Create: `docs/adr/0002-message-bus.md`
 - Create: `docs/adr/0003-inference-abstraction.md`
@@ -1190,19 +1256,23 @@ Expected: FAIL — ADR files missing.
 
 ```markdown
 <!-- docs/adr/0001-consensus-protocol.md -->
+
 # ADR 0001 — BFT-flavored Leaderless Consensus
 
 ## Status
+
 Accepted (2026-06-04).
 
 ## Context
+
 Legion must reach a single trade stance from N independent expert agents with no prime
 decider, must tolerate a rogue/outlier agent, and must be deterministic so every node
 computes the same result from the same votes. True adversarial PBFT is overkill: agents are
 cooperative and co-located.
 
 ## Decision
-Adopt a BFT-*flavored* aggregation computed identically by every node. Each agent emits an
+
+Adopt a BFT-_flavored_ aggregation computed identically by every node. Each agent emits an
 ordinal stance `s_i ∈ [-2,2]`, conviction `c_i ∈ [0,1]`, and rationale. Effective weight
 `W_i = w_i · ρ_i`. Per round compute weighted stance `S_r`, weighted dispersion `V_r`, and
 directional quorum `κ_r`. Converge iff `κ_r ≥ 2/3` AND `V_r ≤ θ_v` (default 0.5). Fault
@@ -1210,6 +1280,7 @@ tolerance `f = ⌊(N−1)/3⌋`. Up to `R_max = 3` rounds with forced dissent ex
 rounds; unconverged → `NO_CONSENSUS`/HOLD.
 
 ## Consequences
+
 - No leader, no single point of decision; consensus is verifiable from the vote log.
 - A lone outlier can neither force nor block a signal (with N=4, need 3 agreeing).
 - Honest "split" outcomes are preserved instead of forcing a trade.
@@ -1219,23 +1290,28 @@ rounds; unconverged → `NO_CONSENSUS`/HOLD.
 
 ```markdown
 <!-- docs/adr/0002-message-bus.md -->
+
 # ADR 0002 — NATS Message Bus with In-Memory Test Double
 
 ## Status
+
 Accepted (2026-06-04).
 
 ## Context
+
 Five agent processes plus orchestrator, risk, and emitter must communicate via pub/sub with
 subject wildcards, run on a single Always-Free VM, and be testable without standing
 infrastructure.
 
 ## Decision
+
 Use NATS (lightweight, Docker, subject wildcards `*`/`>`) as the runtime bus. Define an
 `src/bus/` abstraction (`subjects.js`, a NATS adapter, and `memory.js` — an in-memory bus
 implementing the same `publish`/`subscribe` contract with NATS-style wildcard matching).
 Integration tests run against the in-memory double; production wires NATS.
 
 ## Consequences
+
 - Infra-free, deterministic tests for orchestration, agents, and the emitter.
 - One contract, two implementations — production behavior is exercised by the same code paths.
 - NATS adds one container; acceptable on the A1 VM.
@@ -1245,16 +1321,20 @@ Integration tests run against the in-memory double; production wires NATS.
 
 ```markdown
 <!-- docs/adr/0003-inference-abstraction.md -->
+
 # ADR 0003 — Pluggable LLM Provider Abstraction
 
 ## Status
+
 Accepted (2026-06-04).
 
 ## Context
+
 Runtime cost must be ≈$0 by default, but accuracy sometimes warrants a hosted model. Each
 agent may want a different provider, and operators should switch without redeploying.
 
 ## Decision
+
 A `src/llm/provider.js` factory exposes `createProvider({ type, model })` for `local`
 (Ollama, default), `gemini`, and `openai`, all behind a `generate(prompt)` interface.
 `resolveProvider({ provider, model })` fills `DEFAULT_MODELS` and defaults unknown names to
@@ -1263,6 +1343,7 @@ cycle** by the agent factory's `getProvider({ agentId })`, so a UI change takes 
 next evaluation. Disabled agents abstain without an LLM call.
 
 ## Consequences
+
 - Default deploy is free (local Ollama); paid providers are strictly opt-in per agent.
 - Operators tune cost/accuracy live from the dashboard.
 - Local ARM inference is slow (~5–10 tok/s) — acceptable for batch cadence.
@@ -1271,16 +1352,20 @@ next evaluation. Disabled agents abstain without an LLM call.
 
 ```markdown
 <!-- docs/adr/0004-deployment.md -->
+
 # ADR 0004 — Single-VM Docker Deployment on Oracle A1
 
 ## Status
+
 Accepted (2026-06-04).
 
 ## Context
+
 The project targets ≈$0 runtime. Available free infra: an Oracle Cloud A1 Always-Free VM
 (6 vCPU ARM, 24 GB RAM) and the GunVest PostgreSQL instance.
 
 ## Decision
+
 Deploy everything as Docker Compose services on the one A1 VM: NATS, one Ollama container
 (serial throughput), the orchestrator, voting agents, risk, emitter, API, web, and the
 reliability/summary runners. Share GunVest's Postgres via an isolated `legion` schema; use
@@ -1288,6 +1373,7 @@ GunVest's REST API as the sole data source and its Telegram bot for delivery. Th
 backtest is a one-shot CLI, not a long-lived service.
 
 ## Consequences
+
 - Zero incremental infra cost.
 - Serial Ollama throughput → ~12–15 min/ticker cycle; fine for 6h batch cadence.
 - Single VM is a single point of failure; advisory-only output makes this acceptable.
@@ -1312,19 +1398,20 @@ git commit -m "docs(legion): add ADRs for consensus, bus, inference, deployment"
 ### Task 10: Polish — summary service, README, full-suite gate
 
 **Files:**
+
 - Modify: `docker-compose.yml` (add `summary` service)
 - Modify: `README.md` (Phase 5 section)
 
 - [ ] **Step 1: Add the `summary` service to `docker-compose.yml`**
 
 ```yaml
-  summary:
-    build: .
-    command: node src/run/summary.js
-    env_file: .env
-    depends_on:
-      - api
-    restart: unless-stopped
+summary:
+  build: .
+  command: node src/run/summary.js
+  env_file: .env
+  depends_on:
+    - api
+  restart: unless-stopped
 ```
 
 - [ ] **Step 2: Add a Phase 5 section to `README.md`**
@@ -1340,10 +1427,11 @@ git commit -m "docs(legion): add ADRs for consensus, bus, inference, deployment"
 - **Architecture decisions:** `docs/adr/0001`–`0004`.
 
 ### Environment
-| Var | Default | Meaning |
-|-----|---------|---------|
-| `LEGION_SUMMARY_CRON` | `0 */6 * * *` | digest schedule |
-| `LEGION_SUMMARY_WINDOW_HOURS` | `6` | digest look-back |
+
+| Var                           | Default       | Meaning          |
+| ----------------------------- | ------------- | ---------------- |
+| `LEGION_SUMMARY_CRON`         | `0 */6 * * *` | digest schedule  |
+| `LEGION_SUMMARY_WINDOW_HOURS` | `6`           | digest look-back |
 ```
 
 - [ ] **Step 3: Run the entire backend suite**
@@ -1372,6 +1460,7 @@ git commit -m "chore(legion): add summary service and Phase 5 docs"
 **Legion is feature-complete** across the six phases (0 foundation → 5 polish). The gestalt evaluates tickers leaderlessly, reaches BFT-flavored consensus, applies a deterministic risk constraint, self-tunes via Brier reliability, paper-tests and backtests itself, and is fully observable + operable from the dashboard.
 
 **Operational notes:**
+
 - Provider switches apply on the **next cycle**, not mid-cycle — expected, since votes within a round must use a stable provider.
 - Disabling all voting agents would starve the emitter (it waits for `expectedAgents` votes). The UI does not guard against this; document it for operators or add an emitter timeout if it bites.
 - The summary digest fires even on empty windows (intentional heartbeat). Flip to skip-empty by early-returning in `runSummaryOnce` if `signals.length === 0` and you'd rather stay quiet.

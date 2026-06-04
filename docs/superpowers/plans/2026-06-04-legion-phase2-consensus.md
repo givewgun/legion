@@ -10,7 +10,7 @@
 
 **Prerequisites:** Phase 0 (`2026-06-04-legion-phase0-foundation.md`) and Phase 1 (`2026-06-04-legion-phase1-single-agent.md`) complete and green.
 
-Spec: `gunvest/docs/superpowers/specs/2026-06-04-legion-design.md` (§3 consensus iteration/termination, §3.8 Risk Manager constraint, §4 roster, §4.1 contrarian feeds, §5 architecture).
+Spec: `legion/docs/superpowers/specs/2026-06-04-legion-design.md` (§3 consensus iteration/termination, §3.8 Risk Manager constraint, §4 roster, §4.1 contrarian feeds, §5 architecture).
 
 ---
 
@@ -29,6 +29,7 @@ Spec: `gunvest/docs/superpowers/specs/2026-06-04-legion-design.md` (§3 consensu
 - `src/config/index.js` → `loadConfig(env)` → `{ ..., consensus: { thetaV, quorum, maxRounds, holdBand } }`
 
 **Message shapes (Phase 2):**
+
 - Cycle / round-request: `{ cycleId, symbol, round, priorVotes?: Vote[] }` on `cycleSubject` (round 1 omits `priorVotes`; agents default it to `[]`)
 - Vote envelope: `{ cycleId, symbol, round, vote: { agentId, stance, conviction, weight, rationale } }` on `voteSubject(t, r)`
 - Constraint: `{ cycleId, symbol, round, constraint: { capConviction, blockBuy, reason } }` on `constraintSubject(t, r)`
@@ -91,6 +92,7 @@ legion/
 ## Task 1: Constraint subjects
 
 **Files:**
+
 - Modify: `legion/src/bus/subjects.js`
 - Test: `legion/test/bus/subjects.constraint.test.js`
 
@@ -151,6 +153,7 @@ git commit -m "feat: add constraint subjects for risk manager"
 ## Task 2: Shared vote parser
 
 **Files:**
+
 - Create: `legion/src/agents/parse.js`
 - Modify: `legion/src/agents/technical/parse.js` (re-export)
 - Test: `legion/test/agents/parse.test.js`
@@ -159,7 +162,7 @@ Promotes Phase 1's technical parser to a shared module every agent uses. The tec
 
 - [ ] **Step 1: Write the failing test `test/agents/parse.test.js`**
 
-```js
+````js
 import { describe, it, expect } from 'vitest';
 import { parseVote } from '../../src/agents/parse.js';
 
@@ -179,7 +182,10 @@ describe('shared parseVote', () => {
   });
 
   it('extracts JSON from fenced prose', () => {
-    const res = parseVote('call:\n```json\n{"stance": -1, "conviction": 0.4, "rationale": "soft"}\n```', ctx);
+    const res = parseVote(
+      'call:\n```json\n{"stance": -1, "conviction": 0.4, "rationale": "soft"}\n```',
+      ctx,
+    );
     expect(res.ok).toBe(true);
     expect(res.vote.stance).toBe(-1);
   });
@@ -196,7 +202,7 @@ describe('shared parseVote', () => {
     expect(res.vote.rationale).toBe('');
   });
 });
-```
+````
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -261,6 +267,7 @@ git commit -m "refactor: promote vote parser to shared agents module"
 ## Task 3: Peer dissent summarizer
 
 **Files:**
+
 - Create: `legion/src/agents/peers.js`
 - Test: `legion/test/agents/peers.test.js`
 
@@ -283,7 +290,7 @@ describe('summarizePeers', () => {
     expect(summarizePeers([], 'technical')).toBe('');
   });
 
-  it('excludes the agent\'s own prior vote', () => {
+  it("excludes the agent's own prior vote", () => {
     const text = summarizePeers(priorVotes, 'technical');
     expect(text).not.toContain('technical');
     expect(text).toContain('news');
@@ -311,9 +318,9 @@ Expected: FAIL — `Cannot find module '../../src/agents/peers.js'`.
 const LABEL = {
   '-2': 'STRONG_SELL',
   '-1': 'SELL',
-  '0': 'HOLD',
-  '1': 'BUY',
-  '2': 'STRONG_BUY',
+  0: 'HOLD',
+  1: 'BUY',
+  2: 'STRONG_BUY',
 };
 
 // Renders the prior round's opposing votes as a dissent block for round >= 2.
@@ -324,7 +331,10 @@ export function summarizePeers(priorVotes = [], selfId) {
   return others
     .slice()
     .sort((a, b) => b.conviction - a.conviction)
-    .map((v) => `- ${v.agentId} voted ${LABEL[String(v.stance)]} (conviction ${v.conviction}): ${v.rationale}`)
+    .map(
+      (v) =>
+        `- ${v.agentId} voted ${LABEL[String(v.stance)]} (conviction ${v.conviction}): ${v.rationale}`,
+    )
     .join('\n');
 }
 ```
@@ -346,6 +356,7 @@ git commit -m "feat: add peer dissent summarizer for round iteration"
 ## Task 4: Shared agent factory (+ prompt format helpers)
 
 **Files:**
+
 - Create: `legion/src/agents/format.js`
 - Create: `legion/src/agents/factory.js`
 - Modify: `legion/src/agents/technical/prompt.js` (use format helpers, accept `peers`)
@@ -413,7 +424,12 @@ describe('createAgent', () => {
     bus.publishJSON(cycleSubject('NVDA'), { cycleId: 3, symbol: 'NVDA', round: 1 });
     await vi.waitFor(() => expect(votes.length).toBe(1));
 
-    expect(votes[0].vote).toMatchObject({ agentId: 'news', weight: 1.3, stance: 1, conviction: 0.6 });
+    expect(votes[0].vote).toMatchObject({
+      agentId: 'news',
+      weight: 1.3,
+      stance: 1,
+      conviction: 0.6,
+    });
   });
 
   it('passes a dissent summary to buildPrompt on round >= 2', async () => {
@@ -468,7 +484,16 @@ import { summarizePeers } from './peers.js';
 // The shared runner for every voting agent. Adding an agent = id + weight +
 // gather + buildPrompt; the loop (subscribe/gather/reason/parse/publish/abstain)
 // lives here once.
-export function createAgent({ id, weight, gather, buildPrompt, bus, gunvest, provider, logger = console }) {
+export function createAgent({
+  id,
+  weight,
+  gather,
+  buildPrompt,
+  bus,
+  gunvest,
+  provider,
+  logger = console,
+}) {
   async function handleCycle({ cycleId, symbol, round, priorVotes = [] }) {
     let vote;
     try {
@@ -569,6 +594,7 @@ git commit -m "refactor: extract shared agent factory and prompt format helpers"
 ## Task 5: News / Catalyst agent
 
 **Files:**
+
 - Create: `legion/src/agents/news/config.js`
 - Create: `legion/src/agents/news/gather.js`
 - Create: `legion/src/agents/news/prompt.js`
@@ -636,7 +662,10 @@ import { buildPrompt } from '../../../src/agents/news/prompt.js';
 
 describe('news buildPrompt', () => {
   it('produces a catalyst persona and a JSON-bearing prompt', () => {
-    const { system, prompt } = buildPrompt('NVDA', { news: [{ title: 'beat' }], macro: { vix: 14 } });
+    const { system, prompt } = buildPrompt('NVDA', {
+      news: [{ title: 'beat' }],
+      macro: { vix: 14 },
+    });
     expect(system).toMatch(/catalyst|news/i);
     expect(prompt).toContain('NVDA');
     expect(prompt).toMatch(/"stance"/);
@@ -644,7 +673,11 @@ describe('news buildPrompt', () => {
   });
 
   it('includes the dissent block when peers are supplied', () => {
-    const { prompt } = buildPrompt('MU', { news: [], macro: {} }, '- technical voted STRONG_BUY (conviction 0.9): breakout');
+    const { prompt } = buildPrompt(
+      'MU',
+      { news: [], macro: {} },
+      '- technical voted STRONG_BUY (conviction 0.9): breakout',
+    );
     expect(prompt).toContain('prior round');
     expect(prompt).toContain('technical');
   });
@@ -714,6 +747,7 @@ git commit -m "feat: add news/catalyst agent"
 ## Task 6: Social Sentiment agent
 
 **Files:**
+
 - Create: `legion/src/agents/social/config.js`
 - Create: `legion/src/agents/social/gather.js`
 - Create: `legion/src/agents/social/prompt.js`
@@ -785,7 +819,11 @@ describe('social buildPrompt', () => {
   });
 
   it('includes dissent when peers are supplied', () => {
-    const { prompt } = buildPrompt('MU', { sentiment: {} }, '- news voted SELL (conviction 0.5): soft');
+    const { prompt } = buildPrompt(
+      'MU',
+      { sentiment: {} },
+      '- news voted SELL (conviction 0.5): soft',
+    );
     expect(prompt).toContain('prior round');
     expect(prompt).toContain('news');
   });
@@ -855,13 +893,14 @@ git commit -m "feat: add social sentiment agent"
 ## Task 7: Contrarian agent
 
 **Files:**
+
 - Create: `legion/src/agents/contrarian/config.js`
 - Create: `legion/src/agents/contrarian/gather.js`
 - Create: `legion/src/agents/contrarian/prompt.js`
 - Create: `legion/src/agents/contrarian/index.js`
 - Test: `legion/test/agents/contrarian/gather.test.js`, `legion/test/agents/contrarian/prompt.test.js`
 
-The Contrarian fades extremes. Its data is the crowd-positioning proxy available now: social sentiment + macro VIX (true contrarian feeds — put/call, AAII, NAAIM, F&G, short interest — drop into `gather` later behind the same shape, spec §4.1). Crucially its persona uses the **peers** dissent block to argue against the *forming* consensus, so it is most active in round ≥ 2.
+The Contrarian fades extremes. Its data is the crowd-positioning proxy available now: social sentiment + macro VIX (true contrarian feeds — put/call, AAII, NAAIM, F&G, short interest — drop into `gather` later behind the same shape, spec §4.1). Crucially its persona uses the **peers** dissent block to argue against the _forming_ consensus, so it is most active in round ≥ 2.
 
 - [ ] **Step 1: Write `src/agents/contrarian/config.js`**
 
@@ -924,7 +963,10 @@ import { buildPrompt } from '../../../src/agents/contrarian/prompt.js';
 
 describe('contrarian buildPrompt', () => {
   it('produces a contrarian persona that fades extremes', () => {
-    const { system, prompt } = buildPrompt('NVDA', { sentiment: { score: 0.9 }, macro: { vix: 13 } });
+    const { system, prompt } = buildPrompt('NVDA', {
+      sentiment: { score: 0.9 },
+      macro: { vix: 13 },
+    });
     expect(system).toMatch(/contrarian|fade|devil/i);
     expect(prompt).toContain('NVDA');
     expect(prompt).toMatch(/"stance"/);
@@ -1006,6 +1048,7 @@ git commit -m "feat: add contrarian agent"
 ## Task 8: Risk Manager constraint node
 
 **Files:**
+
 - Create: `legion/src/risk/rules.js`
 - Create: `legion/src/risk/apply.js`
 - Create: `legion/src/risk/gather.js`
@@ -1050,7 +1093,11 @@ describe('computeConstraint', () => {
   });
 
   it('treats missing fields as calm', () => {
-    expect(computeConstraint({})).toEqual({ capConviction: 1, blockBuy: false, reason: 'no risk flags' });
+    expect(computeConstraint({})).toEqual({
+      capConviction: 1,
+      blockBuy: false,
+      reason: 'no risk flags',
+    });
   });
 });
 ```
@@ -1133,14 +1180,22 @@ describe('applyRiskConstraint', () => {
   });
 
   it('caps conviction above the cap', () => {
-    const out = applyRiskConstraint(baseSignal, { capConviction: 0.5, blockBuy: false, reason: 'elevated VIX 31' });
+    const out = applyRiskConstraint(baseSignal, {
+      capConviction: 0.5,
+      blockBuy: false,
+      reason: 'elevated VIX 31',
+    });
     expect(out.conviction).toBe(0.5);
     expect(out.plan.riskCapped).toBe(true);
     expect(out.band).toBe('STRONG_BUY'); // direction preserved
   });
 
   it('downgrades a buy to HOLD when new longs are blocked', () => {
-    const out = applyRiskConstraint(baseSignal, { capConviction: 1, blockBuy: true, reason: 'extreme VIX 42' });
+    const out = applyRiskConstraint(baseSignal, {
+      capConviction: 1,
+      blockBuy: true,
+      reason: 'extreme VIX 42',
+    });
     expect(out.band).toBe('HOLD');
     expect(out.conviction).toBe(0);
     expect(out.plan.riskBlocked).toBe(true);
@@ -1148,7 +1203,11 @@ describe('applyRiskConstraint', () => {
 
   it('does not block a sell signal', () => {
     const sell = { ...baseSignal, band: 'STRONG_SELL', conviction: 0.8 };
-    const out = applyRiskConstraint(sell, { capConviction: 1, blockBuy: true, reason: 'extreme VIX 42' });
+    const out = applyRiskConstraint(sell, {
+      capConviction: 1,
+      blockBuy: true,
+      reason: 'extreme VIX 42',
+    });
     expect(out.band).toBe('STRONG_SELL');
     expect(out.plan.riskBlocked).toBeUndefined();
   });
@@ -1241,7 +1300,11 @@ describe('createRiskManager', () => {
     bus.publishJSON(cycleSubject('MU'), { cycleId: 6, symbol: 'MU', round: 1 });
 
     await vi.waitFor(() => expect(msgs.length).toBe(1));
-    expect(msgs[0].constraint).toEqual({ capConviction: 1, blockBuy: false, reason: 'risk data unavailable' });
+    expect(msgs[0].constraint).toEqual({
+      capConviction: 1,
+      blockBuy: false,
+      reason: 'risk data unavailable',
+    });
   });
 });
 ```
@@ -1300,10 +1363,12 @@ git commit -m "feat: add risk manager constraint node"
 ## Task 9: Emitter v2 — per-round keying, risk, and iteration
 
 **Files:**
+
 - Rewrite: `legion/src/emit/emitter.js`
 - Replace: `legion/test/emit/emitter.test.js` (Phase 1 test is superseded)
 
 This is the heart of Phase 2. The emitter now keys pending state by `${cycleId}:${round}` (not just `cycleId`), waits for `expectedAgents` votes **and** (when `riskEnabled`) the round's constraint, persists **every** round, then either:
+
 - **finalizes** (converged, or `round >= maxRounds`): build signal → apply risk → persist signal → finish cycle → Telegram → publish consensus; or
 - **iterates**: republish `cycleSubject(symbol)` with `round+1` and the round's votes as `priorVotes`, so agents re-vote with dissent.
 
@@ -1315,7 +1380,12 @@ This is the heart of Phase 2. The emitter now keys pending state by `${cycleId}:
 import { describe, it, expect, vi } from 'vitest';
 import { createMemoryBus } from '../../src/bus/memory.js';
 import { createEmitter } from '../../src/emit/emitter.js';
-import { voteSubject, constraintSubject, cycleSubject, consensusSubject } from '../../src/bus/subjects.js';
+import {
+  voteSubject,
+  constraintSubject,
+  cycleSubject,
+  consensusSubject,
+} from '../../src/bus/subjects.js';
 
 const consensus = { thetaV: 0.5, quorum: 2 / 3, holdBand: 0.5, maxRounds: 3 };
 
@@ -1342,8 +1412,18 @@ describe('createEmitter (v2)', () => {
 
     createEmitter({ bus, repo, telegram, consensus, expectedAgents: 2 }).start();
 
-    emitVote(bus, { cycleId: 1, symbol: 'NVDA', round: 1, vote: { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'breakout' } });
-    emitVote(bus, { cycleId: 1, symbol: 'NVDA', round: 1, vote: { agentId: 'news', stance: 2, conviction: 0.8, weight: 1, rationale: 'beat' } });
+    emitVote(bus, {
+      cycleId: 1,
+      symbol: 'NVDA',
+      round: 1,
+      vote: { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'breakout' },
+    });
+    emitVote(bus, {
+      cycleId: 1,
+      symbol: 'NVDA',
+      round: 1,
+      vote: { agentId: 'news', stance: 2, conviction: 0.8, weight: 1, rationale: 'beat' },
+    });
 
     await vi.waitFor(() => expect(telegram).toHaveBeenCalledTimes(1));
     expect(repo.addRound).toHaveBeenCalledTimes(1);
@@ -1358,11 +1438,27 @@ describe('createEmitter (v2)', () => {
     const requests = [];
     bus.subscribeJSON(cycleSubject('MU'), (m) => requests.push(m));
 
-    createEmitter({ bus, repo, telegram: vi.fn(async () => {}), consensus, expectedAgents: 2 }).start();
+    createEmitter({
+      bus,
+      repo,
+      telegram: vi.fn(async () => {}),
+      consensus,
+      expectedAgents: 2,
+    }).start();
 
     // opposed strong votes -> high dispersion -> not converged
-    emitVote(bus, { cycleId: 2, symbol: 'MU', round: 1, vote: { agentId: 'technical', stance: 2, conviction: 1, weight: 1, rationale: 'up' } });
-    emitVote(bus, { cycleId: 2, symbol: 'MU', round: 1, vote: { agentId: 'news', stance: -2, conviction: 1, weight: 1, rationale: 'down' } });
+    emitVote(bus, {
+      cycleId: 2,
+      symbol: 'MU',
+      round: 1,
+      vote: { agentId: 'technical', stance: 2, conviction: 1, weight: 1, rationale: 'up' },
+    });
+    emitVote(bus, {
+      cycleId: 2,
+      symbol: 'MU',
+      round: 1,
+      vote: { agentId: 'news', stance: -2, conviction: 1, weight: 1, rationale: 'down' },
+    });
 
     await vi.waitFor(() => expect(requests.length).toBe(1));
     expect(requests[0]).toMatchObject({ cycleId: 2, symbol: 'MU', round: 2 });
@@ -1376,10 +1472,26 @@ describe('createEmitter (v2)', () => {
     const repo = fakeRepo();
     const onePassConsensus = { ...consensus, maxRounds: 1 };
 
-    createEmitter({ bus, repo, telegram: vi.fn(async () => {}), consensus: onePassConsensus, expectedAgents: 2 }).start();
+    createEmitter({
+      bus,
+      repo,
+      telegram: vi.fn(async () => {}),
+      consensus: onePassConsensus,
+      expectedAgents: 2,
+    }).start();
 
-    emitVote(bus, { cycleId: 3, symbol: 'MU', round: 1, vote: { agentId: 'technical', stance: 2, conviction: 1, weight: 1, rationale: 'up' } });
-    emitVote(bus, { cycleId: 3, symbol: 'MU', round: 1, vote: { agentId: 'news', stance: -2, conviction: 1, weight: 1, rationale: 'down' } });
+    emitVote(bus, {
+      cycleId: 3,
+      symbol: 'MU',
+      round: 1,
+      vote: { agentId: 'technical', stance: 2, conviction: 1, weight: 1, rationale: 'up' },
+    });
+    emitVote(bus, {
+      cycleId: 3,
+      symbol: 'MU',
+      round: 1,
+      vote: { agentId: 'news', stance: -2, conviction: 1, weight: 1, rationale: 'down' },
+    });
 
     await vi.waitFor(() => expect(repo.finishCycle).toHaveBeenCalledWith(3, 'no_consensus'));
   });
@@ -1390,14 +1502,29 @@ describe('createEmitter (v2)', () => {
     const out = [];
     bus.subscribeJSON(consensusSubject('NVDA'), (m) => out.push(m));
 
-    createEmitter({ bus, repo, telegram: vi.fn(async () => {}), consensus, expectedAgents: 1, riskEnabled: true }).start();
+    createEmitter({
+      bus,
+      repo,
+      telegram: vi.fn(async () => {}),
+      consensus,
+      expectedAgents: 1,
+      riskEnabled: true,
+    }).start();
 
     // vote arrives first — must NOT finalize yet (no constraint)
-    emitVote(bus, { cycleId: 4, symbol: 'NVDA', round: 1, vote: { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'breakout' } });
+    emitVote(bus, {
+      cycleId: 4,
+      symbol: 'NVDA',
+      round: 1,
+      vote: { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'breakout' },
+    });
     expect(repo.finishCycle).not.toHaveBeenCalled();
 
     bus.publishJSON(constraintSubject('NVDA', 1), {
-      cycleId: 4, symbol: 'NVDA', round: 1, constraint: { capConviction: 0.5, blockBuy: false, reason: 'elevated VIX 31' },
+      cycleId: 4,
+      symbol: 'NVDA',
+      round: 1,
+      constraint: { capConviction: 0.5, blockBuy: false, reason: 'elevated VIX 31' },
     });
 
     await vi.waitFor(() => expect(repo.finishCycle).toHaveBeenCalledWith(4, 'converged'));
@@ -1415,7 +1542,12 @@ Expected: FAIL — current Phase 1 emitter lacks per-round keying / constraint h
 - [ ] **Step 3: Rewrite `src/emit/emitter.js`**
 
 ```js
-import { voteWildcard, constraintWildcard, cycleSubject, consensusSubject } from '../bus/subjects.js';
+import {
+  voteWildcard,
+  constraintWildcard,
+  cycleSubject,
+  consensusSubject,
+} from '../bus/subjects.js';
 import { evaluateRound } from '../consensus/aggregate.js';
 import { buildSignal } from './plan.js';
 import { applyRiskConstraint } from '../risk/apply.js';
@@ -1424,7 +1556,15 @@ import { formatSignal } from './telegram.js';
 // Collects votes (+ optional risk constraint) per (cycleId, round). When the
 // round is complete it persists the round, then either finalizes (converged or
 // round cap) or republishes the cycle for another round with dissent.
-export function createEmitter({ bus, repo, telegram, consensus, expectedAgents, riskEnabled = false, logger = console }) {
+export function createEmitter({
+  bus,
+  repo,
+  telegram,
+  consensus,
+  expectedAgents,
+  riskEnabled = false,
+  logger = console,
+}) {
   const rounds = new Map(); // `${cycleId}:${round}` -> { symbol, round, votes, constraint }
 
   function key(cycleId, round) {
@@ -1507,6 +1647,7 @@ git commit -m "feat: rewrite emitter for multi-round consensus and risk constrai
 ## Task 10: Multi-ticker scheduling
 
 **Files:**
+
 - Modify: `legion/src/db/repo.js` (add `listEnabledTickers`)
 - Create: `legion/src/scheduler.js`
 - Test: `legion/test/db/repo.tickers.test.js`, `legion/test/scheduler.test.js`
@@ -1632,6 +1773,7 @@ git commit -m "feat: add multi-ticker scheduler"
 ## Task 11: End-to-end multi-agent consensus test
 
 **Files:**
+
 - Test: `legion/test/e2e/consensus.test.js`
 
 Runs the full gestalt over the in-memory bus: orchestrator → 4 voting agents (stubbed providers) + Risk Manager → emitter. Asserts a converged signal flows through with risk applied, and a separate scenario asserts iteration then convergence across two rounds.
@@ -1652,7 +1794,8 @@ const consensus = { thetaV: 0.5, quorum: 2 / 3, holdBand: 0.5, maxRounds: 3 };
 function stubAgent(bus, gunvest, { id, weight, stance, conviction }) {
   const provider = {
     name: 'stub',
-    generate: async () => `{"stance": ${stance}, "conviction": ${conviction}, "rationale": "${id} says ${stance}"}`,
+    generate: async () =>
+      `{"stance": ${stance}, "conviction": ${conviction}, "rationale": "${id} says ${stance}"}`,
   };
   return createAgent({
     id,
@@ -1738,7 +1881,10 @@ describe('Legion Phase 2 consensus', () => {
         id,
         weight,
         gather: async () => ({}),
-        buildPrompt: (symbol, data, peers) => ({ system: 's', prompt: `analyze${peers ? '\nprior round\n' + peers : ''}` }),
+        buildPrompt: (symbol, data, peers) => ({
+          system: 's',
+          prompt: `analyze${peers ? '\nprior round\n' + peers : ''}`,
+        }),
         bus,
         gunvest,
         provider,
@@ -1750,7 +1896,13 @@ describe('Legion Phase 2 consensus', () => {
     flipAgent('social', 0.8, 2).start();
     flipAgent('contrarian', 0.9, -1).start();
 
-    createEmitter({ bus, repo, telegram: vi.fn(async () => {}), consensus, expectedAgents: 4 }).start();
+    createEmitter({
+      bus,
+      repo,
+      telegram: vi.fn(async () => {}),
+      consensus,
+      expectedAgents: 4,
+    }).start();
 
     const orch = createOrchestrator({ bus, repo });
     await orch.kick('MU');
@@ -1779,6 +1931,7 @@ git commit -m "test: add phase 2 multi-agent consensus e2e"
 ## Task 12: Process entrypoints, scheduler, scripts, compose, README
 
 **Files:**
+
 - Create: `legion/src/run/agent-news.js`, `legion/src/run/agent-social.js`, `legion/src/run/agent-contrarian.js`, `legion/src/run/risk.js`, `legion/src/run/scheduler.js`
 - Modify: `legion/src/run/emitter.js` (default `expectedAgents`, `riskEnabled`)
 - Modify: `legion/package.json` (scripts, `node-cron` dep)
@@ -1894,8 +2047,17 @@ Change the `expectedAgents` default to 4 and read `riskEnabled` from env. Replac
 const expectedAgents = Number(process.env.LEGION_EXPECTED_AGENTS || '4');
 const riskEnabled = process.env.LEGION_RISK_ENABLED !== 'false';
 
-createEmitter({ bus, repo, telegram, consensus: cfg.consensus, expectedAgents, riskEnabled }).start();
-console.log(`[emitter] listening for votes (expectedAgents=${expectedAgents}, risk=${riskEnabled})`);
+createEmitter({
+  bus,
+  repo,
+  telegram,
+  consensus: cfg.consensus,
+  expectedAgents,
+  riskEnabled,
+}).start();
+console.log(
+  `[emitter] listening for votes (expectedAgents=${expectedAgents}, risk=${riskEnabled})`,
+);
 ```
 
 - [ ] **Step 5: Write `src/run/scheduler.js`**
@@ -1944,54 +2106,54 @@ LEGION_CRON=0 */6 * * *
 Under `services`, add (alongside the Phase 0 `nats` and `ollama`). Each agent is its own container — the distributed, one-process-per-agent topology:
 
 ```yaml
-  emitter:
-    build: .
-    command: npm run emitter
-    env_file: .env
-    depends_on: [nats]
-    restart: unless-stopped
+emitter:
+  build: .
+  command: npm run emitter
+  env_file: .env
+  depends_on: [nats]
+  restart: unless-stopped
 
-  agent-technical:
-    build: .
-    command: npm run agent:technical
-    env_file: .env
-    depends_on: [nats, ollama]
-    restart: unless-stopped
+agent-technical:
+  build: .
+  command: npm run agent:technical
+  env_file: .env
+  depends_on: [nats, ollama]
+  restart: unless-stopped
 
-  agent-news:
-    build: .
-    command: npm run agent:news
-    env_file: .env
-    depends_on: [nats, ollama]
-    restart: unless-stopped
+agent-news:
+  build: .
+  command: npm run agent:news
+  env_file: .env
+  depends_on: [nats, ollama]
+  restart: unless-stopped
 
-  agent-social:
-    build: .
-    command: npm run agent:social
-    env_file: .env
-    depends_on: [nats, ollama]
-    restart: unless-stopped
+agent-social:
+  build: .
+  command: npm run agent:social
+  env_file: .env
+  depends_on: [nats, ollama]
+  restart: unless-stopped
 
-  agent-contrarian:
-    build: .
-    command: npm run agent:contrarian
-    env_file: .env
-    depends_on: [nats, ollama]
-    restart: unless-stopped
+agent-contrarian:
+  build: .
+  command: npm run agent:contrarian
+  env_file: .env
+  depends_on: [nats, ollama]
+  restart: unless-stopped
 
-  risk:
-    build: .
-    command: npm run risk
-    env_file: .env
-    depends_on: [nats]
-    restart: unless-stopped
+risk:
+  build: .
+  command: npm run risk
+  env_file: .env
+  depends_on: [nats]
+  restart: unless-stopped
 
-  scheduler:
-    build: .
-    command: npm run scheduler
-    env_file: .env
-    depends_on: [nats]
-    restart: unless-stopped
+scheduler:
+  build: .
+  command: npm run scheduler
+  env_file: .env
+  depends_on: [nats]
+  restart: unless-stopped
 ```
 
 > If `legion/Dockerfile` does not yet exist, add a minimal one: `FROM node:20-alpine`, `WORKDIR /app`, `COPY package*.json ./`, `RUN npm ci --omit=dev`, `COPY . .`, `CMD ["node", "--version"]` (the per-service `command` overrides `CMD`).
@@ -2029,12 +2191,14 @@ A consensus signal (or NO_CONSENSUS) lands in Telegram per ticker, and
 - [ ] **Step 9: Manual smoke test**
 
 With infra up, `.env` filled, and a ticker seeded:
+
 ```bash
 npm run db:migrate
 npm run emitter & npm run agent:technical & npm run agent:news & \
   npm run agent:social & npm run agent:contrarian & npm run risk &
 npm run scheduler -- --now
 ```
+
 Expected: each agent logs a published vote; the emitter logs round evaluation; a signal arrives in Telegram; `SELECT round_no, s_score, dispersion, quorum, converged FROM legion.rounds ORDER BY id;` shows one or more rounds; `SELECT band, conviction FROM legion.signals;` shows the final call.
 
 - [ ] **Step 10: Run the full test suite**
@@ -2054,6 +2218,7 @@ git commit -m "feat: add phase 2 agent/risk/scheduler entrypoints and compose"
 ## Phase 2 Done — Handover Notes
 
 Capture for the next session:
+
 - Local-LLM JSON compliance across the four personas (abstain rate per agent) — if News/Social/Contrarian abstain often, tighten their prompts or add a one-shot retry in the factory.
 - Convergence behavior on real data: how often round 1 converges vs. iterates to `R_max`; whether `θ_v = 0.5` is too strict/loose; tune in `config`.
 - Risk constraint hit-rate (how often `capConviction`/`blockBuy` fired) and whether thresholds (`VIX_ELEVATED/EXTREME`, `OUTSIZED_MOVE_PCT`) match observed volatility.
@@ -2067,6 +2232,7 @@ Capture for the next session:
 ## Self-Review
 
 **Spec coverage (Phase 2 deliverable: add News, Social, Contrarian + Risk constraint; rounds/iteration/convergence; multi-ticker):**
+
 - News/Catalyst agent (+macro) → Task 5 ✅
 - Social Sentiment agent → Task 6 ✅
 - Contrarian agent (+positioning proxy, peer-dissent argument) → Task 7 ✅

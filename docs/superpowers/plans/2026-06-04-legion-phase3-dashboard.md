@@ -10,7 +10,7 @@
 
 **Prerequisites:** Phases 0–2 complete and green. The `legion` schema is populated by live runs (or seed rows in tests).
 
-Spec: `gunvest/docs/superpowers/specs/2026-06-04-legion-design.md` (§7 dashboard — debate viewer, ticker config, signal feed; backtest tab is Phase 4).
+Spec: `legion/docs/superpowers/specs/2026-06-04-legion-design.md` (§7 dashboard — debate viewer, ticker config, signal feed; backtest tab is Phase 4).
 
 ---
 
@@ -76,6 +76,7 @@ legion/
 ## Task 1: Repo read + ticker-config methods
 
 **Files:**
+
 - Modify: `legion/src/db/repo.js`
 - Test: `legion/test/db/repo.read.test.js`
 
@@ -104,10 +105,18 @@ function poolReturning(rowsList) {
 
 describe('repo read + config methods', () => {
   it('lists all tickers ordered by symbol', async () => {
-    const pool = poolReturning([[{ symbol: 'MU', enabled: true }, { symbol: 'NVDA', enabled: false }]]);
+    const pool = poolReturning([
+      [
+        { symbol: 'MU', enabled: true },
+        { symbol: 'NVDA', enabled: false },
+      ],
+    ]);
     const repo = createRepo(createDb(pool));
     const rows = await repo.listTickers();
-    expect(rows).toEqual([{ symbol: 'MU', enabled: true }, { symbol: 'NVDA', enabled: false }]);
+    expect(rows).toEqual([
+      { symbol: 'MU', enabled: true },
+      { symbol: 'NVDA', enabled: false },
+    ]);
     expect(pool.calls[0].text).toMatch(/SELECT symbol, enabled FROM legion\.tickers/);
   });
 
@@ -148,7 +157,9 @@ describe('repo read + config methods', () => {
   });
 
   it('fetches rounds for a cycle ordered by round number', async () => {
-    const pool = poolReturning([[{ id: 1, round_no: 1, s_score: 1.5, dispersion: 0.1, quorum: 0.8, converged: true }]]);
+    const pool = poolReturning([
+      [{ id: 1, round_no: 1, s_score: 1.5, dispersion: 0.1, quorum: 0.8, converged: true }],
+    ]);
     const repo = createRepo(createDb(pool));
     const rows = await repo.getRounds(9);
     expect(rows[0].round_no).toBe(1);
@@ -157,7 +168,9 @@ describe('repo read + config methods', () => {
   });
 
   it('fetches votes for a round', async () => {
-    const pool = poolReturning([[{ agent_id: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'breakout' }]]);
+    const pool = poolReturning([
+      [{ agent_id: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'breakout' }],
+    ]);
     const repo = createRepo(createDb(pool));
     const rows = await repo.getVotes(1);
     expect(rows[0].agent_id).toBe('technical');
@@ -166,7 +179,9 @@ describe('repo read + config methods', () => {
   });
 
   it('lists recent signals optionally filtered by symbol', async () => {
-    const pool = poolReturning([[{ id: 3, symbol: 'NVDA', band: 'STRONG_BUY', conviction: 0.9, plan: {} }]]);
+    const pool = poolReturning([
+      [{ id: 3, symbol: 'NVDA', band: 'STRONG_BUY', conviction: 0.9, plan: {} }],
+    ]);
     const repo = createRepo(createDb(pool));
     const rows = await repo.listSignals('nvda', 50);
     expect(rows[0].band).toBe('STRONG_BUY');
@@ -288,6 +303,7 @@ git commit -m "feat: add legion repo read and ticker-config methods"
 ## Task 2: Debate assembler
 
 **Files:**
+
 - Create: `legion/src/api/debate.js`
 - Test: `legion/test/api/debate.test.js`
 
@@ -310,7 +326,15 @@ describe('assembleDebate', () => {
       getVotes: vi.fn(async (roundId) =>
         roundId === 1
           ? [{ agent_id: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'up' }]
-          : [{ agent_id: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'still up' }],
+          : [
+              {
+                agent_id: 'technical',
+                stance: 2,
+                conviction: 0.9,
+                weight: 1,
+                rationale: 'still up',
+              },
+            ],
       ),
     };
 
@@ -371,6 +395,7 @@ git commit -m "feat: add debate assembler"
 ## Task 3: Express app + ticker routes
 
 **Files:**
+
 - Create: `legion/src/api/app.js`
 - Create: `legion/src/api/routes/tickers.js`
 - Test: `legion/test/api/tickers.test.js`
@@ -537,6 +562,7 @@ git commit -m "feat: add express app and ticker config routes"
 ## Task 4: Cycle / debate routes
 
 **Files:**
+
 - Create: `legion/src/api/routes/cycles.js`
 - Modify: `legion/src/api/app.js` (mount cycles)
 - Test: `legion/test/api/cycles.test.js`
@@ -555,8 +581,12 @@ function repoStub(overrides = {}) {
     listTickers: vi.fn(async () => []),
     listCycles: vi.fn(async () => [{ id: 9, symbol: 'NVDA', status: 'converged' }]),
     getCycle: vi.fn(async () => ({ id: 9, symbol: 'NVDA', status: 'converged' })),
-    getRounds: vi.fn(async () => [{ id: 1, round_no: 1, s_score: 1.6, dispersion: 0.1, quorum: 0.9, converged: true }]),
-    getVotes: vi.fn(async () => [{ agent_id: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'up' }]),
+    getRounds: vi.fn(async () => [
+      { id: 1, round_no: 1, s_score: 1.6, dispersion: 0.1, quorum: 0.9, converged: true },
+    ]),
+    getVotes: vi.fn(async () => [
+      { agent_id: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'up' },
+    ]),
     ...overrides,
   };
 }
@@ -645,8 +675,9 @@ Add the import and mount (keep existing):
 ```js
 import { cycleRoutes } from './routes/cycles.js';
 ```
+
 ```js
-  app.use('/api/cycles', cycleRoutes(repo));
+app.use('/api/cycles', cycleRoutes(repo));
 ```
 
 - [ ] **Step 5: Run test to verify it passes**
@@ -666,6 +697,7 @@ git commit -m "feat: add cycle and debate routes"
 ## Task 5: Signal feed route + API entrypoint
 
 **Files:**
+
 - Create: `legion/src/api/routes/signals.js`
 - Modify: `legion/src/api/app.js` (mount signals)
 - Modify: `legion/src/config/index.js` (add `apiPort`)
@@ -682,7 +714,9 @@ import { createApp } from '../../src/api/app.js';
 function repoStub(overrides = {}) {
   return {
     listTickers: vi.fn(async () => []),
-    listSignals: vi.fn(async () => [{ id: 3, symbol: 'NVDA', band: 'STRONG_BUY', conviction: 0.9, plan: {} }]),
+    listSignals: vi.fn(async () => [
+      { id: 3, symbol: 'NVDA', band: 'STRONG_BUY', conviction: 0.9, plan: {} },
+    ]),
     ...overrides,
   };
 }
@@ -737,8 +771,9 @@ export function signalRoutes(repo) {
 ```js
 import { signalRoutes } from './routes/signals.js';
 ```
+
 ```js
-  app.use('/api/signals', signalRoutes(repo));
+app.use('/api/signals', signalRoutes(repo));
 ```
 
 - [ ] **Step 5: Add `apiPort` to `src/config/index.js`**
@@ -793,6 +828,7 @@ git commit -m "feat: add signal feed route and api entrypoint"
 ## Task 6: Web app scaffold + API client + formatting
 
 **Files:**
+
 - Create: `legion/web/package.json`, `vite.config.js`, `tailwind.config.js`, `postcss.config.js`, `index.html`
 - Create: `legion/web/src/api/client.js`, `legion/web/src/lib/format.js`
 - Create: `legion/web/src/index.css`
@@ -936,9 +972,9 @@ describe('format helpers', () => {
 const STANCE_LABELS = {
   '-2': 'STRONG_SELL',
   '-1': 'SELL',
-  '0': 'HOLD',
-  '1': 'BUY',
-  '2': 'STRONG_BUY',
+  0: 'HOLD',
+  1: 'BUY',
+  2: 'STRONG_BUY',
 };
 
 export function pct(x) {
@@ -1035,7 +1071,8 @@ export const api = {
   setTicker: (symbol, enabled) => send('PATCH', `/api/tickers/${symbol}`, { enabled }),
   listCycles: (symbol) => get(`/api/cycles?symbol=${encodeURIComponent(symbol)}`),
   getDebate: (id) => get(`/api/cycles/${id}`),
-  listSignals: (symbol) => get(symbol ? `/api/signals?symbol=${encodeURIComponent(symbol)}` : '/api/signals'),
+  listSignals: (symbol) =>
+    get(symbol ? `/api/signals?symbol=${encodeURIComponent(symbol)}` : '/api/signals'),
 };
 ```
 
@@ -1056,6 +1093,7 @@ git commit -m "feat: scaffold legion-web with api client and format helpers"
 ## Task 7: Components + pages
 
 **Files:**
+
 - Create: `legion/web/src/components/VoteRow.jsx`, `legion/web/src/components/RoundCard.jsx`
 - Create: `legion/web/src/pages/SignalFeed.jsx`, `legion/web/src/pages/DebateViewer.jsx`, `legion/web/src/pages/TickerConfig.jsx`
 - Test: `legion/web/test/components/RoundCard.test.jsx`, `legion/web/test/pages/SignalFeed.test.jsx`, `legion/web/test/pages/TickerConfig.test.jsx`
@@ -1164,7 +1202,10 @@ export function SignalFeed() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    api.listSignals().then(setSignals).catch((e) => setError(e.message));
+    api
+      .listSignals()
+      .then(setSignals)
+      .catch((e) => setError(e.message));
   }, []);
 
   if (error) return <p className="text-red-600">{error}</p>;
@@ -1175,7 +1216,10 @@ export function SignalFeed() {
       {signals.length === 0 && <p className="text-slate-400">No signals yet.</p>}
       <ul>
         {signals.map((s) => (
-          <li key={s.id} className="flex items-center justify-between border-b border-slate-100 py-2">
+          <li
+            key={s.id}
+            className="flex items-center justify-between border-b border-slate-100 py-2"
+          >
             <span className="font-medium">{s.symbol}</span>
             <span className={bandColor(s.band)}>{s.band}</span>
             <span className="text-slate-500">conv {pct(s.conviction)}</span>
@@ -1235,11 +1279,18 @@ export function DebateViewer({ symbol }) {
   const [debate, setDebate] = useState(null);
 
   useEffect(() => {
-    if (symbol) api.listCycles(symbol).then(setCycles).catch(() => setCycles([]));
+    if (symbol)
+      api
+        .listCycles(symbol)
+        .then(setCycles)
+        .catch(() => setCycles([]));
   }, [symbol]);
 
   function open(id) {
-    api.getDebate(id).then(setDebate).catch(() => setDebate(null));
+    api
+      .getDebate(id)
+      .then(setDebate)
+      .catch(() => setDebate(null));
   }
 
   return (
@@ -1286,7 +1337,10 @@ export function TickerConfig() {
   const [symbol, setSymbol] = useState('');
 
   function refresh() {
-    api.listTickers().then(setTickers).catch(() => setTickers([]));
+    api
+      .listTickers()
+      .then(setTickers)
+      .catch(() => setTickers([]));
   }
   useEffect(refresh, []);
 
@@ -1320,7 +1374,10 @@ export function TickerConfig() {
       </form>
       <ul>
         {tickers.map((t) => (
-          <li key={t.symbol} className="flex items-center justify-between border-b border-slate-100 py-2">
+          <li
+            key={t.symbol}
+            className="flex items-center justify-between border-b border-slate-100 py-2"
+          >
             <span className="font-medium">{t.symbol}</span>
             <button
               className={t.enabled ? 'text-green-600' : 'text-slate-400'}
@@ -1351,7 +1408,9 @@ beforeEach(() => {
 describe('TickerConfig', () => {
   it('lists tickers and toggles one', async () => {
     vi.spyOn(api, 'listTickers').mockResolvedValue([{ symbol: 'NVDA', enabled: true }]);
-    const setTicker = vi.spyOn(api, 'setTicker').mockResolvedValue({ symbol: 'NVDA', enabled: false });
+    const setTicker = vi
+      .spyOn(api, 'setTicker')
+      .mockResolvedValue({ symbol: 'NVDA', enabled: false });
 
     render(<TickerConfig />);
     await waitFor(() => expect(screen.getByText('NVDA')).toBeInTheDocument());
@@ -1362,7 +1421,9 @@ describe('TickerConfig', () => {
 
   it('adds a ticker from the form', async () => {
     vi.spyOn(api, 'listTickers').mockResolvedValue([]);
-    const addTicker = vi.spyOn(api, 'addTicker').mockResolvedValue({ symbol: 'AMD', enabled: true });
+    const addTicker = vi
+      .spyOn(api, 'addTicker')
+      .mockResolvedValue({ symbol: 'AMD', enabled: true });
 
     render(<TickerConfig />);
     fireEvent.change(screen.getByLabelText('symbol'), { target: { value: 'amd' } });
@@ -1390,6 +1451,7 @@ git commit -m "feat: add dashboard components and pages"
 ## Task 8: App shell, entry, and run docs
 
 **Files:**
+
 - Create: `legion/web/src/App.jsx`, `legion/web/src/main.jsx`
 - Modify: `legion/README.md` (Phase 3 run section)
 - Modify: `legion/docker-compose.yml` (api + web services)
@@ -1462,20 +1524,20 @@ createRoot(document.getElementById('root')).render(
 - [ ] **Step 3: Add api + web services to `docker-compose.yml`**
 
 ```yaml
-  api:
-    build: .
-    command: npm run api
-    env_file: .env
-    ports: ['8088:8088']
-    depends_on: [nats]
-    restart: unless-stopped
+api:
+  build: .
+  command: npm run api
+  env_file: .env
+  ports: ['8088:8088']
+  depends_on: [nats]
+  restart: unless-stopped
 
-  web:
-    build: ./web
-    command: npm run preview -- --host --port 5174
-    ports: ['5174:5174']
-    depends_on: [api]
-    restart: unless-stopped
+web:
+  build: ./web
+  command: npm run preview -- --host --port 5174
+  ports: ['5174:5174']
+  depends_on: [api]
+  restart: unless-stopped
 ```
 
 > `web/Dockerfile` (build the SPA, serve with vite preview): `FROM node:20-alpine`, `WORKDIR /app`, `COPY package*.json ./`, `RUN npm ci`, `COPY . .`, `RUN npm run build`, `CMD ["npm","run","preview","--","--host","--port","5174"]`. In production the proxy target should point at the `api` service URL rather than localhost.
@@ -1505,10 +1567,11 @@ Tabs: **Signals** (latest calls), **Debate** (pick a ticker → cycle → rounds
 - [ ] **Step 5: Manual browser verification**
 
 With the API running (`npm run api`) and the schema seeded (run a few cycles from Phase 2, or insert sample rows), start `cd web && npm run dev` and open `http://localhost:5174`:
+
 - **Signals** tab lists recent signals with band colors and conviction.
 - **Config** tab: add a ticker, toggle enable/disable — confirm the row updates and `SELECT * FROM legion.tickers;` reflects it.
 - **Debate** tab: enter a ticker that has cycles, click a cycle, confirm rounds render with S/V/κ and each agent's stance/conviction/rationale.
-Check the browser console for errors. If `/api` calls 404, confirm the Vite proxy target matches the API port.
+  Check the browser console for errors. If `/api` calls 404, confirm the Vite proxy target matches the API port.
 
 - [ ] **Step 6: Run all web tests**
 
@@ -1527,6 +1590,7 @@ git commit -m "feat: add dashboard app shell and run docs"
 ## Phase 3 Done — Handover Notes
 
 Capture for the next session:
+
 - Confirm `signals.plan` round-trips as JSON from `pg` (it is stored via `JSON.stringify`; `pg` may return JSONB as an object already — adjust the client/render if the shape differs).
 - Whether a polling/refresh or websocket live-update is wanted on the Signals/Debate tabs (Phase 2 architecture reserved a `WS` channel; deferred here — pages fetch once on mount).
 - If ticker count grows, add pagination to `listCycles`/`listSignals` (currently capped at 20/50).
@@ -1539,6 +1603,7 @@ Capture for the next session:
 ## Self-Review
 
 **Spec coverage (Phase 3 deliverable: debate viewer, ticker config, signal feed):**
+
 - Debate viewer (cycle → rounds → per-agent stance/conviction/rationale + live S/V/κ + convergence) → API Tasks 2/4, UI Task 7 (`DebateViewer` + `RoundCard` + `VoteRow`) ✅
 - Ticker config (add/enable/disable) → API Task 3, UI Task 7 (`TickerConfig`) ✅
 - Signal feed → API Task 5, UI Task 7 (`SignalFeed`) ✅

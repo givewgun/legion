@@ -10,7 +10,7 @@
 
 **Prerequisites:** Phase 0 complete (plan `2026-06-04-legion-phase0-foundation.md`). All Phase 0 modules exist and pass tests.
 
-Spec: `gunvest/docs/superpowers/specs/2026-06-04-legion-design.md` (§3 consensus, §4 Technical agent, §6 module contract, §8 signal output).
+Spec: `legion/docs/superpowers/specs/2026-06-04-legion-design.md` (§3 consensus, §4 Technical agent, §6 module contract, §8 signal output).
 
 ---
 
@@ -27,6 +27,7 @@ Spec: `gunvest/docs/superpowers/specs/2026-06-04-legion-design.md` (§3 consensu
 - `src/config/index.js` → `loadConfig(env)` → `{ gunvestApiUrl, natsUrl, databaseUrl, ollama, consensus }`
 
 **Message shapes introduced in this phase:**
+
 - Cycle: `{ cycleId: number, symbol: string, round: number }`
 - Vote envelope: `{ cycleId, symbol, round, vote: { agentId, stance, conviction, weight, rationale } }`
 - Consensus: `{ cycleId, symbol, band, conviction, plan }`
@@ -78,6 +79,7 @@ legion/
 ## Task 1: Bus wildcards + in-memory bus double
 
 **Files:**
+
 - Modify: `legion/src/bus/subjects.js`
 - Create: `legion/src/bus/memory.js`
 - Test: `legion/test/bus/memory.test.js`
@@ -204,6 +206,7 @@ git commit -m "feat: add bus wildcards and in-memory bus double"
 ## Task 2: Vote parsing from LLM output
 
 **Files:**
+
 - Create: `legion/src/agents/technical/parse.js`
 - Test: `legion/test/agents/technical/parse.test.js`
 
@@ -211,7 +214,7 @@ The LLM is instructed to return JSON `{ stance, conviction, rationale }`. `parse
 
 - [ ] **Step 1: Write the failing test `test/agents/technical/parse.test.js`**
 
-```js
+````js
 import { describe, it, expect } from 'vitest';
 import { parseVote } from '../../../src/agents/technical/parse.js';
 
@@ -232,7 +235,8 @@ describe('parseVote', () => {
   });
 
   it('extracts JSON wrapped in code fences and prose', () => {
-    const text = 'Here is my call:\n```json\n{"stance": -2, "conviction": 0.6, "rationale": "breakdown"}\n```\nThanks.';
+    const text =
+      'Here is my call:\n```json\n{"stance": -2, "conviction": 0.6, "rationale": "breakdown"}\n```\nThanks.';
     const res = parseVote(text, ctx);
     expect(res.ok).toBe(true);
     expect(res.vote.stance).toBe(-2);
@@ -257,7 +261,7 @@ describe('parseVote', () => {
     expect(res.vote.rationale).toBe('');
   });
 });
-```
+````
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -314,6 +318,7 @@ git commit -m "feat: add LLM vote parser for technical agent"
 ## Task 3: Technical agent prompt builder
 
 **Files:**
+
 - Create: `legion/src/agents/technical/config.js`
 - Create: `legion/src/agents/technical/prompt.js`
 - Test: `legion/test/agents/technical/prompt.test.js`
@@ -400,6 +405,7 @@ git commit -m "feat: add technical agent config and prompt builder"
 ## Task 4: Technical agent data gathering
 
 **Files:**
+
 - Create: `legion/src/agents/technical/gather.js`
 - Test: `legion/test/agents/technical/gather.test.js`
 
@@ -464,6 +470,7 @@ git commit -m "feat: add technical agent data gathering"
 ## Task 5: Technical agent runner
 
 **Files:**
+
 - Create: `legion/src/agents/technical/index.js`
 - Test: `legion/test/agents/technical/index.test.js`
 
@@ -504,7 +511,13 @@ describe('createTechnicalAgent', () => {
       cycleId: 7,
       symbol: 'NVDA',
       round: 1,
-      vote: { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1.0, rationale: 'breakout' },
+      vote: {
+        agentId: 'technical',
+        stance: 2,
+        conviction: 0.9,
+        weight: 1.0,
+        rationale: 'breakout',
+      },
     });
   });
 
@@ -599,6 +612,7 @@ git commit -m "feat: add technical agent runner with abstain fallback"
 ## Task 6: Signal / trade-plan builder
 
 **Files:**
+
 - Create: `legion/src/emit/plan.js`
 - Test: `legion/test/emit/plan.test.js`
 
@@ -679,6 +693,7 @@ git commit -m "feat: add signal/trade-plan builder"
 ## Task 7: Telegram client
 
 **Files:**
+
 - Create: `legion/src/emit/telegram.js`
 - Test: `legion/test/emit/telegram.test.js`
 
@@ -771,6 +786,7 @@ git commit -m "feat: add telegram client and signal formatter"
 ## Task 8: Database repository
 
 **Files:**
+
 - Create: `legion/src/db/repo.js`
 - Test: `legion/test/db/repo.test.js`
 
@@ -868,10 +884,9 @@ Expected: FAIL — `Cannot find module '../../src/db/repo.js'`.
 export function createRepo(db) {
   return {
     async createCycle(symbol) {
-      const row = await db.queryOne(
-        `INSERT INTO legion.cycles (symbol) VALUES ($1) RETURNING id`,
-        [symbol],
-      );
+      const row = await db.queryOne(`INSERT INTO legion.cycles (symbol) VALUES ($1) RETURNING id`, [
+        symbol,
+      ]);
       return row.id;
     },
 
@@ -903,10 +918,10 @@ export function createRepo(db) {
     },
 
     async finishCycle(cycleId, status) {
-      await db.query(
-        `UPDATE legion.cycles SET status = $1, ended_at = now() WHERE id = $2`,
-        [status, cycleId],
-      );
+      await db.query(`UPDATE legion.cycles SET status = $1, ended_at = now() WHERE id = $2`, [
+        status,
+        cycleId,
+      ]);
     },
   };
 }
@@ -929,6 +944,7 @@ git commit -m "feat: add legion db repository"
 ## Task 9: Emitter
 
 **Files:**
+
 - Create: `legion/src/emit/emitter.js`
 - Test: `legion/test/emit/emitter.test.js`
 
@@ -1029,7 +1045,14 @@ import { buildSignal } from './plan.js';
 import { formatSignal } from './telegram.js';
 
 // Collects votes per cycle and finalizes once expectedAgents have voted.
-export function createEmitter({ bus, repo, telegram, consensus, expectedAgents, logger = console }) {
+export function createEmitter({
+  bus,
+  repo,
+  telegram,
+  consensus,
+  expectedAgents,
+  logger = console,
+}) {
   const pending = new Map(); // cycleId -> { symbol, round, votes: [] }
 
   async function finalize(cycleId, entry) {
@@ -1084,6 +1107,7 @@ git commit -m "feat: add emitter that finalizes cycles to db and telegram"
 ## Task 10: Orchestrator
 
 **Files:**
+
 - Create: `legion/src/orchestrator.js`
 - Test: `legion/test/orchestrator.test.js`
 
@@ -1162,6 +1186,7 @@ git commit -m "feat: add orchestrator that kicks ticker cycles"
 ## Task 11: End-to-end pipeline integration test
 
 **Files:**
+
 - Test: `legion/test/e2e/pipeline.test.js`
 
 Runs orchestrator → technical agent → emitter over the in-memory bus with a stubbed LLM and fake repo/telegram, asserting one signal flows through with the correct band.
@@ -1239,6 +1264,7 @@ git commit -m "test: add phase 1 end-to-end pipeline integration test"
 ## Task 12: Process entrypoints + compose/README
 
 **Files:**
+
 - Create: `legion/src/run/agent-technical.js`
 - Create: `legion/src/run/emitter.js`
 - Create: `legion/src/run/orchestrator.js`
@@ -1358,12 +1384,14 @@ A signal should arrive in Telegram and a row should appear in `legion.signals`.
 - [ ] **Step 6: Manual smoke test**
 
 With NATS, Ollama (model pulled), GunVest, and Postgres running, and `.env` filled:
+
 ```bash
 npm run db:migrate
 npm run emitter &
 npm run agent:technical &
 npm run kick NVDA
 ```
+
 Expected: console logs show the cycle kicked and a vote published; a Telegram message arrives; `SELECT * FROM legion.signals;` shows one row for NVDA.
 
 - [ ] **Step 7: Run the full test suite**
@@ -1383,6 +1411,7 @@ git commit -m "feat: add phase 1 process entrypoints and run scripts"
 ## Phase 1 Done — Handover Notes
 
 Capture for the next session:
+
 - Actual GunVest price route shape vs. what `gather`/`getPrice` assumed; adjust `data/gunvest.js` if the JSON differs.
 - Observed local-LLM JSON-compliance rate (how often `parseVote` had to abstain) — informs whether Phase 2 needs a stricter prompt or a retry.
 - Measured single-cycle latency on the A1 VM.
@@ -1394,6 +1423,7 @@ Capture for the next session:
 ## Self-Review
 
 **Spec coverage (Phase 1 deliverable: Technical agent → vote → emitter → Telegram, 1 ticker):**
+
 - Orchestrator kick over NATS → Task 10 ✅
 - Technical agent (gather/prompt/reason/parse/publish) → Tasks 2,3,4,5 ✅
 - Trivial N=1 consensus via `evaluateRound` → Task 9 (reuses Phase 0 Task 4) ✅

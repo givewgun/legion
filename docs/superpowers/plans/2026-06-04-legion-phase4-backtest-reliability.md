@@ -51,6 +51,7 @@ These live in `src/consensus/reliability.js` and `src/backtest/indicators.js` as
 ### Task 1: Reliability math (pure)
 
 **Files:**
+
 - Create: `src/consensus/reliability.js`
 - Test: `test/consensus/reliability.test.js`
 
@@ -182,6 +183,7 @@ git commit -m "feat(legion): add Brier reliability math and weight scaling"
 ### Task 2: Phase 4 schema migration
 
 **Files:**
+
 - Create: `migrations/phase4_reliability.sql`
 - Test: `test/migrations/phase4_reliability.test.js`
 
@@ -303,6 +305,7 @@ git commit -m "feat(legion): add reliability and backtest schema migration"
 ### Task 3: GunVest client — historical candles
 
 **Files:**
+
 - Modify: `src/clients/gunvest.js`
 - Test: `test/clients/gunvest-candles.test.js`
 
@@ -386,6 +389,7 @@ git commit -m "feat(legion): add getCandles to GunVest client"
 ### Task 4: Repo — reliability / resolution / backtest methods
 
 **Files:**
+
 - Modify: `src/db/repo.js`
 - Test: `test/db/repo-phase4.test.js`
 
@@ -405,7 +409,7 @@ function fakePool(rowsByCall) {
     calls,
     async query(text, params) {
       calls.push({ text, params });
-      const rows = Array.isArray(rowsByCall) ? rowsByCall[i++] ?? [] : rowsByCall;
+      const rows = Array.isArray(rowsByCall) ? (rowsByCall[i++] ?? []) : rowsByCall;
       return { rows, rowCount: rows.length };
     },
   };
@@ -414,7 +418,10 @@ function fakePool(rowsByCall) {
 describe('repo phase4', () => {
   it('getAllReliability returns an agentId->rho map', async () => {
     const pool = fakePool([
-      [{ agent_id: 'technical', rho: 1.3 }, { agent_id: 'news', rho: 0.9 }],
+      [
+        { agent_id: 'technical', rho: 1.3 },
+        { agent_id: 'news', rho: 0.9 },
+      ],
     ]);
     const repo = createRepo(pool);
     const map = await repo.getAllReliability();
@@ -436,8 +443,13 @@ describe('repo phase4', () => {
     const pool = fakePool([[{ id: 77 }]]);
     const repo = createRepo(pool);
     const id = await repo.addSignal({
-      cycleId: 5, symbol: 'NVDA', stance: 1, conviction: 0.7,
-      plan: { foo: 1 }, entryPrice: 100, horizonDays: 5,
+      cycleId: 5,
+      symbol: 'NVDA',
+      stance: 1,
+      conviction: 0.7,
+      plan: { foo: 1 },
+      entryPrice: 100,
+      horizonDays: 5,
       resolveAfter: '2026-06-09T00:00:00Z',
     });
     expect(id).toBe(77);
@@ -484,7 +496,11 @@ describe('repo phase4', () => {
     const pool = fakePool([[]]);
     const repo = createRepo(pool);
     await repo.resolveSignal(1, {
-      forwardReturn: 0.05, spyReturn: 0.02, qqqReturn: 0.03, outcome: 1, correct: true,
+      forwardReturn: 0.05,
+      spyReturn: 0.02,
+      qqqReturn: 0.03,
+      outcome: 1,
+      correct: true,
     });
     const { text, params } = pool.calls[0];
     expect(text.toLowerCase()).toContain('update legion.signals');
@@ -493,10 +509,12 @@ describe('repo phase4', () => {
   });
 
   it('getResolvedForecasts joins signal_votes to resolved signals', async () => {
-    const pool = fakePool([[
-      { agent_id: 'technical', stance: 1, conviction: 0.8, outcome: 1 },
-      { agent_id: 'technical', stance: -1, conviction: 0.5, outcome: 0 },
-    ]]);
+    const pool = fakePool([
+      [
+        { agent_id: 'technical', stance: 1, conviction: 0.8, outcome: 1 },
+        { agent_id: 'technical', stance: -1, conviction: 0.5, outcome: 0 },
+      ],
+    ]);
     const repo = createRepo(pool);
     const rows = await repo.getResolvedForecasts(50);
     expect(rows).toHaveLength(2);
@@ -511,8 +529,14 @@ describe('repo phase4', () => {
     const pool = fakePool([[]]);
     const repo = createRepo(pool);
     await repo.recordBacktestResult({
-      symbol: 'NVDA', horizon: 5, trades: 10, hits: 6,
-      hitRate: 0.6, pnl: 0.12, spyPnl: 0.05, qqqPnl: 0.07,
+      symbol: 'NVDA',
+      horizon: 5,
+      trades: 10,
+      hits: 6,
+      hitRate: 0.6,
+      pnl: 0.12,
+      spyPnl: 0.05,
+      qqqPnl: 0.07,
     });
     const { text, params } = pool.calls[0];
     expect(text.toLowerCase()).toContain('insert into legion.backtest_results');
@@ -680,6 +704,7 @@ git commit -m "feat(legion): add reliability, resolution, and backtest repo meth
 ### Task 5: Signal resolver (forward paper-test)
 
 **Files:**
+
 - Create: `src/reliability/resolver.js`
 - Test: `test/reliability/resolver.test.js`
 
@@ -700,7 +725,7 @@ const candles = [
 
 describe('returnOver', () => {
   it('computes return between first>=from and last<=to', () => {
-    expect(returnOver(candles, '2026-06-01', '2026-06-06')).toBeCloseTo(0.10);
+    expect(returnOver(candles, '2026-06-01', '2026-06-06')).toBeCloseTo(0.1);
   });
   it('returns null when window has <2 usable closes', () => {
     expect(returnOver(candles, '2026-06-10', '2026-06-20')).toBeNull();
@@ -724,15 +749,24 @@ describe('resolveSignals', () => {
     // Signal direction comes from the persisted signal stance; stub returns it.
     repo.getSignalStance = async () => 1; // bullish
     const gunvest = gunvestStub({
-      NVDA: [{ date: '2026-06-01', close: 100 }, { date: '2026-06-08', close: 110 }], // +10%
-      SPY: [{ date: '2026-06-01', close: 400 }, { date: '2026-06-08', close: 408 }], // +2%
-      QQQ: [{ date: '2026-06-01', close: 300 }, { date: '2026-06-08', close: 309 }], // +3%
+      NVDA: [
+        { date: '2026-06-01', close: 100 },
+        { date: '2026-06-08', close: 110 },
+      ], // +10%
+      SPY: [
+        { date: '2026-06-01', close: 400 },
+        { date: '2026-06-08', close: 408 },
+      ], // +2%
+      QQQ: [
+        { date: '2026-06-01', close: 300 },
+        { date: '2026-06-08', close: 309 },
+      ], // +3%
     });
     const count = await resolveSignals(repo, gunvest, '2026-06-08');
     expect(count).toBe(1);
     expect(resolved[0].outcome).toBe(1); // beat SPY
     expect(resolved[0].correct).toBe(true); // bullish & positive excess
-    expect(resolved[0].forwardReturn).toBeCloseTo(0.10);
+    expect(resolved[0].forwardReturn).toBeCloseTo(0.1);
   });
 
   it('marks bullish signal that lagged SPY as incorrect, outcome 0', async () => {
@@ -745,9 +779,18 @@ describe('resolveSignals', () => {
       getSignalStance: async () => 1,
     };
     const gunvest = gunvestStub({
-      MU: [{ date: '2026-06-01', close: 50 }, { date: '2026-06-08', close: 50.5 }], // +1%
-      SPY: [{ date: '2026-06-01', close: 400 }, { date: '2026-06-08', close: 420 }], // +5%
-      QQQ: [{ date: '2026-06-01', close: 300 }, { date: '2026-06-08', close: 315 }],
+      MU: [
+        { date: '2026-06-01', close: 50 },
+        { date: '2026-06-08', close: 50.5 },
+      ], // +1%
+      SPY: [
+        { date: '2026-06-01', close: 400 },
+        { date: '2026-06-08', close: 420 },
+      ], // +5%
+      QQQ: [
+        { date: '2026-06-01', close: 300 },
+        { date: '2026-06-08', close: 315 },
+      ],
     });
     await resolveSignals(repo, gunvest, '2026-06-08');
     expect(resolved[0].outcome).toBe(0);
@@ -764,9 +807,18 @@ describe('resolveSignals', () => {
       getSignalStance: async () => 0,
     };
     const gunvest = gunvestStub({
-      AMD: [{ date: '2026-06-01', close: 80 }, { date: '2026-06-08', close: 82 }],
-      SPY: [{ date: '2026-06-01', close: 400 }, { date: '2026-06-08', close: 404 }],
-      QQQ: [{ date: '2026-06-01', close: 300 }, { date: '2026-06-08', close: 303 }],
+      AMD: [
+        { date: '2026-06-01', close: 80 },
+        { date: '2026-06-08', close: 82 },
+      ],
+      SPY: [
+        { date: '2026-06-01', close: 400 },
+        { date: '2026-06-08', close: 404 },
+      ],
+      QQQ: [
+        { date: '2026-06-01', close: 300 },
+        { date: '2026-06-08', close: 303 },
+      ],
     });
     await resolveSignals(repo, gunvest, '2026-06-08');
     expect(resolved[0].correct).toBeNull();
@@ -783,7 +835,9 @@ describe('resolveSignals', () => {
       getSignalStance: async () => 1,
     };
     const gunvest = gunvestStub({
-      X: [{ date: '2026-06-01', close: 10 }], SPY: [], QQQ: [],
+      X: [{ date: '2026-06-01', close: 10 }],
+      SPY: [],
+      QQQ: [],
     });
     const count = await resolveSignals(repo, gunvest, '2026-06-08');
     expect(count).toBe(0);
@@ -880,6 +934,7 @@ git commit -m "feat(legion): add forward paper-test signal resolver"
 ### Task 6: Reliability recompute (Brier loop)
 
 **Files:**
+
 - Create: `src/reliability/update.js`
 - Test: `test/reliability/update.test.js`
 
@@ -896,7 +951,10 @@ describe('recomputeReliability', () => {
   it('rewards an agent whose confident calls resolved correctly', async () => {
     // 6 forecasts, all strong-correct: stance +2 conv 1 -> p=1, outcome 1 -> brier 0
     const forecasts = Array.from({ length: 6 }, () => ({
-      agent_id: 'technical', stance: 2, conviction: 1, outcome: 1,
+      agent_id: 'technical',
+      stance: 2,
+      conviction: 1,
+      outcome: 1,
     }));
     const writes = [];
     const repo = {
@@ -910,7 +968,10 @@ describe('recomputeReliability', () => {
 
   it('penalizes an agent whose confident calls resolved wrong', async () => {
     const forecasts = Array.from({ length: 6 }, () => ({
-      agent_id: 'social', stance: 2, conviction: 1, outcome: 0, // p=1, o=0 -> brier 1
+      agent_id: 'social',
+      stance: 2,
+      conviction: 1,
+      outcome: 0, // p=1, o=0 -> brier 1
     }));
     const repo = {
       getResolvedForecasts: async () => forecasts,
@@ -956,12 +1017,7 @@ Expected: FAIL — `Cannot find module '../../src/reliability/update.js'`
 
 ```js
 // src/reliability/update.js
-import {
-  forecastProb,
-  brier,
-  reliabilityFromBrier,
-  WINDOW,
-} from '../consensus/reliability.js';
+import { forecastProb, brier, reliabilityFromBrier, WINDOW } from '../consensus/reliability.js';
 
 export async function recomputeReliability(repo) {
   const rows = await repo.getResolvedForecasts(WINDOW * 8); // headroom for many agents
@@ -1001,10 +1057,12 @@ git commit -m "feat(legion): add Brier reliability recompute loop"
 ### Task 7: Emitter — apply ρ at aggregation, persist forecast snapshot + entry/horizon
 
 **Files:**
+
 - Modify: `src/emit/emitter.js`
 - Test: `test/emit/emitter-reliability.test.js`
 
 This **extends** the Phase 2 emitter (does not replace its tests). Two changes:
+
 1. Before each `evaluateRound` / `buildSignal`, load reliability once per cycle and `scaleWeights(votes, rhoMap)` so effective weight = `w_i · ρ_i`.
 2. On finalize, capture the entry price (latest close from the final votes' price context, falling back to `gunvest.getPrice`), compute `resolveAfter = now + horizonDays`, pass them to `addSignal`, then `addSignalVotes(signalId, finalVotes)`.
 
@@ -1026,19 +1084,23 @@ function buildRepo() {
     createCycle: async () => 1,
     addRound: async () => 1,
     addVote: async () => {},
-    addSignal: async (s) => { calls.signals.push(s); return 99; },
+    addSignal: async (s) => {
+      calls.signals.push(s);
+      return 99;
+    },
     addSignalVotes: async (id, votes) => calls.signalVotes.push({ id, votes }),
     finishCycle: async () => {},
     getAllReliability: async () => ({ technical: 1.5, news: 0.5 }),
   };
 }
 
-const votesFor = (cycleId, round) => ([
-  { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1.0, rationale: 't' },
-  { agentId: 'news', stance: 2, conviction: 0.9, weight: 1.2, rationale: 'n' },
-  { agentId: 'social', stance: 2, conviction: 0.8, weight: 0.8, rationale: 's' },
-  { agentId: 'contrarian', stance: 1, conviction: 0.6, weight: 0.9, rationale: 'c' },
-].map((v) => ({ cycleId, symbol: 'NVDA', round, vote: v })));
+const votesFor = (cycleId, round) =>
+  [
+    { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1.0, rationale: 't' },
+    { agentId: 'news', stance: 2, conviction: 0.9, weight: 1.2, rationale: 'n' },
+    { agentId: 'social', stance: 2, conviction: 0.8, weight: 0.8, rationale: 's' },
+    { agentId: 'contrarian', stance: 1, conviction: 0.6, weight: 0.9, rationale: 'c' },
+  ].map((v) => ({ cycleId, symbol: 'NVDA', round, vote: v }));
 
 describe('emitter reliability', () => {
   it('scales vote weights by rho before persisting the forecast snapshot', async () => {
@@ -1046,7 +1108,8 @@ describe('emitter reliability', () => {
     const repo = buildRepo();
     const gunvest = { getPrice: async () => ({ price: 120 }) };
     const emitter = createEmitter({
-      bus, repo,
+      bus,
+      repo,
       telegram: { send: async () => {} },
       consensus: { maxRounds: 3, thetaV: 0.5, quorum: 2 / 3, holdBand: 0.5 },
       expectedAgents: 4,
@@ -1112,53 +1175,56 @@ export function createEmitter({
 c) In the finalize path, where the Phase 2 emitter currently builds the signal from `votes`, scale first and snapshot after persisting. Replace the finalize block with:
 
 ```js
-    // --- finalize: aggregate with reliability-scaled weights ---
-    const rhoMap = await repo.getAllReliability();
-    const scaled = scaleWeights(votes, rhoMap);
+// --- finalize: aggregate with reliability-scaled weights ---
+const rhoMap = await repo.getAllReliability();
+const scaled = scaleWeights(votes, rhoMap);
 
-    const evalResult = evaluateRound(scaled, {
-      thetaV: consensus.thetaV,
-      quorum: consensus.quorum,
-      holdBand: consensus.holdBand,
-    });
+const evalResult = evaluateRound(scaled, {
+  thetaV: consensus.thetaV,
+  quorum: consensus.quorum,
+  holdBand: consensus.holdBand,
+});
 
-    let signal = buildSignal({ symbol, votes: scaled, evalResult });
-    if (riskEnabled && constraint) {
-      signal = applyRiskConstraint(signal, constraint);
-    }
+let signal = buildSignal({ symbol, votes: scaled, evalResult });
+if (riskEnabled && constraint) {
+  signal = applyRiskConstraint(signal, constraint);
+}
 
-    const now = clock();
-    const resolveAfter = new Date(now.getTime() + horizonDays * 86400000).toISOString();
-    let entryPrice = null;
-    if (gunvest) {
-      try {
-        const p = await gunvest.getPrice(symbol);
-        entryPrice = p?.price ?? null;
-      } catch (err) {
-        logger.error?.(`emitter: entry price fetch failed for ${symbol}: ${err.message}`);
-      }
-    }
+const now = clock();
+const resolveAfter = new Date(now.getTime() + horizonDays * 86400000).toISOString();
+let entryPrice = null;
+if (gunvest) {
+  try {
+    const p = await gunvest.getPrice(symbol);
+    entryPrice = p?.price ?? null;
+  } catch (err) {
+    logger.error?.(`emitter: entry price fetch failed for ${symbol}: ${err.message}`);
+  }
+}
 
-    const signalId = await repo.addSignal({
-      cycleId,
-      symbol,
-      stance: signal.stance,
-      conviction: signal.conviction,
-      plan: signal.plan,
-      entryPrice,
-      horizonDays,
-      resolveAfter,
-    });
-    await repo.addSignalVotes(signalId, scaled.map((v) => ({
-      agentId: v.agentId,
-      stance: v.stance,
-      conviction: v.conviction,
-      weight: v.weight,
-    })));
+const signalId = await repo.addSignal({
+  cycleId,
+  symbol,
+  stance: signal.stance,
+  conviction: signal.conviction,
+  plan: signal.plan,
+  entryPrice,
+  horizonDays,
+  resolveAfter,
+});
+await repo.addSignalVotes(
+  signalId,
+  scaled.map((v) => ({
+    agentId: v.agentId,
+    stance: v.stance,
+    conviction: v.conviction,
+    weight: v.weight,
+  })),
+);
 
-    await repo.finishCycle(cycleId, evalResult.converged ? 'converged' : 'no_consensus');
-    await telegram.send(formatSignal(signal));
-    await bus.publish(consensusSubject(symbol), { cycleId, symbol, signal });
+await repo.finishCycle(cycleId, evalResult.converged ? 'converged' : 'no_consensus');
+await telegram.send(formatSignal(signal));
+await bus.publish(consensusSubject(symbol), { cycleId, symbol, signal });
 ```
 
 > Keep the existing non-final path (republish `cycleSubject` round+1 with `priorVotes`) unchanged. `evaluateRound` for the **convergence check on intermediate rounds** should also use `scaled` weights — apply the same `scaleWeights(votes, rhoMap)` at the top of the ready-handler so every round aggregates consistently. Load `rhoMap` once per cycle and cache it in the pending entry to avoid re-querying each round.
@@ -1187,6 +1253,7 @@ git commit -m "feat(legion): scale consensus weights by reliability and snapshot
 ### Task 8: Deterministic indicators + quant stance (pure)
 
 **Files:**
+
 - Create: `src/backtest/indicators.js`
 - Test: `test/backtest/indicators.test.js`
 
@@ -1357,6 +1424,7 @@ git commit -m "feat(legion): add deterministic technical indicators and quant st
 ### Task 9: Deterministic backtest engine (pure)
 
 **Files:**
+
 - Create: `src/backtest/deterministic.js`
 - Test: `test/backtest/deterministic.test.js`
 
@@ -1481,6 +1549,7 @@ git commit -m "feat(legion): add deterministic backtest engine"
 ### Task 10: API routes — reliability leaderboard + backtest results
 
 **Files:**
+
 - Create: `src/api/routes/reliability.js`
 - Create: `src/api/routes/backtest.js`
 - Modify: `src/api/app.js` (mount the two routers)
@@ -1581,8 +1650,8 @@ In `src/api/app.js`, import and mount alongside the Phase 3 routers:
 import { reliabilityRouter } from './routes/reliability.js';
 import { backtestRouter } from './routes/backtest.js';
 // ... inside createApp, after existing app.use('/api/...') mounts:
-  app.use('/api/reliability', reliabilityRouter(repo));
-  app.use('/api/backtest', backtestRouter(repo));
+app.use('/api/reliability', reliabilityRouter(repo));
+app.use('/api/backtest', backtestRouter(repo));
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -1607,6 +1676,7 @@ git commit -m "feat(legion): add reliability and backtest API routes"
 ### Task 11: Entrypoints — reliability cron + backtest CLI, config, compose
 
 **Files:**
+
 - Modify: `config/index.js` (add `reliabilityCron`, `horizonDays`)
 - Create: `src/run/reliability.js`
 - Create: `src/run/backtest.js`
@@ -1629,10 +1699,16 @@ describe('runReliabilityOnce', () => {
   it('resolves due signals then recomputes reliability, returning a summary', async () => {
     const order = [];
     const repo = {
-      listUnresolvedSignals: async () => { order.push('list'); return []; },
+      listUnresolvedSignals: async () => {
+        order.push('list');
+        return [];
+      },
       resolveSignal: async () => {},
       getSignalStance: async () => 0,
-      getResolvedForecasts: async () => { order.push('forecasts'); return []; },
+      getResolvedForecasts: async () => {
+        order.push('forecasts');
+        return [];
+      },
       upsertReliability: async () => {},
     };
     const gunvest = { getCandles: async () => [] };
@@ -1759,13 +1835,13 @@ Expected: PASS (2 tests)
 - [ ] **Step 5: Add the `reliability` service to `docker-compose.yml`**
 
 ```yaml
-  reliability:
-    build: .
-    command: node src/run/reliability.js
-    env_file: .env
-    depends_on:
-      - api
-    restart: unless-stopped
+reliability:
+  build: .
+  command: node src/run/reliability.js
+  env_file: .env
+  depends_on:
+    - api
+  restart: unless-stopped
 ```
 
 (The backtest runner is a one-shot CLI — run it on demand via `docker compose run --rm reliability node src/run/backtest.js`, no long-lived service needed.)
@@ -1782,6 +1858,7 @@ git commit -m "feat(legion): add reliability cron and backtest CLI entrypoints"
 ### Task 12: Web — reliability board + backtest page
 
 **Files:**
+
 - Modify: `web/src/api/client.js` (add `getReliability`, `getBacktest`)
 - Create: `web/src/pages/ReliabilityBoard.jsx`
 - Create: `web/src/pages/BacktestPage.jsx`
@@ -1833,7 +1910,17 @@ afterEach(() => vi.restoreAllMocks());
 describe('BacktestPage', () => {
   it('renders backtest rows with hit-rate and pnl', async () => {
     vi.spyOn(api, 'getBacktest').mockResolvedValue([
-      { id: 1, symbol: 'NVDA', horizon: 5, trades: 12, hits: 8, hit_rate: 0.667, pnl: 0.21, spy_pnl: 0.05, qqq_pnl: 0.07 },
+      {
+        id: 1,
+        symbol: 'NVDA',
+        horizon: 5,
+        trades: 12,
+        hits: 8,
+        hit_rate: 0.667,
+        pnl: 0.21,
+        spy_pnl: 0.05,
+        qqq_pnl: 0.07,
+      },
     ]);
     render(<BacktestPage />);
     await waitFor(() => expect(screen.getByText('NVDA')).toBeInTheDocument());
@@ -1871,7 +1958,10 @@ export default function ReliabilityBoard() {
   const [rows, setRows] = useState(null);
 
   useEffect(() => {
-    api.getReliability().then(setRows).catch(() => setRows([]));
+    api
+      .getReliability()
+      .then(setRows)
+      .catch(() => setRows([]));
   }, []);
 
   if (rows && rows.length === 0) {
@@ -1911,7 +2001,10 @@ export default function BacktestPage() {
   const [rows, setRows] = useState(null);
 
   useEffect(() => {
-    api.getBacktest().then(setRows).catch(() => setRows([]));
+    api
+      .getBacktest()
+      .then(setRows)
+      .catch(() => setRows([]));
   }, []);
 
   if (rows && rows.length === 0) {
@@ -1971,6 +2064,7 @@ Expected: PASS (4 tests)
 - [ ] **Step 6: Manual browser verification**
 
 Run (three terminals): GunVest API up; `node src/run/api.js`; `cd web && npm run dev`.
+
 1. Seed: run `docker compose run --rm reliability node src/run/backtest.js` (or `node src/run/backtest.js`) to populate `backtest_results` for at least one enabled ticker.
 2. Open `http://localhost:5174`, click **Backtest** → see a row per ticker with hit-rate/P&L vs SPY/QQQ.
 3. Click **Reliability** → if no signals have resolved yet, confirm the empty state; otherwise rows show ρ per agent.
@@ -1993,12 +2087,13 @@ git commit -m "feat(legion): add reliability and backtest dashboard pages"
 
 **Effective weight is now live:** `W_i = w_i · ρ_i` actually varies. Before Phase 4 every ρ was 1.0; now the emitter reads `agent_reliability` each cycle. A brand-new deploy still behaves identically to Phase 3 until ≥5 signals per agent resolve (ρ stays 1.0).
 
-**Operational ordering:** signals must accrue and *age past their horizon* before `runReliabilityOnce` can resolve them and move ρ. Expect ρ to stay flat for the first ~`HORIZON_DAYS` of live running. Backtest results populate immediately (historical data), so the Backtest tab is the first thing that shows life.
+**Operational ordering:** signals must accrue and _age past their horizon_ before `runReliabilityOnce` can resolve them and move ρ. Expect ρ to stay flat for the first ~`HORIZON_DAYS` of live running. Backtest results populate immediately (historical data), so the Backtest tab is the first thing that shows life.
 
 **Deferred / known gaps:**
+
 - `getSignalStance` is a per-signal extra query in the resolver loop — fine at low signal volume; batch into `listUnresolvedSignals` if it ever gets hot.
 - Deterministic backtest indicators are self-contained in `src/backtest/indicators.js`, intentionally **not** shared with the Technical agent's LLM-prompt indicators (different consumers, avoided coupling). If they should converge later, unify behind one module.
-- Outcome event is *alpha vs SPY only* (QQQ stored for display, not scored). Revisit if you want a blended benchmark.
+- Outcome event is _alpha vs SPY only_ (QQQ stored for display, not scored). Revisit if you want a blended benchmark.
 - No de-duplication if a ticker is evaluated twice in one horizon window — each emitted signal is scored independently.
 - `getCandles` assumes a GunVest `/api/market/:symbol/candles?days=` endpoint returning `{ candles: [{date, close}] }`. **Verify this endpoint exists in GunVest**; if the shape differs, adjust only the mapping in `src/clients/gunvest.js` (Task 3), nothing downstream.
 

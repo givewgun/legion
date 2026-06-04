@@ -8,7 +8,7 @@
 
 **Tech Stack:** Node.js ≥18 (ESM, native `fetch`), Vitest (tests), `pg` (PostgreSQL), `nats` (message bus client), `dotenv`, ESLint + Prettier, Docker Compose (NATS + Ollama).
 
-Spec: `gunvest/docs/superpowers/specs/2026-06-04-legion-design.md` (§3 consensus, §5 architecture, §6 module contract, §10 phasing).
+Spec: `legion/docs/superpowers/specs/2026-06-04-legion-design.md` (§3 consensus, §5 architecture, §6 module contract, §10 phasing).
 
 ---
 
@@ -68,6 +68,7 @@ Pure logic (`consensus/`, `bus/subjects.js`, `config/`) is split from I/O (`bus/
 ## Task 1: Repo scaffold
 
 **Files:**
+
 - Create: `legion/package.json`
 - Create: `legion/.gitignore`
 - Create: `legion/.env.example`
@@ -80,11 +81,13 @@ Pure logic (`consensus/`, `bus/subjects.js`, `config/`) is split from I/O (`bus/
 - [ ] **Step 1: Create the repo directory and initialize git**
 
 Run (PowerShell):
+
 ```powershell
 New-Item -ItemType Directory -Force -Path "C:\Users\gunka\OneDrive\Documents\financial\legion"
 Set-Location "C:\Users\gunka\OneDrive\Documents\financial\legion"
 git init
 ```
+
 Expected: `Initialized empty Git repository`.
 
 - [ ] **Step 2: Write `package.json`**
@@ -217,10 +220,12 @@ describe('health', () => {
 - [ ] **Step 10: Install dependencies and run the test**
 
 Run:
+
 ```powershell
 npm install
 npm test
 ```
+
 Expected: 1 passing test (`health > reports ok status`).
 
 - [ ] **Step 11: Commit**
@@ -235,6 +240,7 @@ git commit -m "chore: scaffold legion repo with vitest + tooling"
 ## Task 2: Stance constants and helpers
 
 **Files:**
+
 - Create: `legion/src/consensus/stance.js`
 - Test: `legion/test/consensus/stance.test.js`
 
@@ -337,6 +343,7 @@ git commit -m "feat: add stance constants and helpers"
 ## Task 3: Vote schema (create + validate)
 
 **Files:**
+
 - Create: `legion/src/consensus/vote.js`
 - Test: `legion/test/consensus/vote.test.js`
 
@@ -453,6 +460,7 @@ git commit -m "feat: add vote schema with validation"
 ## Task 4: Consensus aggregation library (CORE)
 
 **Files:**
+
 - Create: `legion/src/consensus/aggregate.js`
 - Test: `legion/test/consensus/aggregate.test.js`
 
@@ -637,6 +645,7 @@ git commit -m "feat: add consensus aggregation library (S, V, kappa, convergence
 ## Task 5: Config loader
 
 **Files:**
+
 - Create: `legion/src/config/index.js`
 - Test: `legion/test/config/index.test.js`
 
@@ -736,6 +745,7 @@ git commit -m "feat: add config loader with consensus defaults"
 ## Task 6: NATS subject builders + connection wrapper
 
 **Files:**
+
 - Create: `legion/src/bus/subjects.js`
 - Create: `legion/src/bus/nats.js`
 - Test: `legion/test/bus/subjects.test.js`
@@ -907,6 +917,7 @@ git commit -m "feat: add NATS subject builders and JSON bus wrapper"
 ## Task 7: PostgreSQL legion schema + client
 
 **Files:**
+
 - Create: `legion/src/db/schema.sql`
 - Create: `legion/src/db/client.js`
 - Create: `legion/src/db/migrate.js`
@@ -1111,6 +1122,7 @@ git commit -m "feat: add legion postgres schema, db client, and migration runner
 ## Task 8: LLM provider abstraction (Ollama)
 
 **Files:**
+
 - Create: `legion/src/llm/provider.js`
 - Create: `legion/src/llm/ollama.js`
 - Test: `legion/test/llm/ollama.test.js`
@@ -1227,6 +1239,7 @@ git commit -m "feat: add pluggable LLM provider with Ollama implementation"
 ## Task 9: GunVest API client
 
 **Files:**
+
 - Create: `legion/src/data/gunvest.js`
 - Test: `legion/test/data/gunvest.test.js`
 
@@ -1323,6 +1336,7 @@ git commit -m "feat: add GunVest REST API client"
 ## Task 10: Docker Compose + README
 
 **Files:**
+
 - Create: `legion/docker-compose.yml`
 - Create: `legion/README.md`
 
@@ -1361,7 +1375,7 @@ volumes:
 Distributed multi-agent stock signal gestalt. Independent expert agents vote on a ticker
 and reach a leaderless, BFT-flavored consensus, delivered to Telegram and a dashboard.
 
-Design: see `gunvest/docs/superpowers/specs/2026-06-04-legion-design.md`.
+Design: see `legion/docs/superpowers/specs/2026-06-04-legion-design.md`.
 
 ## Status
 
@@ -1387,12 +1401,12 @@ npm test
 
 ## Consensus tuning (env)
 
-| Var | Default | Meaning |
-|-----|---------|---------|
-| `CONSENSUS_THETA_V` | 0.5 | Max dispersion `V_r` for convergence |
-| `CONSENSUS_QUORUM` | 0.6667 | Min directional quorum `κ_r` (2/3) |
-| `CONSENSUS_MAX_ROUNDS` | 3 | Round cap before NO_CONSENSUS |
-| `CONSENSUS_HOLD_BAND` | 0.5 | Neutral band half-width for `S_r` |
+| Var                    | Default | Meaning                              |
+| ---------------------- | ------- | ------------------------------------ |
+| `CONSENSUS_THETA_V`    | 0.5     | Max dispersion `V_r` for convergence |
+| `CONSENSUS_QUORUM`     | 0.6667  | Min directional quorum `κ_r` (2/3)   |
+| `CONSENSUS_MAX_ROUNDS` | 3       | Round cap before NO_CONSENSUS        |
+| `CONSENSUS_HOLD_BAND`  | 0.5     | Neutral band half-width for `S_r`    |
 ````
 
 - [ ] **Step 3: Run the full test suite**
@@ -1424,6 +1438,7 @@ When all tasks are green, write a short handover note (for the next session/phas
 ## Self-Review
 
 **Spec coverage (Phase 0 deliverables, spec §10):**
+
 - Repo + Docker → Tasks 1, 10 ✅
 - NATS → Task 6 ✅
 - `legion` schema → Task 7 ✅
