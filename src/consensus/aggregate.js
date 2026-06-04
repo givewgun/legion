@@ -24,18 +24,20 @@ export function weightedDispersion(votes, meanStance) {
   return num / den;
 }
 
-// κ_r = weighted fraction of votes whose side matches the target side.
-// Target side is sign(S): naturally 0 when S=0 (pure neutral), +1 or -1 otherwise.
-// holdBand is accepted for API symmetry but does not alter the target computation —
-// the dominant direction always wins even when |S| < holdBand (e.g. outlier-dragged mean).
+// κ_r = weighted fraction of votes whose side agrees with the aggregate.
+// The target side is sign(S). When the aggregate is near-neutral (|S| < holdBand),
+// HOLD voters (side 0) are also counted as agreeing — a near-flat consensus should
+// credit the agents sitting at HOLD, not just the marginal directional lean.
 export function directionalQuorum(votes, meanStance, holdBand = 0.5) {
   const den = totalWeight(votes);
   if (den === 0) return 0;
+  const inBand = Math.abs(meanStance) < holdBand;
   const target = Math.sign(meanStance);
-  const agree = votes.reduce(
-    (sum, vote) => (sideOf(vote.stance) === target ? sum + vote.weight * vote.conviction : sum),
-    0,
-  );
+  const agree = votes.reduce((sum, vote) => {
+    const side = sideOf(vote.stance);
+    const agrees = side === target || (inBand && side === 0);
+    return agrees ? sum + vote.weight * vote.conviction : sum;
+  }, 0);
   return agree / den;
 }
 
