@@ -1,0 +1,20 @@
+services:
+  nats:
+    image: nats:2.10-alpine
+    container_name: legion-nats
+    command: ['-js']
+    ports:
+      - '4222:4222'
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: legion-ollama
+    ports:
+      - '11434:11434'
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  ollama-data:
