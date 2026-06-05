@@ -35,3 +35,15 @@ npm test
 | `CONSENSUS_QUORUM` | 0.6667 | Min directional quorum `κ_r` (2/3) |
 | `CONSENSUS_MAX_ROUNDS` | 3 | Round cap before NO_CONSENSUS |
 | `CONSENSUS_HOLD_BAND` | 0.5 | Neutral band half-width for `S_r` |
+
+## Phase 1 — single agent end-to-end
+
+Run each role in its own terminal (NATS + Ollama + GunVest must be up):
+
+```bash
+npm run emitter            # terminal 1: waits for votes
+npm run agent:technical    # terminal 2: waits for cycles
+npm run kick NVDA          # terminal 3: kicks one cycle
+```
+
+A signal should arrive in Telegram and a row should appear in `legion.signals`.

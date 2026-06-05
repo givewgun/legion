@@ -11,3 +11,11 @@ export function voteSubject(ticker, round) {
 export function consensusSubject(ticker) {
   return `${PREFIX}.consensus.${ticker.toUpperCase()}`;
 }
+
+export function cycleWildcard() {
+  return `${PREFIX}.cycle.*`;
+}
+
+export function voteWildcard() {
+  return `${PREFIX}.vote.>`;
+}

@@ -1,0 +1,24 @@
+import { describe, it, expect } from 'vitest';
+import { buildSignal } from '../../src/emit/plan.js';
+
+const votes = [
+  { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'breakout' },
+];
+
+describe('buildSignal', () => {
+  it('emits a converged signal with band and conviction', () => {
+    const evalResult = { S: 1.8, V: 0.0, kappa: 1, converged: true, band: 'STRONG_BUY' };
+    const sig = buildSignal(evalResult, { symbol: 'NVDA', votes });
+    expect(sig.symbol).toBe('NVDA');
+    expect(sig.band).toBe('STRONG_BUY');
+    expect(sig.conviction).toBeCloseTo(0.9, 6); // |S|/2 capped at 1
+    expect(sig.plan.rationales).toEqual([{ agentId: 'technical', rationale: 'breakout' }]);
+  });
+
+  it('emits NO_CONSENSUS when the round did not converge', () => {
+    const evalResult = { S: 0.1, V: 4, kappa: 0.5, converged: false, band: 'HOLD' };
+    const sig = buildSignal(evalResult, { symbol: 'MU', votes });
+    expect(sig.band).toBe('NO_CONSENSUS');
+    expect(sig.conviction).toBe(0);
+  });
+});
