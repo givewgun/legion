@@ -11,14 +11,14 @@ seed → run the agents → see a signal. For the design see
 Legion is a set of **independent Node processes** that talk over a NATS message bus. They
 read market data from GunVest's REST API and persist debate state to a shared Postgres.
 
-| Component | Provided by | Default address | Required? |
-|---|---|---|---|
-| **NATS** message bus | `docker compose` (this repo) | `nats://localhost:4222` | yes |
-| **Ollama** local LLM | `docker compose` (this repo) | `http://localhost:11434` | yes (agents vote via it) |
-| **PostgreSQL** (`legion` schema) | GunVest (shared instance) | `postgres://postgres:postgres@localhost:5432/gunvest` | yes (emitter/orchestrator/scheduler) |
-| **GunVest REST API** | GunVest repo (separate) | `http://localhost:3001` | yes for live data¹ |
-| **Telegram bot** | GunVest's bot token | — | optional (signal delivery) |
-| **Finnhub** | finnhub.io free key | — | optional (short-interest feed only) |
+| Component                        | Provided by                  | Default address                                       | Required?                            |
+| -------------------------------- | ---------------------------- | ----------------------------------------------------- | ------------------------------------ |
+| **NATS** message bus             | `docker compose` (this repo) | `nats://localhost:4222`                               | yes                                  |
+| **Ollama** local LLM             | `docker compose` (this repo) | `http://localhost:11434`                              | yes (agents vote via it)             |
+| **PostgreSQL** (`legion` schema) | GunVest (shared instance)    | `postgres://postgres:postgres@localhost:5432/gunvest` | yes (emitter/orchestrator/scheduler) |
+| **GunVest REST API**             | GunVest repo (separate)      | `http://localhost:3001`                               | yes for live data¹                   |
+| **Telegram bot**                 | GunVest's bot token          | —                                                     | optional (signal delivery)           |
+| **Finnhub**                      | finnhub.io free key          | —                                                     | optional (short-interest feed only)  |
 
 ¹ Without GunVest the agents still run, but every `gather()` fails → each agent **abstains**
 (HOLD/0) and signals are meaningless. The Contrarian's net-new feeds (CNN put/call, AAII,
@@ -123,18 +123,18 @@ the host one-shot `npm run kick NVDA` against the same NATS.
 
 ## 6. Configuration (`.env`)
 
-| Var | Default | Notes |
-|---|---|---|
-| `GUNVEST_API_URL` | `http://localhost:3001` | GunVest REST base |
-| `DATABASE_URL` | `postgres://postgres:postgres@localhost:5432/gunvest` | shared Postgres; `legion` schema |
-| `NATS_URL` | `nats://localhost:4222` | message bus |
-| `OLLAMA_URL` / `OLLAMA_MODEL` | `http://localhost:11434` / `qwen2.5:7b-instruct` | local LLM |
-| `LEGION_EXPECTED_AGENTS` | `4` | votes the emitter waits for per round |
-| `LEGION_RISK_ENABLED` | `true` | also wait for the risk constraint before finalizing |
-| `LEGION_CRON` | `0 */6 * * *` | scheduler cadence (every 6h) |
-| `CONSENSUS_THETA_V` / `_QUORUM` / `_MAX_ROUNDS` / `_HOLD_BAND` | `0.5` / `0.6667` / `3` / `0.5` | consensus tuning |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | — | signal delivery (optional) |
-| `FINNHUB_API_KEY` | — | enables the Contrarian short-interest feed only; copy from GunVest. The other feeds (F&G, VIX, put/call, AAII, NAAIM) are live without it |
+| Var                                                            | Default                                               | Notes                                                                                                                                     |
+| -------------------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `GUNVEST_API_URL`                                              | `http://localhost:3001`                               | GunVest REST base                                                                                                                         |
+| `DATABASE_URL`                                                 | `postgres://postgres:postgres@localhost:5432/gunvest` | shared Postgres; `legion` schema                                                                                                          |
+| `NATS_URL`                                                     | `nats://localhost:4222`                               | message bus                                                                                                                               |
+| `OLLAMA_URL` / `OLLAMA_MODEL`                                  | `http://localhost:11434` / `qwen2.5:7b-instruct`      | local LLM                                                                                                                                 |
+| `LEGION_EXPECTED_AGENTS`                                       | `4`                                                   | votes the emitter waits for per round                                                                                                     |
+| `LEGION_RISK_ENABLED`                                          | `true`                                                | also wait for the risk constraint before finalizing                                                                                       |
+| `LEGION_CRON`                                                  | `0 */6 * * *`                                         | scheduler cadence (every 6h)                                                                                                              |
+| `CONSENSUS_THETA_V` / `_QUORUM` / `_MAX_ROUNDS` / `_HOLD_BAND` | `0.5` / `0.6667` / `3` / `0.5`                        | consensus tuning                                                                                                                          |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`                      | —                                                     | signal delivery (optional)                                                                                                                |
+| `FINNHUB_API_KEY`                                              | —                                                     | enables the Contrarian short-interest feed only; copy from GunVest. The other feeds (F&G, VIX, put/call, AAII, NAAIM) are live without it |
 
 ---
 
@@ -162,13 +162,13 @@ Run the test suite (infra-free): `npm test`.
 
 ## 8. Troubleshooting
 
-| Symptom | Cause / fix |
-|---|---|
-| `insert or update on table "cycles" violates foreign key` | Ticker not seeded — run the `INSERT INTO legion.tickers` from §3. |
-| Agents log `cycle error` and abstain (every vote HOLD/0) | GunVest API not reachable at `GUNVEST_API_URL`, or `getMacro`/`getPrice` shape differs. Confirm `curl localhost:3001/api/macro`. |
-| Emitter never emits | Fewer than `LEGION_EXPECTED_AGENTS` agents running, or `LEGION_RISK_ENABLED=true` but the `risk` process is down (emitter waits for the constraint). Start all 5 + risk. |
-| `ECONNREFUSED 4222` | NATS not up — `docker compose up -d nats`. |
-| Ollama timeouts / `model not found` | `docker exec -it legion-ollama ollama pull qwen2.5:7b-instruct`; first inference is slow on CPU. |
-| Short-interest feed always `null` | `FINNHUB_API_KEY` unset (expected — only that feed needs it). |
-| AAII / NAAIM feed `null` | HTML scrape of aaii.com / ycharts.com; layout-fragile and degrades to `null` on any change. Other feeds are unaffected. |
-| Docker agents can't reach DB/NATS | Using `localhost` inside containers — apply the §5 `nats`/`ollama`/`host.docker.internal` overrides. |
+| Symptom                                                   | Cause / fix                                                                                                                                                              |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `insert or update on table "cycles" violates foreign key` | Ticker not seeded — run the `INSERT INTO legion.tickers` from §3.                                                                                                        |
+| Agents log `cycle error` and abstain (every vote HOLD/0)  | GunVest API not reachable at `GUNVEST_API_URL`, or `getMacro`/`getPrice` shape differs. Confirm `curl localhost:3001/api/macro`.                                         |
+| Emitter never emits                                       | Fewer than `LEGION_EXPECTED_AGENTS` agents running, or `LEGION_RISK_ENABLED=true` but the `risk` process is down (emitter waits for the constraint). Start all 5 + risk. |
+| `ECONNREFUSED 4222`                                       | NATS not up — `docker compose up -d nats`.                                                                                                                               |
+| Ollama timeouts / `model not found`                       | `docker exec -it legion-ollama ollama pull qwen2.5:7b-instruct`; first inference is slow on CPU.                                                                         |
+| Short-interest feed always `null`                         | `FINNHUB_API_KEY` unset (expected — only that feed needs it).                                                                                                            |
+| AAII / NAAIM feed `null`                                  | HTML scrape of aaii.com / ycharts.com; layout-fragile and degrades to `null` on any change. Other feeds are unaffected.                                                  |
+| Docker agents can't reach DB/NATS                         | Using `localhost` inside containers — apply the §5 `nats`/`ollama`/`host.docker.internal` overrides.                                                                     |
