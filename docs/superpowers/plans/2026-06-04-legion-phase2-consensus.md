@@ -916,11 +916,18 @@ Each source is isolated, TTL-cached, and returns a value **or `null`** — a dea
 blocks or crashes the agent. Its persona uses the **peers** dissent block to argue against the
 _forming_ consensus, so it is most active in round ≥ 2.
 
-**Free-source reality (2026):** Finnhub short interest is free (needs `FINNHUB_API_KEY`, copy from
-GunVest). CBOE's public put/call CSV is stale and the live daily series has no confirmed free JSON;
-AAII/NAAIM have no confirmed free machine endpoint. So `cboe`/`aaii`/`naaim` ship as best-effort
-fetchers (parse logic ready, return `null` until a source URL is supplied) — the pluggable +
-graceful-degrade design the spec calls for. F&G, VIX, and short interest are live now.
+**Free-source reality (2026):** every feed is wired to a live free source.
+- F&G + VIX → GunVest REST (already there).
+- Put/call → CNN fear&greed `graphdata` JSON `put_call_options` sub-indicator (the raw CBOE 5-day
+  ratio). CBOE's own public CSV was abandoned (data ends ~2016) so it is NOT used.
+- AAII → scrape `aaii.com/sentimentsurvey/sent_results` (first three `tableTxt` % cells).
+- NAAIM → scrape `ycharts.com/indicators/naaim_number` (first key-stat value).
+- Short interest → Finnhub (needs `FINNHUB_API_KEY`, copy from GunVest; `null` without it).
+
+CNN and AAII/YCharts reject bare Node UAs, so those fetchers send browser headers. The AAII/NAAIM
+HTML scrapes are layout-fragile by nature; like every source they return `null` on any failure
+(non-2xx, parse miss, missing marker) — pluggable + graceful-degrade, a dead upstream never blocks
+a vote.
 
 ### 7a. Feeds module (`src/data/feeds/`)
 
@@ -930,20 +937,23 @@ graceful-degrade design the spec calls for. F&G, VIX, and short interest are liv
   non-2xx (callers convert to `null`).
 - `finnhub.js` — `fetchShortInterest({ symbol, apiKey, fetchImpl })` → `{ shortInterest, date } |
   null` (null when no key / non-200 / empty). Crowded shorts = squeeze fuel = contrarian-bullish.
-- `cboe.js` — `fetchPutCall({ fetchImpl, url? })` → `{ ratio, date } | null`, parses the last data
-  row of CBOE's put/call CSV. High ratio = fear = contrarian-bullish.
-- `aaii.js` — `fetchAaii({ fetchImpl, url })` → `{ bullish, bearish, neutral, spread } | null`
-  (null without a `url`). High bullish share = greed = contrarian-bearish.
-- `naaim.js` — `fetchNaaim({ fetchImpl, url })` → `{ exposure, date } | null` (null without a `url`).
-  High exposure = crowded long = contrarian-bearish.
+- `cboe.js` — `fetchPutCall({ fetchImpl, url? })` → `{ ratio, score, rating, date } | null`. Pulls
+  CNN `graphdata` `put_call_options` (raw CBOE 5-day ratio = latest `data[].y`); browser headers
+  required (CNN returns 418 otherwise). High ratio = fear = contrarian-bullish.
+- `aaii.js` — `fetchAaii({ fetchImpl, url? })` → `{ bullish, neutral, bearish, spread } | null`.
+  Scrapes the first three `tableTxt` % cells (percent units). High bullish share = greed =
+  contrarian-bearish.
+- `naaim.js` — `fetchNaaim({ fetchImpl, url? })` → `{ exposure, date } | null`. Scrapes the first
+  YCharts key-stat value (`null` if the `key-stat` marker is absent). High exposure = crowded long =
+  contrarian-bearish.
 - `index.js` — `createContrarianFeeds({ gunvest, finnhubApiKey, fetchImpl?, cache?, sources?, logger? })`
   exposing `gather(symbol)` → `{ fearGreed, vix, putCall, aaii, naaim, shortInterest }`. Runs all six
   via `Promise.all`, each wrapped in a `safe()` that returns `null` on throw and behind
   `cache.getOrFetch` (F&G/VIX ~1h, put/call ~6h, AAII/NAAIM/short ~24h; short interest keyed per
   symbol). `fearGreed`/`vix` come from `gunvest.getStockFearGreed()`/`getMacro().vix`.
 
-Tests: one `*.test.js` per source (fixture via injected `fetchImpl`; null on non-ok / no key / no
-url), `cache.test.js` (TTL hit/expiry), and `index.test.js` (merges six keys; a single failing
+Tests: one `*.test.js` per source (fixture via injected `fetchImpl`; null on non-ok / parse miss /
+no key), `cache.test.js` (TTL hit/expiry), and `index.test.js` (merges six keys; a single failing
 source → that key `null`, others present; market-wide feeds cached across tickers).
 
 ### 7b. GunVest client + config

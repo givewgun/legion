@@ -183,8 +183,10 @@ limits the trade, it doesn't decide it.
 | **Risk Manager** | — | volatility, downside, sizing | ❌ | deterministic safety constraint |
 
 Adding an agent is config + a `gather` function + a persona prompt — every voting agent
-shares one runner. The contrarian's true feeds (put/call, AAII, NAAIM, Fear & Greed, short
-interest) drop into its `gather` behind the same shape later.
+shares one runner. The contrarian pulls a live crowd-positioning panel via `src/data/feeds/`:
+Fear & Greed + VIX (GunVest REST), put/call (CNN `graphdata`), AAII (aaii.com scrape), NAAIM
+(YCharts scrape), short interest (Finnhub). Each source is isolated and degrades to `null` on
+failure, so a dead upstream never blocks a vote.
 
 ---
 
@@ -265,7 +267,7 @@ Delivery / pipeline:
 | `LEGION_EXPECTED_AGENTS` | votes the emitter waits for before evaluating (4 in Phase 2) |
 | `LEGION_RISK_ENABLED` | require the risk constraint before finalizing (`true` by default) |
 | `LEGION_CRON` | scheduler cadence (default `0 */6 * * *`, every 6h) |
-| `FINNHUB_API_KEY` | Contrarian short-interest feed; copy from GunVest. Other contrarian feeds degrade to null without it |
+| `FINNHUB_API_KEY` | Enables the Contrarian short-interest feed only; copy from GunVest. The other feeds (F&G, VIX, put/call, AAII, NAAIM) are live without it; short interest returns null when unset |
 
 LLM provider is pluggable (`local` Ollama by default; `gemini` / `openai` selectable per
 agent) via [`src/llm/provider.js`](src/llm/provider.js).
