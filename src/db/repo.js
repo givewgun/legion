@@ -49,5 +49,13 @@ export function createRepo(db) {
         cycleId,
       ]);
     },
+
+    async listEnabledTickers() {
+      // db.query returns the rows array directly (see src/db/client.js).
+      const rows = await db.query(
+        `SELECT symbol FROM legion.tickers WHERE enabled = true ORDER BY symbol`,
+      );
+      return rows.map((r) => r.symbol);
+    },
   };
 }

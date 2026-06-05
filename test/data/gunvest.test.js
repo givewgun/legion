@@ -35,6 +35,14 @@ describe('createGunvestClient', () => {
     expect(fetchMock).toHaveBeenCalledWith('http://api:3001/api/macro');
   });
 
+  it('fetches the equity (stock) fear & greed index', async () => {
+    const fetchMock = fetchReturning({ value: 72, label: 'Greed' });
+    const client = createGunvestClient('http://api:3001', fetchMock);
+    const data = await client.getStockFearGreed();
+    expect(data).toEqual({ value: 72, label: 'Greed' });
+    expect(fetchMock).toHaveBeenCalledWith('http://api:3001/api/sentiment/stock/fear-greed');
+  });
+
   it('throws on a non-ok response', async () => {
     const fetchMock = vi.fn(async () => ({ ok: false, status: 404 }));
     const client = createGunvestClient('http://api:3001', fetchMock);
