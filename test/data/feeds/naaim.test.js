@@ -1,23 +1,45 @@
 import { describe, it, expect, vi } from 'vitest';
 import { fetchNaaim } from '../../../src/data/feeds/naaim.js';
 
-const ok = (body) => ({ ok: true, status: 200, json: async () => body, text: async () => '' });
+const okText = (text) => ({
+  ok: true,
+  status: 200,
+  json: async () => ({}),
+  text: async () => text,
+});
+
+const failResponse = { ok: false, status: 500, text: async () => '' };
+
+// Fixture: decoy number 99.9 appears in a paragraph BEFORE the key-stat marker
+// (but does NOT contain the literal text "key-stat"), so it must be ignored.
+// First key-stat value is 86.82 (current NAAIM exposure).
+const FIXTURE_HTML_SIMPLE = `
+<html><body>
+  <p>Some trailing context >99.9< unrelated</p>
+  <div id="key-stat-section">
+    <p class="something">
+      >86.82<
+    </p>
+    <p>>98.39<</p>
+  </div>
+</body></html>
+`;
 
 describe('fetchNaaim', () => {
-  it('returns null when no source url is configured', async () => {
-    const fetchImpl = vi.fn();
-    expect(await fetchNaaim({ fetchImpl })).toBeNull();
-    expect(fetchImpl).not.toHaveBeenCalled();
+  it('parses exposure from key-stat region, ignoring decoy before marker', async () => {
+    const fetchImpl = vi.fn(async () => okText(FIXTURE_HTML_SIMPLE));
+    const res = await fetchNaaim({ fetchImpl, url: 'http://x/naaim' });
+    expect(res).toEqual({ exposure: 86.82, date: null });
+    expect(fetchImpl).toHaveBeenCalledOnce();
   });
 
-  it('parses the exposure value and date', async () => {
-    const fetchImpl = vi.fn(async () => ok({ exposure: 72.5, date: '2026-06-04' }));
-    const res = await fetchNaaim({ fetchImpl, url: 'http://x/naaim.json' });
-    expect(res).toEqual({ exposure: 72.5, date: '2026-06-04' });
+  it('returns null when no key-stat value is present', async () => {
+    const fetchImpl = vi.fn(async () => okText('<html><body><p>no data</p></body></html>'));
+    expect(await fetchNaaim({ fetchImpl, url: 'http://x/naaim' })).toBeNull();
   });
 
-  it('returns null on an unexpected shape', async () => {
-    const fetchImpl = vi.fn(async () => ok({ nope: true }));
-    expect(await fetchNaaim({ fetchImpl, url: 'http://x/naaim.json' })).toBeNull();
+  it('returns null on a non-ok response', async () => {
+    const fetchImpl = vi.fn(async () => failResponse);
+    expect(await fetchNaaim({ fetchImpl, url: 'http://x/naaim' })).toBeNull();
   });
 });

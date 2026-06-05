@@ -14,6 +14,8 @@ const DAY = 24 * HOUR;
 // failure, so a dead upstream never blocks or crashes the agent.
 // put/call is sourced live from CNN Fear & Greed graphdata (`put_call_options`)
 // which exposes the CBOE 5-day put/call ratio; no API key required.
+// AAII is scraped from aaii.com (HTML scrape, layout-fragile, degrades to null).
+// NAAIM is scraped from YCharts (HTML scrape, layout-fragile, degrades to null).
 export function createContrarianFeeds({
   gunvest,
   finnhubApiKey,
