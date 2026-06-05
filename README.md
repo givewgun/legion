@@ -208,6 +208,9 @@ handover notes in [`docs/superpowers/handovers/`](docs/superpowers/handovers/).
 
 ## Quick start
 
+> Full local-stack walkthrough (infra, migrate, seed, run every process, verify,
+> troubleshoot): **[docs/RUNNING.md](docs/RUNNING.md)**.
+
 **Prerequisites:** Node.js ≥ 18 · Docker (NATS + Ollama) · a running GunVest instance
 (REST API + PostgreSQL).
 
