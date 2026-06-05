@@ -1,26 +1,61 @@
-import { voteWildcard, consensusSubject } from '../bus/subjects.js';
+import {
+  voteWildcard,
+  constraintWildcard,
+  cycleSubject,
+  consensusSubject,
+} from '../bus/subjects.js';
 import { evaluateRound } from '../consensus/aggregate.js';
 import { buildSignal } from './plan.js';
+import { applyRiskConstraint } from '../risk/apply.js';
 import { formatSignal } from './telegram.js';
 
-// Collects votes per cycle and finalizes once expectedAgents have voted.
+// Collects votes (+ optional risk constraint) per (cycleId, round). When the
+// round is complete it persists the round, then either finalizes (converged or
+// round cap) or republishes the cycle for another round with dissent.
 export function createEmitter({
   bus,
   repo,
   telegram,
   consensus,
   expectedAgents,
+  riskEnabled = false,
   logger = console,
 }) {
-  const pending = new Map(); // cycleId -> { symbol, round, votes: [] }
+  const rounds = new Map(); // `${cycleId}:${round}` -> { symbol, round, votes, constraint }
 
-  async function finalize(cycleId, entry) {
-    const votes = entry.votes;
-    const result = evaluateRound(votes, consensus);
+  function key(cycleId, round) {
+    return `${cycleId}:${round}`;
+  }
+
+  function touch(cycleId, round, symbol) {
+    const k = key(cycleId, round);
+    if (!rounds.has(k)) rounds.set(k, { symbol, round, votes: [], constraint: null });
+    return { k, entry: rounds.get(k) };
+  }
+
+  function ready(entry) {
+    return entry.votes.length >= expectedAgents && (!riskEnabled || entry.constraint !== null);
+  }
+
+  async function process(cycleId, k, entry) {
+    rounds.delete(k); // guard against double-finalize
+    const result = evaluateRound(entry.votes, consensus);
     const roundId = await repo.addRound(cycleId, entry.round, result);
-    for (const v of votes) await repo.addVote(roundId, v);
+    for (const v of entry.votes) await repo.addVote(roundId, v);
 
-    const signal = buildSignal(result, { symbol: entry.symbol, votes });
+    const isFinal = result.converged || entry.round >= consensus.maxRounds;
+    if (!isFinal) {
+      bus.publishJSON(cycleSubject(entry.symbol), {
+        cycleId,
+        symbol: entry.symbol,
+        round: entry.round + 1,
+        priorVotes: entry.votes,
+      });
+      return;
+    }
+
+    let signal = buildSignal(result, { symbol: entry.symbol, votes: entry.votes });
+    if (riskEnabled) signal = applyRiskConstraint(signal, entry.constraint);
     await repo.addSignal(cycleId, signal);
     await repo.finishCycle(cycleId, result.converged ? 'converged' : 'no_consensus');
 
@@ -36,13 +71,15 @@ export function createEmitter({
     start() {
       bus.subscribeJSON(voteWildcard(), (msg) => {
         const { cycleId, symbol, round, vote } = msg;
-        if (!pending.has(cycleId)) pending.set(cycleId, { symbol, round, votes: [] });
-        const entry = pending.get(cycleId);
+        const { k, entry } = touch(cycleId, round, symbol);
         entry.votes.push(vote);
-        if (entry.votes.length >= expectedAgents) {
-          pending.delete(cycleId);
-          finalize(cycleId, entry);
-        }
+        if (ready(entry)) process(cycleId, k, entry);
+      });
+      bus.subscribeJSON(constraintWildcard(), (msg) => {
+        const { cycleId, symbol, round, constraint } = msg;
+        const { k, entry } = touch(cycleId, round, symbol);
+        entry.constraint = constraint;
+        if (ready(entry)) process(cycleId, k, entry);
       });
     },
   };
