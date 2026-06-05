@@ -9,7 +9,10 @@
     "test:watch": "vitest",
     "lint": "eslint src test",
     "format": "prettier --write \"**/*.{js,json,md}\"",
-    "db:migrate": "node src/db/migrate.js"
+    "db:migrate": "node src/db/migrate.js",
+    "agent:technical": "node src/run/agent-technical.js",
+    "emitter": "node src/run/emitter.js",
+    "kick": "node src/run/orchestrator.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
