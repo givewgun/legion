@@ -69,6 +69,14 @@ describe('fetchPutCall', () => {
     expect(await fetchPutCall({ fetchImpl, url: 'http://x/graphdata' })).toBeNull();
   });
 
+  it('returns null when the latest data point has no ratio value', async () => {
+    const fixture = {
+      put_call_options: { score: 50, rating: 'neutral', data: [{ x: 1780444800000 }] },
+    };
+    const fetchImpl = vi.fn(async () => ok(fixture));
+    expect(await fetchPutCall({ fetchImpl, url: 'http://x/graphdata' })).toBeNull();
+  });
+
   it('passes browser headers including Referer and Origin', async () => {
     const fetchImpl = vi.fn(async () => ok(CNN_FIXTURE));
     await fetchPutCall({ fetchImpl, url: 'http://x/graphdata' });

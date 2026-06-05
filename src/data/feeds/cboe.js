@@ -20,6 +20,7 @@ export async function fetchPutCall({ fetchImpl, url = DEFAULT_URL } = {}) {
     if (!pco || !Array.isArray(pco.data) || pco.data.length === 0) return null;
 
     const latest = pco.data[pco.data.length - 1];
+    if (latest.y == null || latest.x == null) return null;
     const ratio = latest.y;
     const date = new Date(latest.x).toISOString().slice(0, 10);
     const score = pco.score ?? null;
