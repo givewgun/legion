@@ -11,14 +11,14 @@
 ## 1. Where things stand
 
 - **Phase 0** (foundation) merged on `main`.
-- **Phase 1** (single technical agent) on `claude/legion-phase1`, PR #1 — unmerged.
-- **Phase 2** (4 agents + risk + multi-round consensus + scheduler + live contrarian feeds) on `claude/legion-phase2` — committed, **143 tests green**, unmerged.
-- **Phase 3** (dashboard) on **`claude/legion-phase3`** (branched off `claude/legion-phase2`), 8 commits `acb2f57..469f074`, **unmerged**.
+- **Phase 1** (single technical agent) — folded into the Phase 2 line that merged to `main`.
+- **Phase 2** (4 agents + risk + multi-round consensus + scheduler + live contrarian feeds) — **MERGED to `main`** (`claude/legion-phase2` is a clean ancestor of `origin/main`). **143 tests green** at merge.
+- **Phase 3** (dashboard) on **`claude/legion-phase3`**, 8 commits `acb2f57..469f074` + handover `fc9c185`. **PR #4 open against `main`** (https://github.com/givewgun/legion/pull/4) — phase3-only diff (9 commits, 42 files). Unmerged pending review + live browser pass.
   - Backend suite: **167 tests green** (143 prior + 24 new across repo.read/debate/tickers/cycles/signals).
   - Web suite (`web/`, own vitest): **14 tests green** (format 3, client 5, RoundCard 2, SignalFeed 2, TickerConfig 2).
   - `npx eslint src test` clean; `web/` `npm run build` succeeds.
 
-**FIRST ACTION for the Phase 4 session:** decide the branch base. Branches are stacked (phase3 → phase2 → phase1 → main), none merged to `main`. Either merge the stack to `main` first, or branch Phase 4 off `claude/legion-phase3` (it depends on Phase 3's per-round persistence + dashboard for the Backtest tab). Then `git checkout -b claude/legion-phase4`.
+**FIRST ACTION for the Phase 4 session:** confirm PR #4 is merged to `main` (or decide to branch Phase 4 off `claude/legion-phase3`). Phase 4 depends on Phase 3's dashboard (adds a Backtest tab) and Phase 2's per-round persistence. Do not start Phase 4 on a `main` that lacks Phase 3 if the Backtest tab work assumes the dashboard shell. Then `git checkout -b claude/legion-phase4` off whatever has Phase 3.
 
 ## 2. What Phase 3 built (8 tasks)
 
