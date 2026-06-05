@@ -17,7 +17,8 @@
     "risk": "node src/run/risk.js",
     "scheduler": "node src/run/scheduler.js",
     "emitter": "node src/run/emitter.js",
-    "kick": "node src/run/orchestrator.js"
+    "kick": "node src/run/orchestrator.js",
+    "api": "node src/run/api.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

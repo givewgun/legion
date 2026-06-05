@@ -12,6 +12,7 @@ export function loadConfig(env = process.env) {
     finnhubApiKey: env.FINNHUB_API_KEY || '',
     natsUrl: env.NATS_URL || 'nats://localhost:4222',
     databaseUrl: env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/gunvest',
+    apiPort: num(env, 'LEGION_API_PORT', 8088),
     ollama: {
       url: env.OLLAMA_URL || 'http://localhost:11434',
       model: env.OLLAMA_MODEL || 'qwen2.5:7b-instruct',
