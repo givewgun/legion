@@ -9,6 +9,7 @@ function num(env, key, fallback) {
 export function loadConfig(env = process.env) {
   return {
     gunvestApiUrl: env.GUNVEST_API_URL || 'http://localhost:3001',
+    finnhubApiKey: env.FINNHUB_API_KEY || '',
     natsUrl: env.NATS_URL || 'nats://localhost:4222',
     databaseUrl: env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/gunvest',
     ollama: {
