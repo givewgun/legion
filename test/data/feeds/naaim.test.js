@@ -42,4 +42,14 @@ describe('fetchNaaim', () => {
     const fetchImpl = vi.fn(async () => failResponse);
     expect(await fetchNaaim({ fetchImpl, url: 'http://x/naaim' })).toBeNull();
   });
+
+  it('parses a negative exposure value', async () => {
+    const fetchImpl = vi.fn(async () =>
+      okText('<html><body>key-stat <p>>-12.5<</p></body></html>'),
+    );
+    expect(await fetchNaaim({ fetchImpl, url: 'http://x/naaim' })).toEqual({
+      exposure: -12.5,
+      date: null,
+    });
+  });
 });
