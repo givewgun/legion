@@ -58,7 +58,13 @@ legion/
       social/
         config.js prompt.js gather.js index.js
       contrarian/
-        config.js prompt.js gather.js index.js
+        config.js prompt.js gather.js index.js   # gather merges sentiment + feeds panel
+    data/
+      gunvest.js         # MODIFY: add getStockFearGreed()
+      feeds/             # NEW: contrarian crowd-positioning feeds (legion-side)
+        cache.js http.js cboe.js aaii.js naaim.js finnhub.js index.js
+    config/
+      index.js           # MODIFY: add finnhubApiKey
     risk/
       gather.js          # NEW: gatherRisk(gunvest, symbol)
       rules.js           # NEW: computeConstraint(data)
@@ -890,119 +896,92 @@ git commit -m "feat: add social sentiment agent"
 
 ---
 
-## Task 7: Contrarian agent
+## Task 7: Contrarian agent + real crowd-positioning feeds
 
 **Files:**
 
-- Create: `legion/src/agents/contrarian/config.js`
-- Create: `legion/src/agents/contrarian/gather.js`
-- Create: `legion/src/agents/contrarian/prompt.js`
-- Create: `legion/src/agents/contrarian/index.js`
-- Test: `legion/test/agents/contrarian/gather.test.js`, `legion/test/agents/contrarian/prompt.test.js`
+- Create: `legion/src/data/feeds/{cache,http,cboe,aaii,naaim,finnhub,index}.js`
+- Modify: `legion/src/data/gunvest.js` (add `getStockFearGreed`)
+- Modify: `legion/src/config/index.js` (add `finnhubApiKey`)
+- Create: `legion/src/agents/contrarian/{config,gather,prompt,index}.js`
+- Test: `legion/test/data/feeds/*.test.js`, `legion/test/agents/contrarian/{gather,prompt}.test.js`,
+  add a `getStockFearGreed` case to `legion/test/data/gunvest.test.js`
 
-The Contrarian fades extremes. Its data is the crowd-positioning proxy available now: social sentiment + macro VIX (true contrarian feeds — put/call, AAII, NAAIM, F&G, short interest — drop into `gather` later behind the same shape, spec §4.1). Crucially its persona uses the **peers** dissent block to argue against the _forming_ consensus, so it is most active in round ≥ 2.
+The Contrarian fades extremes using **real** positioning data (spec §4.1), fetched legion-side and
+degrading gracefully when a source is down. CNN Fear & Greed (equities) and VIX are already served
+by GunVest (`/api/sentiment/stock/fear-greed`, `/api/macro`) so they are **reused** from the GunVest
+client — GunVest stays the source of truth (spec §2). CBOE put/call, AAII bull/bear, NAAIM exposure,
+and Finnhub short interest are **not** on GunVest, so a new `src/data/feeds/` module fetches them.
+Each source is isolated, TTL-cached, and returns a value **or `null`** — a dead upstream never
+blocks or crashes the agent. Its persona uses the **peers** dissent block to argue against the
+_forming_ consensus, so it is most active in round ≥ 2.
 
-- [ ] **Step 1: Write `src/agents/contrarian/config.js`**
+**Free-source reality (2026):** Finnhub short interest is free (needs `FINNHUB_API_KEY`, copy from
+GunVest). CBOE's public put/call CSV is stale and the live daily series has no confirmed free JSON;
+AAII/NAAIM have no confirmed free machine endpoint. So `cboe`/`aaii`/`naaim` ship as best-effort
+fetchers (parse logic ready, return `null` until a source URL is supplied) — the pluggable +
+graceful-degrade design the spec calls for. F&G, VIX, and short interest are live now.
+
+### 7a. Feeds module (`src/data/feeds/`)
+
+- `cache.js` — `createTtlCache(now?)` → `{ getOrFetch(key, ttlMs, fn) }`. Market-wide feeds must not
+  be re-hit per ticker during a scheduler sweep.
+- `http.js` — `getJson`/`getText` with an `AbortController` timeout + browser headers; throw on
+  non-2xx (callers convert to `null`).
+- `finnhub.js` — `fetchShortInterest({ symbol, apiKey, fetchImpl })` → `{ shortInterest, date } |
+  null` (null when no key / non-200 / empty). Crowded shorts = squeeze fuel = contrarian-bullish.
+- `cboe.js` — `fetchPutCall({ fetchImpl, url? })` → `{ ratio, date } | null`, parses the last data
+  row of CBOE's put/call CSV. High ratio = fear = contrarian-bullish.
+- `aaii.js` — `fetchAaii({ fetchImpl, url })` → `{ bullish, bearish, neutral, spread } | null`
+  (null without a `url`). High bullish share = greed = contrarian-bearish.
+- `naaim.js` — `fetchNaaim({ fetchImpl, url })` → `{ exposure, date } | null` (null without a `url`).
+  High exposure = crowded long = contrarian-bearish.
+- `index.js` — `createContrarianFeeds({ gunvest, finnhubApiKey, fetchImpl?, cache?, sources?, logger? })`
+  exposing `gather(symbol)` → `{ fearGreed, vix, putCall, aaii, naaim, shortInterest }`. Runs all six
+  via `Promise.all`, each wrapped in a `safe()` that returns `null` on throw and behind
+  `cache.getOrFetch` (F&G/VIX ~1h, put/call ~6h, AAII/NAAIM/short ~24h; short interest keyed per
+  symbol). `fearGreed`/`vix` come from `gunvest.getStockFearGreed()`/`getMacro().vix`.
+
+Tests: one `*.test.js` per source (fixture via injected `fetchImpl`; null on non-ok / no key / no
+url), `cache.test.js` (TTL hit/expiry), and `index.test.js` (merges six keys; a single failing
+source → that key `null`, others present; market-wide feeds cached across tickers).
+
+### 7b. GunVest client + config
+
+- `src/data/gunvest.js`: add `getStockFearGreed: () => get('/api/sentiment/stock/fear-greed')`.
+- `src/config/index.js`: add `finnhubApiKey: env.FINNHUB_API_KEY || ''`.
+
+### 7c. Contrarian agent
 
 ```js
-// The Contrarian is a deliberate counterweight; modest prior so it tempers,
-// not dominates. Its value is dispersion and second-look, not raw direction.
-export const contrarianConfig = {
-  id: 'contrarian',
-  weight: 0.9,
-  provider: 'local',
-};
+// config.js — modest prior so it tempers, not dominates.
+export const contrarianConfig = { id: 'contrarian', weight: 0.9, provider: 'local' };
 ```
 
-- [ ] **Step 2: Write the failing test `test/agents/contrarian/gather.test.js`**
-
 ```js
-import { describe, it, expect } from 'vitest';
-import { gather } from '../../../src/agents/contrarian/gather.js';
-
-describe('contrarian gather', () => {
-  it('pulls sentiment and the macro VIX as a positioning proxy', async () => {
-    let seenSentiment;
-    const gunvest = {
-      getSentiment: async (s) => {
-        seenSentiment = s;
-        return { score: 0.9, volume: 5000 };
-      },
-      getMacro: async () => ({ vix: 13 }),
-    };
-    const data = await gather(gunvest, 'nvda');
-    expect(seenSentiment).toBe('NVDA');
-    expect(data).toEqual({ sentiment: { score: 0.9, volume: 5000 }, macro: { vix: 13 } });
-  });
-});
-```
-
-- [ ] **Step 3: Run test to verify it fails**
-
-Run: `npx vitest run test/agents/contrarian/gather.test.js`
-Expected: FAIL — `Cannot find module '.../contrarian/gather.js'`.
-
-- [ ] **Step 4: Write `src/agents/contrarian/gather.js`**
-
-```js
-// Contrarian inputs: crowd sentiment + macro fear gauge (VIX) as a positioning
-// proxy. Dedicated contrarian feeds (put/call, AAII, NAAIM, F&G, short interest)
-// slot in here later behind the same return shape — no runner changes.
-export async function gather(gunvest, symbol) {
+// gather.js — per-ticker sentiment (GunVest) + the market-wide positioning panel (feeds).
+export async function gather(gunvest, symbol, feeds) {
   const sym = symbol.toUpperCase();
-  const [sentiment, macro] = await Promise.all([gunvest.getSentiment(sym), gunvest.getMacro()]);
-  return { sentiment, macro };
+  const [sentiment, positioning] = await Promise.all([gunvest.getSentiment(sym), feeds.gather(sym)]);
+  return { sentiment, ...positioning };
 }
 ```
 
-- [ ] **Step 5: Write the failing test `test/agents/contrarian/prompt.test.js`**
-
 ```js
-import { describe, it, expect } from 'vitest';
-import { buildPrompt } from '../../../src/agents/contrarian/prompt.js';
-
-describe('contrarian buildPrompt', () => {
-  it('produces a contrarian persona that fades extremes', () => {
-    const { system, prompt } = buildPrompt('NVDA', {
-      sentiment: { score: 0.9 },
-      macro: { vix: 13 },
-    });
-    expect(system).toMatch(/contrarian|fade|devil/i);
-    expect(prompt).toContain('NVDA');
-    expect(prompt).toMatch(/"stance"/);
-  });
-
-  it('foregrounds peer dissent so it can argue against the forming consensus', () => {
-    const { prompt } = buildPrompt(
-      'MU',
-      { sentiment: {}, macro: {} },
-      '- technical voted STRONG_BUY (conviction 0.9): breakout',
-    );
-    expect(prompt).toContain('prior round');
-    expect(prompt).toContain('technical');
-  });
-});
-```
-
-- [ ] **Step 6: Run test to verify it fails**
-
-Run: `npx vitest run test/agents/contrarian/prompt.test.js`
-Expected: FAIL — `Cannot find module '.../contrarian/prompt.js'`.
-
-- [ ] **Step 7: Write `src/agents/contrarian/prompt.js`**
-
-```js
+// prompt.js — persona names each real feed's contrarian meaning and tolerates null fields.
 import { RESPONSE_SPEC, dissentBlock } from '../format.js';
 
 const SYSTEM = `You are the contrarian on a multi-agent trading desk — the desk's devil's advocate.
-You fade crowded extremes: when the crowd is euphoric and fear is low you lean bearish;
-when the crowd is panicked and fear is high you lean bullish. When your peers are converging,
-your job is to stress-test that consensus with the strongest opposing case the data supports.`;
+You fade crowded extremes using real positioning data:
+- High CNN Fear & Greed, high AAII bullish share, or high NAAIM exposure = crowded greed -> lean bearish.
+- High VIX, high CBOE put/call ratio, panicked sentiment, or crowded short interest = fear/squeeze fuel -> lean bullish.
+Any field may be null when a feed is unavailable; ignore nulls and reason over what is present.
+When your peers are converging, stress-test that consensus with the strongest opposing case the data supports.`;
 
 export function buildPrompt(symbol, data, peers = '') {
   const prompt = `Take the contrarian view on ${symbol}.
 
-Positioning proxy data (JSON):
+Crowd-positioning panel (JSON; null = feed unavailable):
 ${JSON.stringify(data, null, 2)}${dissentBlock(peers)}
 
 ${RESPONSE_SPEC}`;
@@ -1010,18 +989,17 @@ ${RESPONSE_SPEC}`;
 }
 ```
 
-- [ ] **Step 8: Write `src/agents/contrarian/index.js`**
-
 ```js
+// index.js — bind the injected feeds client into gather; factory runner unchanged.
 import { createAgent } from '../factory.js';
 import { gather } from './gather.js';
 import { buildPrompt } from './prompt.js';
 
-export function createContrarianAgent({ bus, gunvest, provider, config, logger = console }) {
+export function createContrarianAgent({ bus, gunvest, provider, config, feeds, logger = console }) {
   return createAgent({
     id: config.id,
     weight: config.weight,
-    gather,
+    gather: (gv, symbol) => gather(gv, symbol, feeds),
     buildPrompt,
     bus,
     gunvest,
@@ -1031,16 +1009,20 @@ export function createContrarianAgent({ bus, gunvest, provider, config, logger =
 }
 ```
 
-- [ ] **Step 9: Run the contrarian tests**
+The entrypoint (`src/run/agent-contrarian.js`, Task 12) builds the real feeds client:
+`const feeds = createContrarianFeeds({ gunvest, finnhubApiKey: cfg.finnhubApiKey });`
 
-Run: `npx vitest run test/agents/contrarian/`
-Expected: PASS (gather 1 + prompt 2).
+- [ ] **Run the contrarian + feeds tests**
 
-- [ ] **Step 10: Commit**
+Run: `npx vitest run test/data/feeds/ test/agents/contrarian/ test/data/gunvest.test.js`
+Expected: PASS (feeds 18 + contrarian gather 1 / prompt 3 + gunvest incl. F&G).
+
+- [ ] **Commit**
 
 ```bash
-git add src/agents/contrarian test/agents/contrarian
-git commit -m "feat: add contrarian agent"
+git add src/data/feeds src/data/gunvest.js src/config/index.js src/agents/contrarian \
+  test/data/feeds test/agents/contrarian test/data/gunvest.test.js
+git commit -m "feat: add contrarian agent with real crowd-positioning feeds"
 ```
 
 ---
@@ -2235,7 +2217,7 @@ Capture for the next session:
 
 - News/Catalyst agent (+macro) → Task 5 ✅
 - Social Sentiment agent → Task 6 ✅
-- Contrarian agent (+positioning proxy, peer-dissent argument) → Task 7 ✅
+- Contrarian agent (+real crowd-positioning feeds: F&G/VIX reused from GunVest, CBOE/AAII/NAAIM/short-interest fetched legion-side with graceful null degradation; peer-dissent argument) → Task 7 ✅
 - Risk Manager non-voting deterministic constraint, applied to magnitude/entry only → Task 8 ✅
 - Multi-round iteration with forced dissent exposure (`priorVotes` → `summarizePeers` → prompt) → Tasks 3, 4, 9 ✅
 - Convergence / `R_max` termination (`converged` vs `no_consensus`) → Task 9 ✅
