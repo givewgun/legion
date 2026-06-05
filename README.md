@@ -194,7 +194,7 @@ interest) drop into its `gather` behind the same shape later.
 |---|---|---|
 | **0 Foundation** | repo, Docker, NATS, `legion` schema, consensus + vote libs, LLM provider, GunVest client | ✅ done |
 | **1 Single agent E2E** | Technical agent → vote → emitter → Telegram, one ticker | ✅ done |
-| **2 Consensus** | News / Social / Contrarian + Risk constraint, multi-round iteration, multi-ticker | ⏳ next |
+| **2 Consensus** | News / Social / Contrarian + Risk constraint, multi-round iteration, multi-ticker | ✅ done |
 | **3 Dashboard** | debate viewer, ticker config, signal feed | ▫ planned |
 | **4 Backtest + reliability** | forward paper-test, index compare, `ρ_i` loop | ▫ planned |
 | **5 Summary + polish** | 6h Telegram summary, provider-switch UI, docs | ▫ planned |
@@ -218,17 +218,31 @@ npm run db:migrate         # create the legion schema in GunVest's Postgres
 npm test                   # full suite, infra-free
 ```
 
-### Run the Phase 1 pipeline
+### Run the Phase 2 gestalt
 
-Each role is its own process (NATS + Ollama + GunVest must be up):
+Seed at least one enabled ticker:
 
-```bash
-npm run emitter            # terminal 1: waits for votes, runs consensus, emits
-npm run agent:technical    # terminal 2: waits for cycles, votes
-npm run kick NVDA          # terminal 3: kicks one evaluation cycle
+```sql
+INSERT INTO legion.tickers (symbol, enabled) VALUES ('NVDA', true)
+ON CONFLICT (symbol) DO UPDATE SET enabled = true;
 ```
 
-A signal arrives in Telegram and a row appears in `legion.signals`.
+Each role is its own process (NATS + Ollama + GunVest + Postgres must be up):
+
+```bash
+npm run emitter            # waits for 4 votes + the risk constraint per round
+npm run agent:technical
+npm run agent:news
+npm run agent:social
+npm run agent:contrarian   # real crowd-positioning feeds (F&G, VIX, put/call, AAII, NAAIM, short interest)
+npm run risk               # non-voting deterministic constraint node
+npm run scheduler -- --now # kicks every enabled ticker immediately
+```
+
+Or bring the whole topology up with Docker: `docker compose up -d`.
+
+A consensus signal (or `NO_CONSENSUS`) lands in Telegram per ticker, and `legion.rounds`
+holds every round of the debate for the dashboard.
 
 ---
 
@@ -248,7 +262,10 @@ Delivery / pipeline:
 | Var | Meaning |
 |---|---|
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | signal delivery (reuses GunVest's bot) |
-| `LEGION_EXPECTED_AGENTS` | votes the emitter waits for before evaluating (1 in Phase 1) |
+| `LEGION_EXPECTED_AGENTS` | votes the emitter waits for before evaluating (4 in Phase 2) |
+| `LEGION_RISK_ENABLED` | require the risk constraint before finalizing (`true` by default) |
+| `LEGION_CRON` | scheduler cadence (default `0 */6 * * *`, every 6h) |
+| `FINNHUB_API_KEY` | Contrarian short-interest feed; copy from GunVest. Other contrarian feeds degrade to null without it |
 
 LLM provider is pluggable (`local` Ollama by default; `gemini` / `openai` selectable per
 agent) via [`src/llm/provider.js`](src/llm/provider.js).

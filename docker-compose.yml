@@ -16,5 +16,54 @@ services:
       - ollama-data:/root/.ollama
     restart: unless-stopped
 
+  emitter:
+    build: .
+    command: npm run emitter
+    env_file: .env
+    depends_on: [nats]
+    restart: unless-stopped
+
+  agent-technical:
+    build: .
+    command: npm run agent:technical
+    env_file: .env
+    depends_on: [nats, ollama]
+    restart: unless-stopped
+
+  agent-news:
+    build: .
+    command: npm run agent:news
+    env_file: .env
+    depends_on: [nats, ollama]
+    restart: unless-stopped
+
+  agent-social:
+    build: .
+    command: npm run agent:social
+    env_file: .env
+    depends_on: [nats, ollama]
+    restart: unless-stopped
+
+  agent-contrarian:
+    build: .
+    command: npm run agent:contrarian
+    env_file: .env
+    depends_on: [nats, ollama]
+    restart: unless-stopped
+
+  risk:
+    build: .
+    command: npm run risk
+    env_file: .env
+    depends_on: [nats]
+    restart: unless-stopped
+
+  scheduler:
+    build: .
+    command: npm run scheduler
+    env_file: .env
+    depends_on: [nats]
+    restart: unless-stopped
+
 volumes:
   ollama-data:

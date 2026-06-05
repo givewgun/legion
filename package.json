@@ -11,12 +11,18 @@
     "format": "prettier --write \"**/*.{js,json,md}\"",
     "db:migrate": "node src/db/migrate.js",
     "agent:technical": "node src/run/agent-technical.js",
+    "agent:news": "node src/run/agent-news.js",
+    "agent:social": "node src/run/agent-social.js",
+    "agent:contrarian": "node src/run/agent-contrarian.js",
+    "risk": "node src/run/risk.js",
+    "scheduler": "node src/run/scheduler.js",
     "emitter": "node src/run/emitter.js",
     "kick": "node src/run/orchestrator.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "nats": "^2.28.0",
+    "node-cron": "^3.0.3",
     "pg": "^8.20.0"
   },
   "devDependencies": {

@@ -14,7 +14,17 @@ const token = process.env.TELEGRAM_BOT_TOKEN;
 const chatId = process.env.TELEGRAM_CHAT_ID;
 const telegram = (text) => sendTelegram(token, chatId, text);
 
-const expectedAgents = Number(process.env.LEGION_EXPECTED_AGENTS || '1');
+const expectedAgents = Number(process.env.LEGION_EXPECTED_AGENTS || '4');
+const riskEnabled = process.env.LEGION_RISK_ENABLED !== 'false';
 
-createEmitter({ bus, repo, telegram, consensus: cfg.consensus, expectedAgents }).start();
-console.log(`[emitter] listening for votes (expectedAgents=${expectedAgents})`);
+createEmitter({
+  bus,
+  repo,
+  telegram,
+  consensus: cfg.consensus,
+  expectedAgents,
+  riskEnabled,
+}).start();
+console.log(
+  `[emitter] listening for votes (expectedAgents=${expectedAgents}, risk=${riskEnabled})`,
+);
