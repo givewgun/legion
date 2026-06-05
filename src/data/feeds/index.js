@@ -12,6 +12,8 @@ const DAY = 24 * HOUR;
 // (the source of truth); put/call, AAII, NAAIM, and short interest are fetched
 // legion-side. Every source is isolated, TTL-cached, and degraded to `null` on
 // failure, so a dead upstream never blocks or crashes the agent.
+// put/call is sourced live from CNN Fear & Greed graphdata (`put_call_options`)
+// which exposes the CBOE 5-day put/call ratio; no API key required.
 export function createContrarianFeeds({
   gunvest,
   finnhubApiKey,

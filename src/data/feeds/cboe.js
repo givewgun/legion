@@ -1,27 +1,31 @@
-import { getText, BROWSER_HEADERS } from './http.js';
+import { getJson, BROWSER_HEADERS } from './http.js';
 
-// CBOE publishes a put/call CSV (DATE, CALL, PUT, TOTAL, P/C Ratio). A high ratio
-// = fear = contrarian-bullish. NOTE: CBOE's public CSV is currently stale; the
-// live daily series now sits behind their stats page / DataShop with no confirmed
-// free JSON. This fetcher parses whatever CSV the configured URL returns and is
-// ready to point at a live source; until then it degrades to `null`.
-const DEFAULT_URL =
-  'https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/equitypc.csv';
-const DATE_RE = /^(\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2})$/;
+// CBOE 5-day put/call ratio sourced from CNN Fear & Greed graphdata API.
+// The `put_call_options` sub-indicator exposes the raw CBOE ratio in its `data`
+// array (latest = last element). A high ratio = fear = contrarian-bullish.
+const DEFAULT_URL = 'https://production.dataviz.cnn.io/index/fearandgreed/graphdata';
+
+// CNN's edge CDN requires browser-like headers; bare Node UA returns HTTP 418.
+const CNN_HEADERS = {
+  ...BROWSER_HEADERS,
+  'Accept-Language': 'en-US,en;q=0.9',
+  Referer: 'https://www.cnn.com/markets/fear-and-greed',
+  Origin: 'https://www.cnn.com',
+};
 
 export async function fetchPutCall({ fetchImpl, url = DEFAULT_URL } = {}) {
   try {
-    const text = await getText(url, { fetchImpl, headers: BROWSER_HEADERS });
-    const lines = text.trim().split(/\r?\n/).filter(Boolean);
-    // Walk from the last row up to the most recent line that looks like data.
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const cols = lines[i].split(',').map((c) => c.trim());
-      const ratio = Number(cols[cols.length - 1]);
-      if (cols.length >= 2 && DATE_RE.test(cols[0]) && !Number.isNaN(ratio)) {
-        return { ratio, date: cols[0] };
-      }
-    }
-    return null;
+    const body = await getJson(url, { fetchImpl, headers: CNN_HEADERS });
+    const pco = body?.put_call_options;
+    if (!pco || !Array.isArray(pco.data) || pco.data.length === 0) return null;
+
+    const latest = pco.data[pco.data.length - 1];
+    const ratio = latest.y;
+    const date = new Date(latest.x).toISOString().slice(0, 10);
+    const score = pco.score ?? null;
+    const rating = pco.rating ?? null;
+
+    return { ratio, score, rating, date };
   } catch {
     return null;
   }
