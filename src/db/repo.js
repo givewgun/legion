@@ -57,5 +57,81 @@ export function createRepo(db) {
       );
       return rows.map((r) => r.symbol);
     },
+
+    async listTickers() {
+      const rows = await db.query(
+        `SELECT symbol, enabled FROM legion.tickers ORDER BY symbol`,
+      );
+      return rows;
+    },
+
+    async upsertTicker(symbol) {
+      return db.queryOne(
+        `INSERT INTO legion.tickers (symbol, enabled) VALUES ($1, true)
+         ON CONFLICT (symbol) DO UPDATE SET enabled = true
+         RETURNING symbol, enabled`,
+        [symbol.toUpperCase()],
+      );
+    },
+
+    async setTickerEnabled(symbol, enabled) {
+      return db.queryOne(
+        `UPDATE legion.tickers SET enabled = $1 WHERE symbol = $2
+         RETURNING symbol, enabled`,
+        [enabled, symbol.toUpperCase()],
+      );
+    },
+
+    async listCycles(symbol, limit = 20) {
+      const rows = await db.query(
+        `SELECT id, symbol, status, started_at, ended_at
+         FROM legion.cycles WHERE symbol = $1
+         ORDER BY id DESC LIMIT $2`,
+        [symbol.toUpperCase(), limit],
+      );
+      return rows;
+    },
+
+    async getCycle(id) {
+      return db.queryOne(
+        `SELECT id, symbol, status, started_at, ended_at FROM legion.cycles WHERE id = $1`,
+        [id],
+      );
+    },
+
+    async getRounds(cycleId) {
+      const rows = await db.query(
+        `SELECT id, round_no, s_score, dispersion, quorum, converged
+         FROM legion.rounds WHERE cycle_id = $1 ORDER BY round_no`,
+        [cycleId],
+      );
+      return rows;
+    },
+
+    async getVotes(roundId) {
+      const rows = await db.query(
+        `SELECT agent_id, stance, conviction, weight, rationale
+         FROM legion.votes WHERE round_id = $1 ORDER BY agent_id`,
+        [roundId],
+      );
+      return rows;
+    },
+
+    async listSignals(symbol, limit = 50) {
+      if (symbol) {
+        const rows = await db.query(
+          `SELECT id, symbol, band, conviction, plan, created_at
+           FROM legion.signals WHERE symbol = $1 ORDER BY id DESC LIMIT $2`,
+          [symbol.toUpperCase(), limit],
+        );
+        return rows;
+      }
+      const rows = await db.query(
+        `SELECT id, symbol, band, conviction, plan, created_at
+         FROM legion.signals ORDER BY id DESC LIMIT $1`,
+        [limit],
+      );
+      return rows;
+    },
   };
 }
