@@ -2,9 +2,17 @@
 export function createRepo(db) {
   return {
     async createCycle(symbol) {
-      const row = await db.queryOne(`INSERT INTO legion.cycles (symbol) VALUES ($1) RETURNING id`, [
-        symbol,
-      ]);
+      // Seed the ticker first (cycles.symbol has an FK to legion.tickers) so the
+      // live `kick <TICKER>` path works on a freshly migrated database. Done in a
+      // single statement via a CTE so it stays one round-trip and one query call.
+      const row = await db.queryOne(
+        `WITH seeded AS (
+           INSERT INTO legion.tickers (symbol) VALUES ($1)
+           ON CONFLICT (symbol) DO NOTHING
+         )
+         INSERT INTO legion.cycles (symbol) VALUES ($1) RETURNING id`,
+        [symbol],
+      );
       return row.id;
     },
 
