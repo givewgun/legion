@@ -19,3 +19,11 @@ export function cycleWildcard() {
 export function voteWildcard() {
   return `${PREFIX}.vote.>`;
 }
+
+export function constraintSubject(ticker, round) {
+  return `${PREFIX}.constraint.${ticker.toUpperCase()}.${round}`;
+}
+
+export function constraintWildcard() {
+  return `${PREFIX}.constraint.>`;
+}
