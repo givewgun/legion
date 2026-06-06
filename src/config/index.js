@@ -13,6 +13,8 @@ export function loadConfig(env = process.env) {
     natsUrl: env.NATS_URL || 'nats://localhost:4222',
     databaseUrl: env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/gunvest',
     apiPort: num(env, 'LEGION_API_PORT', 8088),
+    reliabilityCron: env.LEGION_RELIABILITY_CRON || '0 */12 * * *',
+    horizonDays: num(env, 'LEGION_HORIZON_DAYS', 5),
     ollama: {
       url: env.OLLAMA_URL || 'http://localhost:11434',
       model: env.OLLAMA_MODEL || 'qwen2.5:7b-instruct',

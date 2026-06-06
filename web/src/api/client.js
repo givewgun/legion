@@ -22,4 +22,7 @@ export const api = {
   getDebate: (id) => get(`/api/cycles/${id}`),
   listSignals: (symbol) =>
     get(symbol ? `/api/signals?symbol=${encodeURIComponent(symbol)}` : '/api/signals'),
+  getReliability: () => get('/api/reliability'),
+  getBacktest: (symbol) =>
+    get(symbol ? `/api/backtest?symbol=${encodeURIComponent(symbol)}` : '/api/backtest'),
 };

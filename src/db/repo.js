@@ -1,3 +1,5 @@
+import { STANCE } from '../consensus/stance.js';
+
 // Persistence over the legion schema. Each method maps to one INSERT/UPDATE.
 export function createRepo(db) {
   return {
@@ -36,11 +38,119 @@ export function createRepo(db) {
 
     async addSignal(cycleId, signal) {
       const row = await db.queryOne(
-        `INSERT INTO legion.signals (cycle_id, symbol, band, conviction, plan)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        [cycleId, signal.symbol, signal.band, signal.conviction, JSON.stringify(signal.plan)],
+        `INSERT INTO legion.signals
+           (cycle_id, symbol, band, conviction, plan, entry_price, horizon_days, resolve_after)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id`,
+        [
+          cycleId,
+          signal.symbol,
+          signal.band,
+          signal.conviction,
+          JSON.stringify(signal.plan),
+          signal.entryPrice ?? null,
+          signal.horizonDays ?? 5,
+          signal.resolveAfter ?? null,
+        ],
       );
       return row.id;
+    },
+
+    async addSignalVotes(signalId, votes) {
+      if (!votes.length) return;
+      const tuples = [];
+      const params = [];
+      votes.forEach((v, i) => {
+        const b = i * 5;
+        tuples.push(`($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5})`);
+        params.push(signalId, v.agentId, v.stance, v.conviction, v.weight);
+      });
+      await db.query(
+        `INSERT INTO legion.signal_votes (signal_id, agent_id, stance, conviction, weight)
+         VALUES ${tuples.join(', ')}`,
+        params,
+      );
+    },
+
+    async getAllReliability() {
+      const rows = await db.query(`SELECT agent_id, rho FROM legion.agent_reliability`);
+      return Object.fromEntries(rows.map((r) => [r.agent_id, r.rho]));
+    },
+
+    async upsertReliability(agentId, rho, sampleSize) {
+      await db.query(
+        `INSERT INTO legion.agent_reliability (agent_id, rho, sample_size, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (agent_id) DO UPDATE
+           SET rho = EXCLUDED.rho, sample_size = EXCLUDED.sample_size, updated_at = now()`,
+        [agentId, rho, sampleSize],
+      );
+    },
+
+    async getReliabilityLeaderboard() {
+      const rows = await db.query(
+        `SELECT agent_id, rho, sample_size FROM legion.agent_reliability ORDER BY rho DESC`,
+      );
+      return rows.map((r) => ({ agentId: r.agent_id, rho: r.rho, sampleSize: r.sample_size }));
+    },
+
+    async listUnresolvedSignals(now) {
+      return db.query(
+        `SELECT id, symbol, created_at, entry_price
+           FROM legion.signals
+          WHERE resolved = false AND resolve_after IS NOT NULL AND resolve_after <= $1
+          ORDER BY resolve_after ASC`,
+        [now],
+      );
+    },
+
+    async resolveSignal(id, { forwardReturn, spyReturn, qqqReturn, outcome, correct }) {
+      await db.query(
+        `UPDATE legion.signals
+            SET forward_return = $1, spy_return = $2, qqq_return = $3,
+                outcome = $4, correct = $5, resolved = true
+          WHERE id = $6`,
+        [forwardReturn, spyReturn, qqqReturn, outcome, correct, id],
+      );
+    },
+
+    async getSignalStance(id) {
+      const row = await db.queryOne(`SELECT band FROM legion.signals WHERE id = $1`, [id]);
+      return STANCE[row?.band] ?? 0;
+    },
+
+    async getResolvedForecasts(limit) {
+      return db.query(
+        `SELECT sv.agent_id, sv.stance, sv.conviction, s.outcome
+           FROM legion.signal_votes sv
+           JOIN legion.signals s ON s.id = sv.signal_id
+          WHERE s.resolved = true AND s.outcome IS NOT NULL
+          ORDER BY s.id DESC
+          LIMIT $1`,
+        [limit],
+      );
+    },
+
+    async recordBacktestResult({ symbol, horizon, trades, hits, hitRate, pnl, spyPnl, qqqPnl }) {
+      await db.query(
+        `INSERT INTO legion.backtest_results
+           (symbol, horizon, trades, hits, hit_rate, pnl, spy_pnl, qqq_pnl)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [symbol, horizon, trades, hits, hitRate, pnl, spyPnl, qqqPnl],
+      );
+    },
+
+    async listBacktestResults(symbol, limit) {
+      if (symbol) {
+        return db.query(
+          `SELECT * FROM legion.backtest_results WHERE symbol = $1 ORDER BY created_at DESC LIMIT $2`,
+          [symbol.toUpperCase(), limit],
+        );
+      }
+      return db.query(
+        `SELECT * FROM legion.backtest_results ORDER BY created_at DESC LIMIT $1`,
+        [limit],
+      );
     },
 
     async finishCycle(cycleId, status) {

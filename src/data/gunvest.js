@@ -11,5 +11,9 @@ export function createGunvestClient(baseUrl, fetchImpl = fetch) {
     getSentiment: (symbol) => get(`/api/sentiment/${symbol.toUpperCase()}`),
     getStockFearGreed: () => get(`/api/sentiment/stock/fear-greed`),
     getMacro: () => get(`/api/macro`),
+    getCandles: async (symbol, days) => {
+      const body = await get(`/api/market/${symbol.toUpperCase()}/candles?days=${days}`);
+      return (body.candles ?? []).map((c) => ({ date: c.date, close: c.close }));
+    },
   };
 }

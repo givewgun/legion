@@ -81,6 +81,15 @@ services:
     depends_on: [nats]
     restart: unless-stopped
 
+  # Long-lived cron: resolves due signals and recomputes agent reliability ρ.
+  # The one-shot backtest is run on demand: docker compose run --rm reliability npm run backtest
+  reliability:
+    build: .
+    container_name: legion-reliability
+    command: npm run reliability
+    env_file: .env
+    restart: unless-stopped
+
   web:
     build: ./web
     container_name: legion-web

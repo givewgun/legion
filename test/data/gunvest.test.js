@@ -48,4 +48,31 @@ describe('createGunvestClient', () => {
     const client = createGunvestClient('http://api:3001', fetchMock);
     await expect(client.getPrice('ZZZ')).rejects.toThrow('GunVest API GET /api/market/ZZZ -> 404');
   });
+
+  describe('getCandles', () => {
+    it('requests the candles endpoint and maps date/close', async () => {
+      const fetchMock = vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          candles: [
+            { date: '2026-05-01', close: 100 },
+            { date: '2026-05-02', close: 102 },
+          ],
+        }),
+      }));
+      const client = createGunvestClient('http://x', fetchMock);
+      const out = await client.getCandles('NVDA', 30);
+      expect(fetchMock).toHaveBeenCalledWith('http://x/api/market/NVDA/candles?days=30');
+      expect(out).toEqual([
+        { date: '2026-05-01', close: 100 },
+        { date: '2026-05-02', close: 102 },
+      ]);
+    });
+
+    it('throws on a non-ok candles response', async () => {
+      const fetchMock = vi.fn(async () => ({ ok: false, status: 503 }));
+      const client = createGunvestClient('http://x', fetchMock);
+      await expect(client.getCandles('NVDA', 30)).rejects.toThrow(/503/);
+    });
+  });
 });

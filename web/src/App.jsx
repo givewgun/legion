@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { SignalFeed } from './pages/SignalFeed.jsx';
 import { DebateViewer } from './pages/DebateViewer.jsx';
 import { TickerConfig } from './pages/TickerConfig.jsx';
+import { ReliabilityBoard } from './pages/ReliabilityBoard.jsx';
+import { BacktestPage } from './pages/BacktestPage.jsx';
 
-const TABS = ['Signals', 'Debate', 'Config'];
+const TABS = ['Signals', 'Debate', 'Config', 'Reliability', 'Backtest'];
 
 export function App() {
   const [tab, setTab] = useState('Signals');
@@ -38,6 +40,8 @@ export function App() {
       {tab === 'Signals' && <SignalFeed />}
       {tab === 'Debate' && <DebateViewer symbol={symbol} />}
       {tab === 'Config' && <TickerConfig />}
+      {tab === 'Reliability' && <ReliabilityBoard />}
+      {tab === 'Backtest' && <BacktestPage />}
     </div>
   );
 }

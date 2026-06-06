@@ -18,7 +18,9 @@
     "scheduler": "node src/run/scheduler.js",
     "emitter": "node src/run/emitter.js",
     "kick": "node src/run/orchestrator.js",
-    "api": "node src/run/api.js"
+    "api": "node src/run/api.js",
+    "reliability": "node src/run/reliability.js",
+    "backtest": "node src/run/backtest.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
