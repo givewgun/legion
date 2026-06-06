@@ -14,6 +14,15 @@ export function cycleRoutes(repo) {
     }
   });
 
+  // Must be registered before '/:id', otherwise '/:id' captures 'tickers'.
+  router.get('/tickers', async (_req, res, next) => {
+    try {
+      res.json(await repo.listTickersWithCycles());
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.get('/:id', async (req, res, next) => {
     try {
       const id = Number(req.params.id);

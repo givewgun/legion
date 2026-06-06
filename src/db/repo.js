@@ -147,10 +147,9 @@ export function createRepo(db) {
           [symbol.toUpperCase(), limit],
         );
       }
-      return db.query(
-        `SELECT * FROM legion.backtest_results ORDER BY created_at DESC LIMIT $1`,
-        [limit],
-      );
+      return db.query(`SELECT * FROM legion.backtest_results ORDER BY created_at DESC LIMIT $1`, [
+        limit,
+      ]);
     },
 
     async finishCycle(cycleId, status) {
@@ -169,9 +168,7 @@ export function createRepo(db) {
     },
 
     async listTickers() {
-      const rows = await db.query(
-        `SELECT symbol, enabled FROM legion.tickers ORDER BY symbol`,
-      );
+      const rows = await db.query(`SELECT symbol, enabled FROM legion.tickers ORDER BY symbol`);
       return rows;
     },
 
@@ -198,6 +195,28 @@ export function createRepo(db) {
          FROM legion.cycles WHERE symbol = $1
          ORDER BY id DESC LIMIT $2`,
         [symbol.toUpperCase(), limit],
+      );
+      return rows;
+    },
+
+    // One row per symbol that has at least one cycle, carrying its newest
+    // cycle's id/status/start time and the total cycle count. Newest first,
+    // so the Debate tab can show "what data do we have" without a per-symbol
+    // round trip.
+    async listTickersWithCycles() {
+      const rows = await db.query(
+        `SELECT symbol, latest_cycle_id, latest_status, latest_started_at, cycle_count
+         FROM (
+           SELECT DISTINCT ON (symbol)
+                  symbol,
+                  id AS latest_cycle_id,
+                  status AS latest_status,
+                  started_at AS latest_started_at,
+                  COUNT(*) OVER (PARTITION BY symbol)::int AS cycle_count
+           FROM legion.cycles
+           ORDER BY symbol, id DESC
+         ) latest
+         ORDER BY latest_started_at DESC NULLS LAST`,
       );
       return rows;
     },

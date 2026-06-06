@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pct, stanceLabel, bandColor } from '../../src/lib/format.js';
+import { pct, stanceLabel, bandColor, fmtDate } from '../../src/lib/format.js';
 
 describe('format helpers', () => {
   it('renders conviction as a percent', () => {
@@ -17,5 +17,12 @@ describe('format helpers', () => {
     expect(bandColor('STRONG_BUY')).toMatch(/green/);
     expect(bandColor('STRONG_SELL')).toMatch(/red/);
     expect(bandColor('NO_CONSENSUS')).toMatch(/gray|zinc|slate/);
+  });
+
+  it('formats a timestamp and tolerates nullish/invalid input', () => {
+    expect(fmtDate('2026-06-03T14:30:00Z')).toMatch(/Jun/);
+    expect(fmtDate(null)).toBe('');
+    expect(fmtDate(undefined)).toBe('');
+    expect(fmtDate('not-a-date')).toBe('');
   });
 });
