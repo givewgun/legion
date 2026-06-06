@@ -1,5 +1,12 @@
 # Legion
 
+[![CI](https://github.com/givewgun/legion/actions/workflows/ci.yml/badge.svg)](https://github.com/givewgun/legion/actions/workflows/ci.yml)
+![Node](https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-181%20passing-brightgreen?logo=vitest&logoColor=white)
+![Dashboard](https://img.shields.io/badge/dashboard-React%2018%20%2B%20Vite-61DAFB?logo=react&logoColor=black)
+![Bus](https://img.shields.io/badge/bus-NATS-27AAE1?logo=natsdotio&logoColor=white)
+[![Code style: Prettier](https://img.shields.io/badge/code_style-prettier-ff69b4?logo=prettier&logoColor=white)](https://prettier.io)
+
 **A leaderless, multi-agent stock-signal engine.** Independent expert agents each look at a
 ticker, cast a structured vote, are forced to confront each other's dissent, and iterate
 until a *deterministic* consensus emerges — or they honestly agree to disagree. The result

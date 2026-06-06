@@ -12,6 +12,12 @@ concurrency:
   group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
+# Needed by the test-reporter (check runs) and coverage-report (PR comment) actions.
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -51,8 +57,20 @@ jobs:
         run: npm run lint
       - name: Migrate schema (validates schema.sql + db client)
         run: npm run db:migrate
-      - name: Test
-        run: npm test
+      - name: Test (coverage + junit)
+        run: npx vitest run --coverage --reporter=default --reporter=junit --outputFile=reports/junit.xml
+      - name: Publish test report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Backend tests
+          path: reports/junit.xml
+          reporter: java-junit
+      - name: Coverage comment
+        if: always() && github.event_name == 'pull_request'
+        uses: davelosert/vitest-coverage-report-action@v2
+        with:
+          name: Backend
 
   web:
     runs-on: ubuntu-latest
@@ -71,8 +89,22 @@ jobs:
         run: npm ci
       - name: Build dashboard
         run: npm run build
-      - name: Test
-        run: npm test
+      - name: Test (coverage + junit)
+        run: npx vitest run --coverage --reporter=default --reporter=junit --outputFile=reports/junit.xml
+      - name: Publish test report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Dashboard tests
+          path: web/reports/junit.xml
+          reporter: java-junit
+      - name: Coverage comment
+        if: always() && github.event_name == 'pull_request'
+        uses: davelosert/vitest-coverage-report-action@v2
+        with:
+          name: Dashboard
+          json-summary-path: ./web/coverage/coverage-summary.json
+          json-final-path: ./web/coverage/coverage-final.json
 
   docker:
     runs-on: ubuntu-latest
