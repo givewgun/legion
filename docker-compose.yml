@@ -65,5 +65,20 @@ services:
     depends_on: [nats]
     restart: unless-stopped
 
+  api:
+    build: .
+    command: npm run api
+    env_file: .env
+    ports: ['8088:8088']
+    depends_on: [nats]
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    command: npm run preview -- --host --port 5174
+    ports: ['5174:5174']
+    depends_on: [api]
+    restart: unless-stopped
+
 volumes:
   ollama-data:

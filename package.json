@@ -17,10 +17,12 @@
     "risk": "node src/run/risk.js",
     "scheduler": "node src/run/scheduler.js",
     "emitter": "node src/run/emitter.js",
-    "kick": "node src/run/orchestrator.js"
+    "kick": "node src/run/orchestrator.js",
+    "api": "node src/run/api.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
+    "express": "^4.19.2",
     "nats": "^2.28.0",
     "node-cron": "^3.0.3",
     "pg": "^8.20.0"
@@ -29,6 +31,7 @@
     "eslint": "^9.9.0",
     "eslint-config-prettier": "^9.1.0",
     "prettier": "^3.3.3",
+    "supertest": "^7.0.0",
     "vitest": "^2.0.5"
   },
   "engines": {

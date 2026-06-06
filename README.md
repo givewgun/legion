@@ -314,3 +314,23 @@ test/           mirrors src/, infra-free
 Infra (Oracle A1 Always-Free), Postgres (shared), LLM (local, or Gemini free tier),
 data (GunVest free APIs), Telegram — **all $0**. Runtime total ≈ **$0**. The only cost is
 development tokens, bounded by phasing.
+
+---
+
+## Phase 3 — dashboard
+
+Backend API (serves the `legion` schema):
+
+```bash
+npm run api          # http://localhost:8088
+```
+
+Frontend (separate app in web/):
+
+```bash
+cd web
+npm install
+npm run dev          # http://localhost:5174 (proxies /api to :8088)
+```
+
+Tabs: **Signals** (latest calls), **Debate** (pick a ticker → cycle → rounds with S/V/κ and per-agent votes), **Config** (add/enable/disable tickers the scheduler monitors).
