@@ -14,15 +14,30 @@ export function createAgent({
   bus,
   gunvest,
   provider,
+  getProvider = null,
   logger = console,
 }) {
   async function handleCycle({ cycleId, symbol, round, priorVotes = [] }) {
     let vote;
     try {
+      let activeProvider = provider;
+      if (getProvider) {
+        const resolved = await getProvider({ agentId: id });
+        if (resolved && resolved.enabled === false) {
+          bus.publishJSON(voteSubject(symbol, round), {
+            cycleId,
+            symbol,
+            round,
+            vote: abstain(id, weight, 'disabled'),
+          });
+          return;
+        }
+        activeProvider = resolved?.provider ?? provider;
+      }
       const data = await gather(gunvest, symbol);
       const peers = summarizePeers(priorVotes, id);
       const { system, prompt } = buildPrompt(symbol, data, peers);
-      const text = await provider.generate({ system, prompt });
+      const text = await activeProvider.generate({ system, prompt });
       const parsed = parseVote(text, { agentId: id, weight });
       if (parsed.ok) {
         vote = parsed.vote;
