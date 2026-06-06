@@ -64,10 +64,15 @@ export function quantStance(ind) {
   if (ind.sma20 == null || ind.sma50 == null || ind.macd == null || ind.rsi == null) {
     return 0;
   }
-  let score = 0;
-  score += ind.sma20 > ind.sma50 ? 1 : ind.sma20 < ind.sma50 ? -1 : 0;
-  score += ind.macd > ind.signal ? 1 : ind.macd < ind.signal ? -1 : 0;
-  if (ind.rsi < RSI_OVERSOLD) score += 1;
-  if (ind.rsi > RSI_OVERBOUGHT) score -= 1;
-  return Math.max(-2, Math.min(2, score));
+  // Trend (SMA cross) sets the side; no trend → HOLD.
+  const trend = ind.sma20 > ind.sma50 ? 1 : ind.sma20 < ind.sma50 ? -1 : 0;
+  if (trend === 0) return 0;
+  // Confirming momentum (MACD vs signal) escalates conviction to ±2.
+  const momentum = ind.macd > ind.signal ? 1 : ind.macd < ind.signal ? -1 : 0;
+  let score = momentum === trend ? trend * 2 : trend;
+  // An RSI extreme against an over-extended (±2) reading de-escalates it to ±1;
+  // it never flips the side or zeroes out the trend.
+  if (score === 2 && ind.rsi > RSI_OVERBOUGHT) score = 1;
+  if (score === -2 && ind.rsi < RSI_OVERSOLD) score = -1;
+  return score;
 }
