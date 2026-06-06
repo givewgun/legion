@@ -25,6 +25,30 @@ describe('shared parseVote', () => {
     expect(res.vote.stance).toBe(-1);
   });
 
+  it('takes the first complete object when trailing prose adds another brace', () => {
+    const res = parseVote(
+      '{"stance": 2, "conviction": 0.8, "rationale": "breakout"} Note: ignore {this}.',
+      ctx,
+    );
+    expect(res.ok).toBe(true);
+    expect(res.vote).toMatchObject({ stance: 2, conviction: 0.8, rationale: 'breakout' });
+  });
+
+  it('does not miscount braces inside a string value', () => {
+    const res = parseVote('{"stance": -1, "conviction": 0.5, "rationale": "sell } now"}', ctx);
+    expect(res.ok).toBe(true);
+    expect(res.vote.rationale).toBe('sell } now');
+  });
+
+  it('skips a leading prose brace and finds the real object', () => {
+    const res = parseVote(
+      'Here {is my call}: {"stance": 1, "conviction": 0.6, "rationale": "ok"}',
+      ctx,
+    );
+    expect(res.ok).toBe(true);
+    expect(res.vote.stance).toBe(1);
+  });
+
   it('fails on no JSON', () => {
     const res = parseVote('no json', ctx);
     expect(res.ok).toBe(false);

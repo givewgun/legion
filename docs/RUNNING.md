@@ -25,6 +25,11 @@ read market data from GunVest's REST API and persist debate state to a shared Po
 NAAIM, Finnhub) fetch **directly** and work without GunVest; its F&G + VIX inputs come via
 GunVest.
 
+GunVest endpoints Legion consumes: `GET /api/market/:ticker` (technical — per-ticker quote +
+~1y daily history; entry-price & risk also use it), `GET /api/news/:ticker` (news — trimmed and
+relevance-ranked client-side before voting), `GET /api/sentiment/:ticker` (social, contrarian),
+`GET /api/sentiment/stock/fear-greed` and `GET /api/macro` (contrarian, news, risk).
+
 **Legion processes** (one role per process): `emitter`, `agent:technical`, `agent:news`,
 `agent:social`, `agent:contrarian`, `risk`, plus `scheduler` (cron) or `kick` (one-shot).
 
@@ -165,7 +170,8 @@ Run the test suite (infra-free): `npm test`.
 | Symptom                                                   | Cause / fix                                                                                                                                                              |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `insert or update on table "cycles" violates foreign key` | Ticker not seeded — run the `INSERT INTO legion.tickers` from §3.                                                                                                        |
-| Agents log `cycle error` and abstain (every vote HOLD/0)  | GunVest API not reachable at `GUNVEST_API_URL`, or `getMacro`/`getPrice` shape differs. Confirm `curl localhost:3001/api/macro`.                                         |
+| Vote rationale `abstain (data fetch failed: …)`           | A GunVest endpoint was unreachable or 404'd. Technical needs per-ticker `GET /api/market/:ticker` (quote + ~1y history; Finnhub fallback). Confirm `curl localhost:3001/api/market/NVDA` and `curl localhost:3001/api/macro`. |
+| Vote rationale `abstain (unparseable vote)`               | The local model returned no parseable JSON (too small / overloaded). Retry, or use a stronger `OLLAMA_MODEL`. The news feed is now trimmed + relevance-ranked to reduce this. |
 | Emitter never emits                                       | Fewer than `LEGION_EXPECTED_AGENTS` agents running, or `LEGION_RISK_ENABLED=true` but the `risk` process is down (emitter waits for the constraint). Start all 5 + risk. |
 | `ECONNREFUSED 4222`                                       | NATS not up — `docker compose up -d nats`.                                                                                                                               |
 | Ollama timeouts / `model not found`                       | `docker exec -it legion-ollama ollama pull qwen2.5:7b-instruct`; first inference is slow on CPU.                                                                         |

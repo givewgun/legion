@@ -28,11 +28,11 @@ export function createAgent({
         vote = parsed.vote;
       } else {
         logger.warn(`[${id}] parse failed: ${parsed.errors.join('; ')}`);
-        vote = abstain(id, weight);
+        vote = abstain(id, weight, 'unparseable vote');
       }
     } catch (err) {
       logger.error(`[${id}] cycle error: ${err.message}`);
-      vote = abstain(id, weight);
+      vote = abstain(id, weight, `data fetch failed: ${err.message}`);
     }
     bus.publishJSON(voteSubject(symbol, round), { cycleId, symbol, round, vote });
   }
@@ -46,12 +46,12 @@ export function createAgent({
   };
 }
 
-function abstain(id, weight) {
+function abstain(id, weight, reason) {
   return createVote({
     agentId: id,
     stance: 0,
     conviction: 0,
     weight,
-    rationale: 'abstain (no usable signal)',
+    rationale: `abstain (${reason})`,
   });
 }
