@@ -201,8 +201,13 @@ jobs:
               sudo docker exec legion-ollama ollama pull "$MODEL"
             fi
 
+            # Build the app image from the freshly-checked-out code BEFORE migrating.
+            # `compose run` reuses an existing image and does not rebuild, so without
+            # this the migration would run the PREVIOUS deploy's schema.sql and miss
+            # new DDL (e.g. added columns), leaving new code pointed at a stale schema.
+            $COMPOSE build
             # Apply the legion schema (idempotent), then start the app processes.
-            $COMPOSE run --rm risk npm run db:migrate
+            $COMPOSE run --rm --no-deps risk npm run db:migrate
             $COMPOSE up -d --build
 
             sudo docker system prune -f
