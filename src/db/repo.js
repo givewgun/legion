@@ -243,5 +243,21 @@ export function createRepo(db) {
       );
       return rows;
     },
+
+    async listSignalsSince(since) {
+      const rows = await db.query(
+        `SELECT symbol, band, conviction, created_at
+           FROM legion.signals
+          WHERE created_at >= $1
+          ORDER BY created_at DESC`,
+        [since],
+      );
+      return rows.map((r) => ({
+        symbol: r.symbol,
+        stance: STANCE[r.band] ?? 0,
+        conviction: r.conviction,
+        created_at: r.created_at,
+      }));
+    },
   };
 }
