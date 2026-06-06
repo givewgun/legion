@@ -16,6 +16,8 @@ function fakeRepo() {
     addVote: vi.fn(async () => 100),
     addSignal: vi.fn(async () => 1000),
     finishCycle: vi.fn(async () => {}),
+    addSignalVotes: vi.fn(async () => {}),
+    getAllReliability: vi.fn(async () => ({})),
   };
 }
 
