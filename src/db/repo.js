@@ -1,3 +1,5 @@
+import { STANCE } from '../consensus/stance.js';
+
 // Persistence over the legion schema. Each method maps to one INSERT/UPDATE.
 export function createRepo(db) {
   return {
@@ -110,6 +112,11 @@ export function createRepo(db) {
           WHERE id = $6`,
         [forwardReturn, spyReturn, qqqReturn, outcome, correct, id],
       );
+    },
+
+    async getSignalStance(id) {
+      const row = await db.queryOne(`SELECT band FROM legion.signals WHERE id = $1`, [id]);
+      return STANCE[row?.band] ?? 0;
     },
 
     async getResolvedForecasts(limit) {

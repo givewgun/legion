@@ -158,4 +158,11 @@ describe('repo phase4', () => {
     expect(text.toLowerCase()).toContain('where symbol =');
     expect(params).toEqual(['NVDA', 20]);
   });
+
+  it('getSignalStance derives ordinal direction from the signal band', async () => {
+    const pool = poolReturning([[{ band: 'STRONG_BUY' }], [{ band: 'NO_CONSENSUS' }]]);
+    const repo = createRepo(createDb(pool));
+    expect(await repo.getSignalStance(1)).toBe(2);
+    expect(await repo.getSignalStance(2)).toBe(0);
+  });
 });
