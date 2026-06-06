@@ -197,7 +197,7 @@ failure, so a dead upstream never blocks a vote.
 | **0 Foundation** | repo, Docker, NATS, `legion` schema, consensus + vote libs, LLM provider, GunVest client | ✅ done |
 | **1 Single agent E2E** | Technical agent → vote → emitter → Telegram, one ticker | ✅ done |
 | **2 Consensus** | News / Social / Contrarian + Risk constraint, multi-round iteration, multi-ticker | ✅ done |
-| **3 Dashboard** | debate viewer, ticker config, signal feed | ▫ planned |
+| **3 Dashboard** | debate viewer, ticker config, signal feed | ✅ done |
 | **4 Backtest + reliability** | forward paper-test, index compare, `ρ_i` loop | ▫ planned |
 | **5 Summary + polish** | 6h Telegram summary, provider-switch UI, docs | ▫ planned |
 
@@ -248,6 +248,27 @@ Or bring the whole topology up with Docker: `docker compose up -d`.
 
 A consensus signal (or `NO_CONSENSUS`) lands in Telegram per ticker, and `legion.rounds`
 holds every round of the debate for the dashboard.
+
+### Run the dashboard
+
+```bash
+npm run api                          # REST API on :8088 (serves the legion schema)
+cd web && npm install && npm run dev # dashboard on :5174, proxies /api → :8088
+```
+
+---
+
+## CI/CD & deployment
+
+GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on every
+push/PR to `main`: `verify` (lint + `db:migrate` + tests), `web` (build + tests), and a
+`docker` image build. A `deploy` job to the Oracle Cloud VM is chained on the end but is
+**manual** (`workflow_dispatch`) for now — one `if:` line flips it to auto.
+
+Production runs on the shared gunvest VM via
+[`docker-compose.prod.yml`](docker-compose.prod.yml): all containers are named `legion-*`,
+join gunvest's network to reach its Postgres + REST API, and the dashboard is exposed
+through the shared Cloudflare tunnel. Full guide: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
 
 ---
 

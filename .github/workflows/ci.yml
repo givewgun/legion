@@ -1,0 +1,176 @@
+name: Legion CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: # manual run = verify → docker → deploy
+
+concurrency:
+  # Separate by event so a push can't cancel an in-flight manual deploy run.
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Legion's unit tests are infra-free, but db:migrate needs a real Postgres to
+    # validate schema.sql against. Reuse the same gunvest database name the app
+    # defaults to so DATABASE_URL matches .env.example.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: gunvest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/gunvest
+      NODE_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install deps
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Migrate schema (validates schema.sql + db client)
+        run: npm run db:migrate
+      - name: Test
+        run: npm test
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      - name: Install deps
+        run: npm ci
+      - name: Build dashboard
+        run: npm run build
+      - name: Test
+        run: npm test
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: [verify, web]
+    # Build on main pushes and on any manual run (so the deploy chain has an image step).
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -t legion:latest .
+      - name: Build dashboard image
+        run: docker build -t legion-web:latest ./web
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [verify, web, docker]
+    # Manual only for now. To enable auto-deploy on every green main push, add:
+    #   || github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read # GITHUB_TOKEN is used to clone/pull the repo on the VM
+    concurrency:
+      group: deploy-oracle # serialize deploys; never cancel one mid-flight
+      cancel-in-progress: false
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          REPO_CLONE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        with:
+          host: ${{ secrets.ORACLE_VM_HOST }}
+          username: ubuntu
+          key: ${{ secrets.ORACLE_VM_SSH_KEY }}
+          port: 22
+          envs: DATABASE_URL,FINNHUB_API_KEY,TELEGRAM_BOT_TOKEN,TELEGRAM_CHAT_ID,REPO_CLONE_TOKEN,GH_REPO
+          script: |
+            set -euo pipefail
+            APP_DIR=/opt/legion/app
+            MODEL=qwen2.5:7b-instruct
+            REPO_URL="https://x-access-token:${REPO_CLONE_TOKEN}@github.com/${GH_REPO}.git"
+
+            # First-run bootstrap: clone if missing. The VM already has Docker and
+            # the running gunvest stack (Postgres + REST API + tunnel-gateway net).
+            if [ ! -d "$APP_DIR/.git" ]; then
+              sudo rm -rf "$APP_DIR"
+              sudo mkdir -p "$(dirname "$APP_DIR")"
+              sudo git clone "$REPO_URL" "$APP_DIR"
+            fi
+
+            cd "$APP_DIR"
+            sudo git remote set-url origin "$REPO_URL"
+            sudo git fetch origin main
+            sudo git reset --hard origin/main
+
+            # Detect the docker network gunvest-db is attached to, so legion can
+            # reach gunvest-db + gunvest-app by name. Falls back to gunvest_default.
+            GUNVEST_NETWORK=$(sudo docker inspect \
+              -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' \
+              gunvest-db 2>/dev/null | head -n1 || true)
+            GUNVEST_NETWORK=${GUNVEST_NETWORK:-gunvest_default}
+            echo "Using gunvest network: ${GUNVEST_NETWORK}"
+
+            # Generate .env from GitHub Secrets (the source of truth) each deploy.
+            # gunvest-db / gunvest-app resolve over the shared GUNVEST_NETWORK.
+            sudo tee .env > /dev/null <<EOF
+            GUNVEST_NETWORK=${GUNVEST_NETWORK}
+            NATS_URL=nats://nats:4222
+            OLLAMA_URL=http://ollama:11434
+            OLLAMA_MODEL=${MODEL}
+            DATABASE_URL=${DATABASE_URL}
+            GUNVEST_API_URL=http://gunvest-app:3001
+            FINNHUB_API_KEY=${FINNHUB_API_KEY}
+            TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+            TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+            LEGION_EXPECTED_AGENTS=4
+            LEGION_RISK_ENABLED=true
+            LEGION_CRON=0 */6 * * *
+            EOF
+            sudo chmod 600 .env
+
+            COMPOSE="sudo docker compose -f docker-compose.prod.yml --env-file .env"
+
+            # Start infra first so the model pull and migration have a target.
+            $COMPOSE up -d --build nats ollama
+
+            # Pull the agents' model once (multi-GB; skip if already present).
+            if ! sudo docker exec legion-ollama ollama list | grep -q "$MODEL"; then
+              sudo docker exec legion-ollama ollama pull "$MODEL"
+            fi
+
+            # Apply the legion schema (idempotent), then start the app processes.
+            $COMPOSE run --rm risk npm run db:migrate
+            $COMPOSE up -d --build
+
+            sudo docker system prune -f
+            echo "Deploy complete at $(date)"

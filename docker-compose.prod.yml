@@ -1,20 +1,39 @@
+# Production compose for the Oracle Cloud VM. Self-contained (deploy with just
+# `-f docker-compose.prod.yml`); mirrors docker-compose.yml and adds the
+# cross-stack networking legion needs on the shared VM:
+#
+#   legion         (internal)  every legion container talks by service name
+#                              (nats, ollama, api↔web, …)
+#   gunvest        (external)  reach gunvest-db (Postgres) + gunvest-app (REST API)
+#   tunnel-gateway (external)  cloudflared ingress shared with gunvest; serves the dashboard
+#
+# Every container is named `legion-*` so it's unmistakable next to the gunvest
+# stack in `docker ps` on the shared VM.
+#
+# Only `web` sits on tunnel-gateway — it's the sole HTTP ingress. It proxies /api
+# to the internal `api` service, which reads gunvest's Postgres over the `gunvest`
+# network. The gunvest network name differs by compose project, so it's
+# parameterised; the deploy workflow detects it and writes GUNVEST_NETWORK into .env.
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+
 services:
   nats:
     image: nats:2.10-alpine
     container_name: legion-nats
     command: ['-js']
     ports:
-      - '4222:4222'
+      - '4222:4222' # host-published so `npm run kick` from the host can reach it
     restart: unless-stopped
+    networks: [legion]
 
   ollama:
     image: ollama/ollama:latest
     container_name: legion-ollama
-    ports:
-      - '11434:11434'
     volumes:
       - ollama-data:/root/.ollama
     restart: unless-stopped
+    networks: [legion]
 
   emitter:
     build: .
@@ -23,6 +42,7 @@ services:
     env_file: .env
     depends_on: [nats]
     restart: unless-stopped
+    networks: [legion, gunvest]
 
   agent-technical:
     build: .
@@ -31,6 +51,7 @@ services:
     env_file: .env
     depends_on: [nats, ollama]
     restart: unless-stopped
+    networks: [legion, gunvest]
 
   agent-news:
     build: .
@@ -39,6 +60,7 @@ services:
     env_file: .env
     depends_on: [nats, ollama]
     restart: unless-stopped
+    networks: [legion, gunvest]
 
   agent-social:
     build: .
@@ -47,6 +69,7 @@ services:
     env_file: .env
     depends_on: [nats, ollama]
     restart: unless-stopped
+    networks: [legion, gunvest]
 
   agent-contrarian:
     build: .
@@ -55,6 +78,7 @@ services:
     env_file: .env
     depends_on: [nats, ollama]
     restart: unless-stopped
+    networks: [legion, gunvest]
 
   risk:
     build: .
@@ -63,6 +87,7 @@ services:
     env_file: .env
     depends_on: [nats]
     restart: unless-stopped
+    networks: [legion, gunvest]
 
   scheduler:
     build: .
@@ -71,26 +96,40 @@ services:
     env_file: .env
     depends_on: [nats]
     restart: unless-stopped
+    networks: [legion, gunvest]
 
+  # Dashboard REST API. Reads gunvest's Postgres (legion schema); no host port —
+  # only the web service (same legion network) talks to it.
   api:
     build: .
     container_name: legion-api
     command: npm run api
     env_file: .env
-    ports: ['8088:8088']
+    expose: ['8088']
     depends_on: [nats]
     restart: unless-stopped
+    networks: [legion, gunvest]
 
+  # Dashboard SPA (vite preview). Sole tunnel ingress; proxies /api to `api`.
   web:
     build: ./web
     container_name: legion-web
     command: npm run preview -- --host --port 5174
-    # Inside the compose network /api must reach the api service, not localhost.
     environment:
       LEGION_API_PROXY: http://api:8088
-    ports: ['5174:5174']
+    expose: ['5174']
     depends_on: [api]
     restart: unless-stopped
+    networks: [legion, tunnel-gateway]
 
 volumes:
   ollama-data:
+
+networks:
+  legion:
+    driver: bridge
+  gunvest:
+    external: true
+    name: ${GUNVEST_NETWORK:-gunvest_default}
+  tunnel-gateway:
+    external: true
