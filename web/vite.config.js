@@ -14,6 +14,7 @@ export default defineConfig({
   preview: {
     port: 5174,
     proxy: { '/api': apiProxy }, // `vite preview` isn't proxied by default — required in prod
+    allowedHosts: ['legion.givewgun.com'],
   },
   test: {
     environment: 'jsdom',

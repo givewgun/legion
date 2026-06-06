@@ -123,7 +123,8 @@ jobs:
     needs: [verify, web, docker]
     # Manual only for now. To enable auto-deploy on every green main push, add:
     #   || github.ref == 'refs/heads/main'
-    if: github.event_name == 'workflow_dispatch'
+    # if: github.event_name == 'workflow_dispatch'
+    if: github.ref == 'refs/heads/main'
     permissions:
       contents: read # GITHUB_TOKEN is used to clone/pull the repo on the VM
     concurrency:
