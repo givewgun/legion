@@ -1,0 +1,81 @@
+# Legion CI/CD & Deployment
+
+One GitHub Actions workflow drives Legion, with a manual deploy step chained on the end:
+
+```
+verify ─┐
+        ├─> docker ─> deploy   (deploy: manual trigger only, for now)
+web ────┘
+```
+
+| Job      | Runs on                         | What it does                                                              |
+| -------- | ------------------------------- | ------------------------------------------------------------------------ |
+| `verify` | push/PR to `main`, manual       | `npm ci` → lint → `db:migrate` (validates `schema.sql`) → `npm test`      |
+| `web`    | push/PR to `main`, manual       | `web/`: `npm ci` → `vite build` → `vitest`                                |
+| `docker` | `main` push or manual           | builds `legion:latest` (backend) + `legion-web:latest` (dashboard)       |
+| `deploy` | **manual only** (`workflow_dispatch`) | SSH to the Oracle VM, pull, regen `.env`, compose up               |
+
+Deploy does not run on push. Ship from **Actions → Legion CI → Run workflow** once
+the chain is green. To switch to auto-deploy on every green `main` push, add
+`|| github.ref == 'refs/heads/main'` to the `deploy` job's `if:` (marked in `ci.yml`).
+
+---
+
+## Deploy (`docker-compose.prod.yml`)
+
+A self-contained copy of the base compose plus the cross-stack networking legion
+needs on the shared VM. Bootstraps on first run (clones to `/opt/legion/app`), then:
+
+1. `git fetch origin main` + `git reset --hard origin/main`
+2. Detects gunvest's docker network from the running `gunvest-db` container → `GUNVEST_NETWORK`
+3. Regenerates `.env` from GitHub Secrets
+4. `docker compose -f docker-compose.prod.yml --env-file .env up -d --build`
+   (infra first, then a one-time Ollama model pull, then `db:migrate`, then all services)
+5. `docker system prune -f`
+
+### Services & networking
+
+| Network          | Scope                          | Members / purpose                                              |
+| ---------------- | ------------------------------ | ------------------------------------------------------------- |
+| `legion`         | internal                       | all legion containers resolve by service name (nats, ollama, api↔web, agents) |
+| `gunvest`        | external (gunvest's `default`) | `emitter`/agents/`risk`/`scheduler`/`api` reach `gunvest-db:5432` + `gunvest-app:3001` |
+| `tunnel-gateway` | external (shared)              | `web` only — the dashboard's cloudflared ingress              |
+
+Request flow: **cloudflared → `web:5174` (vite preview) → proxies `/api` → `api:8088` → gunvest's Postgres.**
+`web` is the only container with ingress; `api` has no host port. `DATABASE_URL`
+uses `@gunvest-db:5432` and `GUNVEST_API_URL` is `http://gunvest-app:3001`, both
+resolved over the shared `gunvest` network (no host port publishing needed).
+
+The web container forwards `/api` via `LEGION_API_PROXY=http://api:8088` (vite's
+`preview` proxy — set in `vite.config.js`).
+
+### Cloudflare tunnel ingress
+
+gunvest's gateway/cloudflared owns the tunnel. Add an ingress rule there pointing
+your dashboard hostname at the legion web container over the shared network, e.g.:
+
+```yaml
+- hostname: legion.<your-domain>
+  service: http://legion-web:5174
+```
+
+(`legion-web` resolves on `tunnel-gateway`; cloudflared must be on that network too.)
+
+### Required GitHub Secrets
+
+| Secret                                    | Required | Notes                                                                    |
+| ----------------------------------------- | -------- | ------------------------------------------------------------------------ |
+| `ORACLE_VM_HOST`                          | yes      | VM public IP (same VM as gunvest)                                        |
+| `ORACLE_VM_SSH_KEY`                       | yes      | SSH private key contents                                                 |
+| `DATABASE_URL`                            | yes      | `postgres://<user>:<pass>@gunvest-db:5432/gunvest` (gunvest DB creds, `legion` schema) |
+| `FINNHUB_API_KEY`                         | no       | Contrarian short-interest feed only                                     |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | no       | Signal delivery                                                          |
+
+`GITHUB_TOKEN` (auto-provided) clones/pulls the private repo on the VM.
+
+### First-time VM prep
+
+The VM already has Docker, the running gunvest stack, and the `tunnel-gateway`
+network from the gunvest deploy. No new host ports needed. Add the secrets above,
+add the cloudflared ingress rule, and run the deploy. The first run pulls the
+Ollama model (multi-GB).
