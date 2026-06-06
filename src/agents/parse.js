@@ -1,15 +1,41 @@
 import { createVote, validateVote } from '../consensus/vote.js';
 
-// Extracts the first JSON object from arbitrary LLM text (tolerates code
-// fences / surrounding prose), maps it to a full vote, and validates it.
-function extractJson(text) {
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) return null;
-  try {
-    return JSON.parse(match[0]);
-  } catch {
-    return null;
+// Returns the balanced { ... } substring starting at `start`, or null if it
+// never closes. String-aware so braces inside quoted values are not counted.
+function sliceBalanced(text, start) {
+  let depth = 0;
+  let inStr = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}' && --depth === 0) return text.slice(start, i + 1);
   }
+  return null;
+}
+
+// Extracts the first parseable JSON object from arbitrary LLM text (tolerates
+// code fences, surrounding prose, and trailing braces), maps it to a full vote,
+// and validates it. A greedy regex would over-grab to the last brace, so we
+// scan candidate objects from each '{' and return the first that parses.
+function extractJson(text) {
+  for (let start = text.indexOf('{'); start !== -1; start = text.indexOf('{', start + 1)) {
+    const candidate = sliceBalanced(text, start);
+    if (!candidate) continue;
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // not valid JSON from this brace — try the next one
+    }
+  }
+  return null;
 }
 
 export function parseVote(text, { agentId, weight }) {

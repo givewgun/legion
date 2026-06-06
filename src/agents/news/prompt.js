@@ -7,6 +7,9 @@ You weigh breaking news, earnings, guidance, analyst actions, and the macro back
 export function buildPrompt(symbol, data, peers = '') {
   const prompt = `Assess ${symbol} from a news and catalyst standpoint.
 
+The headlines are ${symbol}'s recent feed and may include broad-market items; weigh only
+what is material to ${symbol}. If no headline is material, abstain (stance 0, conviction 0).
+
 Headlines and macro (JSON):
 ${JSON.stringify(data, null, 2)}${dissentBlock(peers)}
 
