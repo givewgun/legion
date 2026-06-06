@@ -297,7 +297,7 @@ Delivery / pipeline:
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | signal delivery (reuses GunVest's bot) |
 | `LEGION_EXPECTED_AGENTS` | votes the emitter waits for before evaluating (4 in Phase 2) |
 | `LEGION_RISK_ENABLED` | require the risk constraint before finalizing (`true` by default) |
-| `LEGION_CRON` | scheduler cadence (default `0 */6 * * *`, every 6h) |
+| `LEGION_CRON` | scheduler cadence (default `0 */4 * * *`, every 4h) |
 | `FINNHUB_API_KEY` | Enables the Contrarian short-interest feed only; copy from GunVest. The other feeds (F&G, VIX, put/call, AAII, NAAIM) are live without it; short interest returns null when unset |
 
 LLM provider is pluggable (`local` Ollama by default; `gemini` / `openai` selectable per

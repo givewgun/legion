@@ -187,7 +187,7 @@ jobs:
             TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
             LEGION_EXPECTED_AGENTS=4
             LEGION_RISK_ENABLED=true
-            LEGION_CRON=0 */6 * * *
+            LEGION_CRON=0 */4 * * *
             EOF
             sudo chmod 600 .env
 
