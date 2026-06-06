@@ -93,6 +93,15 @@ npm run kick NVDA          # one-shot: evaluate NVDA now
 npm run scheduler -- --now # runs the cron loop AND fires one sweep immediately
 ```
 
+Or trigger over HTTP without shell access on the box — the `api` service exposes it (needs
+the NATS bus connected; returns `503` otherwise). Useful to re-run after a fix instead of
+waiting for the 4h cron:
+
+```bash
+curl -X POST localhost:8088/api/trigger/NVDA   # kick one ticker  -> 202 {symbol, cycleId}
+curl -X POST localhost:8088/api/trigger        # sweep all enabled -> 202 {kicked: [...]}
+```
+
 A converged signal (or `NO_CONSENSUS`) is sent to Telegram (if configured) and every round
 is written to `legion.rounds` / `legion.votes`.
 
