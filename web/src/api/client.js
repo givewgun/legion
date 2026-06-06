@@ -18,6 +18,7 @@ export const api = {
   listTickers: () => get('/api/tickers'),
   addTicker: (symbol) => send('POST', '/api/tickers', { symbol }),
   setTicker: (symbol, enabled) => send('PATCH', `/api/tickers/${symbol}`, { enabled }),
+  listCycleTickers: () => get('/api/cycles/tickers'),
   listCycles: (symbol) => get(`/api/cycles?symbol=${encodeURIComponent(symbol)}`),
   getDebate: (id) => get(`/api/cycles/${id}`),
   listSignals: (symbol) =>

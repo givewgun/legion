@@ -10,6 +10,20 @@ export function pct(x) {
   return `${Math.round((x ?? 0) * 100)}%`;
 }
 
+// Short local date for cycle/round timestamps. Returns '' for nullish input
+// so callers can drop it without guarding.
+export function fmtDate(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export function stanceLabel(stance) {
   return STANCE_LABELS[String(stance)] ?? 'HOLD';
 }
