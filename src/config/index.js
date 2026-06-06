@@ -15,6 +15,8 @@ export function loadConfig(env = process.env) {
     apiPort: num(env, 'LEGION_API_PORT', 8088),
     reliabilityCron: env.LEGION_RELIABILITY_CRON || '0 */12 * * *',
     horizonDays: num(env, 'LEGION_HORIZON_DAYS', 5),
+    summaryCron: env.LEGION_SUMMARY_CRON || '0 */6 * * *',
+    summaryWindowHours: num(env, 'LEGION_SUMMARY_WINDOW_HOURS', 6),
     ollama: {
       url: env.OLLAMA_URL || 'http://localhost:11434',
       model: env.OLLAMA_MODEL || 'qwen2.5:7b-instruct',
