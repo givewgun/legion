@@ -121,7 +121,7 @@ docker compose run --rm emitter npm run db:migrate   # once
 docker compose logs -f emitter agent-technical
 ```
 
-The scheduler container fires on `LEGION_CRON` (default every 6h); for an immediate sweep use
+The scheduler container fires on `LEGION_CRON` (default every 4h); for an immediate sweep use
 the host one-shot `npm run kick NVDA` against the same NATS.
 
 ---
@@ -136,7 +136,7 @@ the host one-shot `npm run kick NVDA` against the same NATS.
 | `OLLAMA_URL` / `OLLAMA_MODEL`                                  | `http://localhost:11434` / `qwen2.5:7b-instruct`      | local LLM                                                                                                                                 |
 | `LEGION_EXPECTED_AGENTS`                                       | `4`                                                   | votes the emitter waits for per round                                                                                                     |
 | `LEGION_RISK_ENABLED`                                          | `true`                                                | also wait for the risk constraint before finalizing                                                                                       |
-| `LEGION_CRON`                                                  | `0 */6 * * *`                                         | scheduler cadence (every 6h)                                                                                                              |
+| `LEGION_CRON`                                                  | `0 */4 * * *`                                         | scheduler cadence (every 4h)                                                                                                              |
 | `CONSENSUS_THETA_V` / `_QUORUM` / `_MAX_ROUNDS` / `_HOLD_BAND` | `0.5` / `0.6667` / `3` / `0.5`                        | consensus tuning                                                                                                                          |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`                      | —                                                     | signal delivery (optional)                                                                                                                |
 | `FINNHUB_API_KEY`                                              | —                                                     | enables the Contrarian short-interest feed only; copy from GunVest. The other feeds (F&G, VIX, put/call, AAII, NAAIM) are live without it |

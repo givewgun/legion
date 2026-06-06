@@ -13,7 +13,7 @@ const repo = createRepo(connectDb(cfg.databaseUrl));
 const orchestrator = createOrchestrator({ bus, repo });
 const scheduler = createScheduler({ orchestrator, repo });
 
-const schedule = process.env.LEGION_CRON || '0 */6 * * *'; // every 6h
+const schedule = process.env.LEGION_CRON || '0 */4 * * *'; // every 4h
 cron.schedule(schedule, () => {
   scheduler.runOnce().then((s) => console.log(`[scheduler] kicked ${s.length} tickers`));
 });
