@@ -19,10 +19,12 @@ returns an object with a single `generate({ system, prompt }) → string` method
 `DEFAULT_MODELS[provider]` when no model is given, and falls back to `local` for unknown names.
 
 Per-agent provider/model/enabled live in `legion.agent_config` and are surfaced through
-`GET/PATCH /api/agents` and the dashboard **Agents** tab. The agent factory accepts an optional
-`getProvider({ agentId })` resolved **per cycle**, so a UI change takes effect on the next
-evaluation; a disabled agent abstains (HOLD/0) without an LLM call. The injected-`provider`
-path is unchanged when `getProvider` is absent, preserving earlier behaviour.
+`GET/PATCH /api/agents` and the dashboard **Agents** tab. Each agent entrypoint builds a
+`getProvider({ agentId })` callback ([`src/agents/get-provider.js`](../../src/agents/get-provider.js),
+`buildGetProvider`) that the factory resolves **per cycle**, so a UI change takes effect on the
+next evaluation with no redeploy; a disabled agent abstains (HOLD/0) without an LLM call (and
+without constructing a provider). When an agent has no persisted row, `getProvider` returns
+`null` and the factory keeps its static injected provider, preserving earlier behaviour.
 
 ## Alternatives considered
 
@@ -37,7 +39,7 @@ path is unchanged when `getProvider` is absent, preserving earlier behaviour.
 - Default deploy is free (local Ollama); paid providers are strictly opt-in per agent.
 - Operators tune cost/accuracy live from the dashboard once wiring lands (see below).
 - Adding a provider = one branch in `createProvider` + a `DEFAULT_MODELS` entry.
-- **Known gap:** `getProvider` is not yet wired into the `src/run/agent-*.js` entrypoints, and
-  `gemini`/`openai` are not yet implemented — selecting them would throw at cycle time (the
-  agent then abstains). Storage, API, UI, and factory support exist; the live wiring and the
-  hosted providers are tracked follow-ups.
+- **Known gap:** only `local` (Ollama) is implemented; `gemini`/`openai` are reserved names, so
+  selecting one makes that agent abstain each cycle (the per-cycle resolution throws and the
+  factory catches it) until the provider is built. Storage, API, UI, factory, and live
+  per-cycle wiring are all in place — the hosted providers are the remaining follow-up.

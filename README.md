@@ -387,10 +387,13 @@ Tabs: **Signals** (latest calls), **Debate** (pick a ticker → cycle → rounds
 
 - **6h Telegram digest:** `src/run/summary.js` (cron `LEGION_SUMMARY_CRON`, default `0 */6 * * *`).
   Run once: `npm run summary -- --now`.
-- **Per-agent provider switching:** dashboard **Agents** tab → set provider (`local`/`gemini`/`openai`)
-  and model per agent; persisted in `legion.agent_config`, applied on the next cycle. Disabled agents abstain.
+- **Per-agent provider switching:** dashboard **Agents** tab → set provider/model per agent or
+  disable one; persisted in `legion.agent_config` and read by each agent **per cycle**
+  (`buildGetProvider`), so a change applies on the next evaluation with no redeploy. Disabled
+  agents abstain (HOLD/0) without an LLM call. Only the `local` (Ollama) provider is implemented
+  today — selecting `gemini`/`openai` makes that agent abstain until those providers are added.
 - **Add an agent:** see `docs/adding-an-agent.md`.
-- **Architecture decisions:** `docs/adr/0001`–`0004`.
+- **Architecture & decisions:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), `docs/adr/0001`–`0013`.
 
 ### Environment
 

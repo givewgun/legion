@@ -3,7 +3,14 @@ import { gather } from './gather.js';
 import { buildPrompt } from './prompt.js';
 
 // Thin wrapper preserving the Phase 1 signature; all behavior is in createAgent.
-export function createTechnicalAgent({ bus, gunvest, provider, config, logger = console }) {
+export function createTechnicalAgent({
+  bus,
+  gunvest,
+  provider,
+  config,
+  getProvider = null,
+  logger = console,
+}) {
   return createAgent({
     id: config.id,
     weight: config.weight,
@@ -12,6 +19,7 @@ export function createTechnicalAgent({ bus, gunvest, provider, config, logger = 
     bus,
     gunvest,
     provider,
+    getProvider,
     logger,
   });
 }
