@@ -4,8 +4,9 @@ import { DebateViewer } from './pages/DebateViewer.jsx';
 import { TickerConfig } from './pages/TickerConfig.jsx';
 import { ReliabilityBoard } from './pages/ReliabilityBoard.jsx';
 import { BacktestPage } from './pages/BacktestPage.jsx';
+import { AgentConfig } from './pages/AgentConfig.jsx';
 
-const TABS = ['Signals', 'Debate', 'Config', 'Reliability', 'Backtest'];
+const TABS = ['Signals', 'Debate', 'Config', 'Reliability', 'Backtest', 'Agents'];
 
 export function App() {
   const [tab, setTab] = useState('Signals');
@@ -32,6 +33,7 @@ export function App() {
       {tab === 'Config' && <TickerConfig />}
       {tab === 'Reliability' && <ReliabilityBoard />}
       {tab === 'Backtest' && <BacktestPage />}
+      {tab === 'Agents' && <AgentConfig />}
     </div>
   );
 }

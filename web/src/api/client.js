@@ -26,4 +26,6 @@ export const api = {
   getReliability: () => get('/api/reliability'),
   getBacktest: (symbol) =>
     get(symbol ? `/api/backtest?symbol=${encodeURIComponent(symbol)}` : '/api/backtest'),
+  listAgents: () => get('/api/agents'),
+  setAgent: (id, cfg) => send('PATCH', `/api/agents/${id}`, cfg),
 };
