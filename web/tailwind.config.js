@@ -15,7 +15,6 @@ export default {
         card: '0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04)',
         cardhover: '0 4px 12px rgba(15, 23, 42, 0.10)',
       },
-      borderRadius: { xl: '0.875rem' },
     },
   },
   plugins: [],

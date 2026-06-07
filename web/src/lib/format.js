@@ -49,7 +49,7 @@ export function timeAgo(ts, now = Date.now()) {
   return `${Math.floor(hours / 24)}d`;
 }
 
-// Signed integer for stance moves between rounds, e.g. +2 / -1 / 0.
+// Signed delta string for stance moves, e.g. +2 / -1 / 0.
 export function signedDelta(n) {
   return n > 0 ? `+${n}` : String(n);
 }

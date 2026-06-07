@@ -16,8 +16,9 @@ describe('agent identity map', () => {
     expect(tech.label).toBe('Technical');
     expect(tech.hex).toMatch(/^#/);
     expect(isReactComponent(tech.Icon)).toBe(true); // lucide icon component
-    expect(tech.classes.text).toContain('text-');
-    expect(tech.classes.bg).toContain('bg-');
+    expect(tech.classes.text).toBe('text-amber-700');
+    expect(tech.classes.bg).toBe('bg-amber-100');
+    expect(tech.classes.ring).toBe('ring-amber-200');
   });
 
   it('covers all four core agents', () => {

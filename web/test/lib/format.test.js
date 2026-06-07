@@ -40,6 +40,7 @@ describe('format helpers', () => {
     expect(timeAgo(new Date(now - 3 * 3600 * 1000).toISOString(), now)).toBe('3h');
     expect(timeAgo(new Date(now - 2 * 86400 * 1000).toISOString(), now)).toBe('2d');
     expect(timeAgo(null, now)).toBe('');
+    expect(timeAgo('not-a-date', now)).toBe('');
   });
 
   it('formats a signed stance delta', () => {

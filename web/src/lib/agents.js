@@ -2,6 +2,8 @@ import { LineChart, Newspaper, Users, Zap, Bot } from 'lucide-react';
 
 // agent_id -> identity. `hex` is for chart/SVG colors; `classes` hold COMPLETE
 // Tailwind class strings (never interpolate class names — Tailwind would purge them).
+// Note: `hex` uses the −600 shade (brighter, for chart/SVG line contrast) while
+// `classes.text` uses −700 (for readable UI text). The one-step gap is intentional.
 export const AGENTS = {
   technical: {
     label: 'Technical',
