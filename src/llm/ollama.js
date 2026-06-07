@@ -4,9 +4,17 @@ import { createLimiter, retryAsync } from '../util/resilient.js';
 
 // no custom dispatcher: NUM_PARALLEL=1 + shallow queue keeps waits < undici's 300s headers-timeout
 
+// undici reports header/body read timeouts as `TypeError: fetch failed` with these
+// cause codes. They are the same saturation timeout our AbortController guards (and
+// undici's default 300s can win the race), so they must NOT be retried.
+const TimeoutCauseCodes = new Set(['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']);
+
+// A saturation timeout: our own AbortController abort, or undici's read timeout.
+const isTimeout = (err) => err.name === 'AbortError' || TimeoutCauseCodes.has(err.cause?.code);
+
 // Classify errors for retry decisions.
 const isTransient = (err) => {
-  if (err.name === 'AbortError') return false; // timeout = box saturated; do NOT retry
+  if (isTimeout(err)) return false; // timeout = box saturated; do NOT retry (would re-load it)
   if (/Ollama request failed: (5\d\d|429)/.test(err.message)) return true; // 5xx or 429
   if (err.cause != null) return true; // transport drop with cause
   if (/fetch failed|ECONNRESET|ECONNREFUSED|socket/i.test(err.message)) return true; // transport drop
@@ -15,7 +23,7 @@ const isTransient = (err) => {
 
 // Wrap raw error into an informative error for callers.
 const wrapError = (err, timeoutMs) => {
-  if (err.name === 'AbortError') {
+  if (isTimeout(err)) {
     return new Error(`Ollama request timed out after ${timeoutMs}ms`);
   }
   if (err.cause != null || /fetch failed|ECONNRESET|ECONNREFUSED|socket/i.test(err.message)) {

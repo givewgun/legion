@@ -126,6 +126,23 @@ describe('createOllamaProvider', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('does NOT retry an undici headers timeout (saturation), surfaces it as a timeout', async () => {
+    // Node global fetch reports a headers timeout as TypeError fetch failed with
+    // cause.code UND_ERR_HEADERS_TIMEOUT — same 300s saturation our AbortController guards.
+    const headersTimeout = Object.assign(new TypeError('fetch failed'), {
+      cause: { code: 'UND_ERR_HEADERS_TIMEOUT' },
+    });
+    const fetchMock = vi.fn(() => {
+      throw headersTimeout;
+    });
+    const provider = createOllamaProvider(
+      { url: 'http://o:11434', model: 'm', retries: 3, maxConcurrent: 1 },
+      fetchMock,
+    );
+    await expect(provider.generate({ system: 's', prompt: 'p' })).rejects.toThrow(/timed out/i);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('surfaces the cause code on exhausted transport errors', async () => {
     const transportErr = Object.assign(new TypeError('fetch failed'), {
       cause: { code: 'ECONNRESET' },
