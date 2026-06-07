@@ -12,7 +12,7 @@ describe('ReliabilityBoard', () => {
       { agentId: 'news', rho: 0.55, sampleSize: 30 },
     ]);
     render(<ReliabilityBoard />);
-    await waitFor(() => expect(screen.getByText('technical')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Technical')).toBeInTheDocument());
     expect(screen.getByTestId('reliability-chart')).toBeInTheDocument();
     expect(screen.getByText('0.62')).toBeInTheDocument();
   });

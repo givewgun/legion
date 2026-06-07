@@ -52,7 +52,7 @@ export function ReliabilityBoard() {
           <tbody>
             {(rows ?? []).map((r) => (
               <tr key={r.agentId} className="border-b border-slate-100 last:border-0">
-                <td className="px-4 py-2 font-medium">{r.agentId}</td>
+                <td className="px-4 py-2 font-medium">{agentInfo(r.agentId).label}</td>
                 <td className="px-4 py-2">{r.rho.toFixed(2)}</td>
                 <td className="px-4 py-2 text-slate-500">{r.sampleSize}</td>
               </tr>

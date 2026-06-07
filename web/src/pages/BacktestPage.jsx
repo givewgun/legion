@@ -59,7 +59,7 @@ export function BacktestPage() {
           </thead>
           <tbody>
             {(rows ?? []).map((r) => (
-              <tr key={r.id} className="border-b border-slate-100 last:border-0">
+              <tr key={r.symbol} className="border-b border-slate-100 last:border-0">
                 <td className="px-4 py-2 font-medium">{r.symbol}</td>
                 <td className="px-4 py-2">{r.horizon}d</td>
                 <td className="px-4 py-2">{r.trades}</td>
