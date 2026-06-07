@@ -19,6 +19,8 @@ is delivered as a trade plan to Telegram and a dashboard.
 Inspired by the geth gestalt in *Mass Effect* ("Legion"): no single mind decides. Many
 narrow intelligences vote, and the agreement is the intelligence.
 
+> **Architecture & diagrams:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · **Design decisions:** [`docs/adr/`](docs/adr/) (ADR 0001–0013)
+>
 > Full design: [`docs/superpowers/specs/2026-06-04-legion-design.md`](docs/superpowers/specs/2026-06-04-legion-design.md)
 
 ---
