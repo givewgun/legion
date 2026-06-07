@@ -113,3 +113,14 @@ ALTER TABLE legion.signals ADD COLUMN IF NOT EXISTS correct        BOOLEAN;
 
 CREATE INDEX IF NOT EXISTS idx_signals_unresolved
   ON legion.signals (resolve_after) WHERE resolved = false;
+
+-- ── Phase 5: per-agent provider config ───────────────────────────────────────
+-- Lets the dashboard switch each agent's LLM provider/model and mute agents
+-- without a redeploy. Resolved per cycle by the agent factory.
+CREATE TABLE IF NOT EXISTS legion.agent_config (
+  agent_id   TEXT PRIMARY KEY,
+  provider   TEXT NOT NULL DEFAULT 'local',
+  model      TEXT,
+  enabled    BOOLEAN NOT NULL DEFAULT true,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

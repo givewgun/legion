@@ -5,6 +5,7 @@ import { signalRoutes } from './routes/signals.js';
 import { reliabilityRoutes } from './routes/reliability.js';
 import { backtestRoutes } from './routes/backtest.js';
 import { triggerRoutes } from './routes/trigger.js';
+import { agentRoutes } from './routes/agents.js';
 
 // Builds the Express app without listening (so tests can drive it in-process).
 // Routes are mounted from the supplied repo. An optional orchestrator enables
@@ -20,6 +21,7 @@ export function createApp({ repo, orchestrator = null }) {
   app.use('/api/reliability', reliabilityRoutes(repo));
   app.use('/api/backtest', backtestRoutes(repo));
   app.use('/api/trigger', triggerRoutes(orchestrator, repo));
+  app.use('/api/agents', agentRoutes(repo));
 
   // JSON error handler — never leak a stack to the client.
   app.use((err, req, res, _next) => {

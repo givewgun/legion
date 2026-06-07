@@ -262,5 +262,53 @@ export function createRepo(db) {
       );
       return rows;
     },
+
+    async listSignalsSince(since) {
+      const rows = await db.query(
+        `SELECT symbol, band, conviction, created_at
+           FROM legion.signals
+          WHERE created_at >= $1
+          ORDER BY created_at DESC`,
+        [since],
+      );
+      return rows.map((r) => ({
+        symbol: r.symbol,
+        stance: STANCE[r.band] ?? 0,
+        conviction: r.conviction,
+        created_at: r.created_at,
+      }));
+    },
+
+    async getAllAgentConfig() {
+      const rows = await db.query(
+        `SELECT agent_id, provider, model, enabled FROM legion.agent_config`,
+      );
+      return Object.fromEntries(
+        rows.map((r) => [
+          r.agent_id,
+          { provider: r.provider, model: r.model, enabled: r.enabled },
+        ]),
+      );
+    },
+
+    async getAgentConfig(agentId) {
+      const row = await db.queryOne(
+        `SELECT provider, model, enabled FROM legion.agent_config WHERE agent_id = $1`,
+        [agentId],
+      );
+      if (!row) return null;
+      return { provider: row.provider, model: row.model, enabled: row.enabled };
+    },
+
+    async upsertAgentConfig(agentId, { provider, model, enabled }) {
+      await db.query(
+        `INSERT INTO legion.agent_config (agent_id, provider, model, enabled, updated_at)
+         VALUES ($1, $2, $3, $4, now())
+         ON CONFLICT (agent_id) DO UPDATE
+           SET provider = EXCLUDED.provider, model = EXCLUDED.model,
+               enabled = EXCLUDED.enabled, updated_at = now()`,
+        [agentId, provider, model, enabled],
+      );
+    },
   };
 }

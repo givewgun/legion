@@ -2,7 +2,14 @@ import { createAgent } from '../factory.js';
 import { gather } from './gather.js';
 import { buildPrompt } from './prompt.js';
 
-export function createNewsAgent({ bus, gunvest, provider, config, logger = console }) {
+export function createNewsAgent({
+  bus,
+  gunvest,
+  provider,
+  config,
+  getProvider = null,
+  logger = console,
+}) {
   return createAgent({
     id: config.id,
     weight: config.weight,
@@ -11,6 +18,7 @@ export function createNewsAgent({ bus, gunvest, provider, config, logger = conso
     bus,
     gunvest,
     provider,
+    getProvider,
     logger,
   });
 }

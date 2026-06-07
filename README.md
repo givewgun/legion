@@ -19,6 +19,8 @@ is delivered as a trade plan to Telegram and a dashboard.
 Inspired by the geth gestalt in *Mass Effect* ("Legion"): no single mind decides. Many
 narrow intelligences vote, and the agreement is the intelligence.
 
+> **Architecture & diagrams:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · **Design decisions:** [`docs/adr/`](docs/adr/) (ADR 0001–0013)
+>
 > Full design: [`docs/superpowers/specs/2026-06-04-legion-design.md`](docs/superpowers/specs/2026-06-04-legion-design.md)
 
 ---
@@ -380,3 +382,22 @@ npm run dev          # http://localhost:5174 (proxies /api to :8088)
 ```
 
 Tabs: **Signals** (latest calls), **Debate** (pick a ticker → cycle → rounds with S/V/κ and per-agent votes), **Config** (add/enable/disable tickers the scheduler monitors).
+
+## Phase 5 — Summary, provider switching, docs
+
+- **6h Telegram digest:** `src/run/summary.js` (cron `LEGION_SUMMARY_CRON`, default `0 */6 * * *`).
+  Run once: `npm run summary -- --now`.
+- **Per-agent provider switching:** dashboard **Agents** tab → set provider/model per agent or
+  disable one; persisted in `legion.agent_config` and read by each agent **per cycle**
+  (`buildGetProvider`), so a change applies on the next evaluation with no redeploy. Disabled
+  agents abstain (HOLD/0) without an LLM call. Only the `local` (Ollama) provider is implemented
+  today — selecting `gemini`/`openai` makes that agent abstain until those providers are added.
+- **Add an agent:** see `docs/adding-an-agent.md`.
+- **Architecture & decisions:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), `docs/adr/0001`–`0013`.
+
+### Environment
+
+| Var                           | Default       | Meaning          |
+| ----------------------------- | ------------- | ---------------- |
+| `LEGION_SUMMARY_CRON`         | `0 */6 * * *` | digest schedule  |
+| `LEGION_SUMMARY_WINDOW_HOURS` | `6`           | digest look-back |
