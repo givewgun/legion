@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { pct, stanceLabel, bandColor, fmtDate } from '../../src/lib/format.js';
+import {
+  pct,
+  stanceLabel,
+  bandColor,
+  fmtDate,
+  timeAgo,
+  signedDelta,
+} from '../../src/lib/format.js';
 
 describe('format helpers', () => {
   it('renders conviction as a percent', () => {
@@ -24,5 +31,20 @@ describe('format helpers', () => {
     expect(fmtDate(null)).toBe('');
     expect(fmtDate(undefined)).toBe('');
     expect(fmtDate('not-a-date')).toBe('');
+  });
+
+  it('renders a compact relative age with timeAgo', () => {
+    const now = Date.now();
+    expect(timeAgo(new Date(now - 30 * 1000).toISOString(), now)).toBe('just now');
+    expect(timeAgo(new Date(now - 5 * 60 * 1000).toISOString(), now)).toBe('5m');
+    expect(timeAgo(new Date(now - 3 * 3600 * 1000).toISOString(), now)).toBe('3h');
+    expect(timeAgo(new Date(now - 2 * 86400 * 1000).toISOString(), now)).toBe('2d');
+    expect(timeAgo(null, now)).toBe('');
+  });
+
+  it('formats a signed stance delta', () => {
+    expect(signedDelta(2)).toBe('+2');
+    expect(signedDelta(-1)).toBe('-1');
+    expect(signedDelta(0)).toBe('0');
   });
 });
