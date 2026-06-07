@@ -7,6 +7,7 @@ const LINKS = [
   { to: '/reliability', label: 'Reliability' },
   { to: '/backtest', label: 'Backtest' },
   { to: '/config', label: 'Config' },
+  { to: '/agents', label: 'Agents' },
 ];
 
 export function NavBar() {

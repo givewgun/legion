@@ -6,6 +6,7 @@ import { TickerConfig } from './pages/TickerConfig.jsx';
 import { ReliabilityBoard } from './pages/ReliabilityBoard.jsx';
 import { BacktestPage } from './pages/BacktestPage.jsx';
 import { LearnPage } from './pages/LearnPage.jsx';
+import { AgentConfig } from './pages/AgentConfig.jsx';
 
 export function App() {
   return (
@@ -22,6 +23,7 @@ export function App() {
             <Route path="/reliability" element={<ReliabilityBoard />} />
             <Route path="/backtest" element={<BacktestPage />} />
             <Route path="/config" element={<TickerConfig />} />
+            <Route path="/agents" element={<AgentConfig />} />
           </Routes>
         </main>
       </div>
