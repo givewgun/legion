@@ -7,7 +7,12 @@ describe('loadConfig', () => {
     expect(cfg.consensus).toEqual({ thetaV: 0.5, quorum: 0.6667, maxRounds: 3, holdBand: 0.5 });
     expect(cfg.gunvestApiUrl).toBe('http://localhost:3001');
     expect(cfg.natsUrl).toBe('nats://localhost:4222');
-    expect(cfg.ollama).toEqual({ url: 'http://localhost:11434', model: 'qwen2.5:7b-instruct' });
+    expect(cfg.ollama).toEqual({
+      url: 'http://localhost:11434',
+      model: 'qwen2.5:7b-instruct',
+      timeoutMs: 300000,
+      maxConcurrent: 1,
+    });
   });
 
   it('reads overrides from env and coerces numbers', () => {
@@ -20,12 +25,19 @@ describe('loadConfig', () => {
       NATS_URL: 'nats://bus:4222',
       OLLAMA_URL: 'http://ollama:11434',
       OLLAMA_MODEL: 'llama3.1:8b',
+      OLLAMA_TIMEOUT_MS: '120000',
+      OLLAMA_MAX_CONCURRENT: '2',
       DATABASE_URL: 'postgres://u:p@db:5432/gunvest',
     });
     expect(cfg.consensus).toEqual({ thetaV: 0.3, quorum: 0.75, maxRounds: 5, holdBand: 0.4 });
     expect(cfg.gunvestApiUrl).toBe('http://api:3001');
     expect(cfg.natsUrl).toBe('nats://bus:4222');
-    expect(cfg.ollama.model).toBe('llama3.1:8b');
+    expect(cfg.ollama).toEqual({
+      url: 'http://ollama:11434',
+      model: 'llama3.1:8b',
+      timeoutMs: 120000,
+      maxConcurrent: 2,
+    });
     expect(cfg.databaseUrl).toBe('postgres://u:p@db:5432/gunvest');
   });
 

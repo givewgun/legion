@@ -18,6 +18,8 @@ export function loadConfig(env = process.env) {
     ollama: {
       url: env.OLLAMA_URL || 'http://localhost:11434',
       model: env.OLLAMA_MODEL || 'qwen2.5:7b-instruct',
+      timeoutMs: num(env, 'OLLAMA_TIMEOUT_MS', 300000),
+      maxConcurrent: num(env, 'OLLAMA_MAX_CONCURRENT', 1),
     },
     consensus: {
       thetaV: num(env, 'CONSENSUS_THETA_V', 0.5),
