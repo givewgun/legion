@@ -73,6 +73,23 @@ your dashboard hostname at the legion web container over the shared network, e.g
 
 `GITHUB_TOKEN` (auto-provided) clones/pulls the private repo on the VM.
 
+### Ollama serial inference (CPU)
+
+The `ollama` service in `docker-compose.prod.yml` is configured for **strictly serial
+inference** on a 4-core CPU box:
+
+| Server env var | Value | Effect |
+|---|---|---|
+| `OLLAMA_NUM_PARALLEL` | `1` | one inference at a time — every request gets all cores |
+| `OLLAMA_KEEP_ALIVE` | `-1` | model stays resident; no ~5 GB reload between calls |
+
+These are set directly on the `ollama` container in the compose file (not in the app
+`.env`). The app-side timeout and concurrency (`OLLAMA_TIMEOUT_MS=300000`,
+`OLLAMA_MAX_CONCURRENT=1`) are written to `.env` by the deploy script and mirror the
+same constraint on the client side.
+
+Design rationale: [`docs/superpowers/specs/2026-06-06-ollama-serial-inference-design.md`](superpowers/specs/2026-06-06-ollama-serial-inference-design.md).
+
 ### First-time VM prep
 
 The VM already has Docker, the running gunvest stack, and the `tunnel-gateway`

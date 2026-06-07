@@ -4,10 +4,12 @@ import { cycleRoutes } from './routes/cycles.js';
 import { signalRoutes } from './routes/signals.js';
 import { reliabilityRoutes } from './routes/reliability.js';
 import { backtestRoutes } from './routes/backtest.js';
+import { triggerRoutes } from './routes/trigger.js';
 
 // Builds the Express app without listening (so tests can drive it in-process).
-// Routes are mounted from the supplied repo; no other state.
-export function createApp({ repo }) {
+// Routes are mounted from the supplied repo. An optional orchestrator enables
+// the on-demand trigger endpoint; without it those routes return 503.
+export function createApp({ repo, orchestrator = null }) {
   const app = express();
   app.use(express.json());
 
@@ -17,6 +19,7 @@ export function createApp({ repo }) {
   app.use('/api/signals', signalRoutes(repo));
   app.use('/api/reliability', reliabilityRoutes(repo));
   app.use('/api/backtest', backtestRoutes(repo));
+  app.use('/api/trigger', triggerRoutes(orchestrator, repo));
 
   // JSON error handler — never leak a stack to the client.
   app.use((err, req, res, _next) => {

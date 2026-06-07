@@ -7,6 +7,10 @@
 ![Bus](https://img.shields.io/badge/bus-NATS-27AAE1?logo=natsdotio&logoColor=white)
 [![Code style: Prettier](https://img.shields.io/badge/code_style-prettier-ff69b4?logo=prettier&logoColor=white)](https://prettier.io)
 
+<div align="center">
+  <img src="legion.jpg" alt="Legion Mascot" width="300" />
+</div>
+
 **A leaderless, multi-agent stock-signal engine.** Independent expert agents each look at a
 ticker, cast a structured vote, are forced to confront each other's dissent, and iterate
 until a *deterministic* consensus emerges — or they honestly agree to disagree. The result
@@ -297,8 +301,22 @@ Delivery / pipeline:
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | signal delivery (reuses GunVest's bot) |
 | `LEGION_EXPECTED_AGENTS` | votes the emitter waits for before evaluating (4 in Phase 2) |
 | `LEGION_RISK_ENABLED` | require the risk constraint before finalizing (`true` by default) |
-| `LEGION_CRON` | scheduler cadence (default `0 */6 * * *`, every 6h) |
-| `FINNHUB_API_KEY` | Enables the Contrarian short-interest feed only; copy from GunVest. The other feeds (F&G, VIX, put/call, AAII, NAAIM) are live without it; short interest returns null when unset |
+| `LEGION_CRON` | scheduler cadence (default `0 */4 * * *`, every 4h) |
+| `FINNHUB_API_KEY` | Enables the Contrarian short-interest feed only; copy from GunVest. The other feeds (F&G, VIX, put/call, AAII, NAAIM) are live without it; short interest returns null when unset [...] |
+
+Ollama tuning (app side):
+
+| Var | Default | Meaning |
+|---|---|---|
+| `OLLAMA_TIMEOUT_MS` | `300000` | per-request inference deadline (ms) |
+| `OLLAMA_MAX_CONCURRENT` | `1` | in-flight inferences per agent process |
+
+Ollama server vars (set on the `ollama` container, not the app):
+
+| Var | Value | Meaning |
+|---|---|---|
+| `OLLAMA_NUM_PARALLEL` | `1` | one inference at a time — each request gets all CPU cores |
+| `OLLAMA_KEEP_ALIVE` | `-1` | keep model resident; avoids ~5 GB reload between calls |
 
 LLM provider is pluggable (`local` Ollama by default; `gemini` / `openai` selectable per
 agent) via [`src/llm/provider.js`](src/llm/provider.js).

@@ -180,6 +180,8 @@ jobs:
             NATS_URL=nats://nats:4222
             OLLAMA_URL=http://ollama:11434
             OLLAMA_MODEL=${MODEL}
+            OLLAMA_TIMEOUT_MS=300000
+            OLLAMA_MAX_CONCURRENT=1
             DATABASE_URL=${DATABASE_URL}
             GUNVEST_API_URL=http://gunvest-app:3001
             FINNHUB_API_KEY=${FINNHUB_API_KEY}
@@ -187,7 +189,7 @@ jobs:
             TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
             LEGION_EXPECTED_AGENTS=4
             LEGION_RISK_ENABLED=true
-            LEGION_CRON=0 */6 * * *
+            LEGION_CRON=0 */4 * * *
             EOF
             sudo chmod 600 .env
 
@@ -201,8 +203,13 @@ jobs:
               sudo docker exec legion-ollama ollama pull "$MODEL"
             fi
 
+            # Build the app image from the freshly-checked-out code BEFORE migrating.
+            # `compose run` reuses an existing image and does not rebuild, so without
+            # this the migration would run the PREVIOUS deploy's schema.sql and miss
+            # new DDL (e.g. added columns), leaving new code pointed at a stale schema.
+            $COMPOSE build
             # Apply the legion schema (idempotent), then start the app processes.
-            $COMPOSE run --rm risk npm run db:migrate
+            $COMPOSE run --rm --no-deps risk npm run db:migrate
             $COMPOSE up -d --build
 
             sudo docker system prune -f

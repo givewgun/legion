@@ -61,6 +61,34 @@ describe('repo read + config methods', () => {
     expect(pool.calls[0].params).toEqual(['NVDA', 20]);
   });
 
+  it('lists tickers that have cycles, newest first', async () => {
+    const pool = poolReturning([
+      [
+        {
+          symbol: 'NVDA',
+          latest_cycle_id: 9,
+          latest_status: 'converged',
+          latest_started_at: 't2',
+          cycle_count: 2,
+        },
+        {
+          symbol: 'AAPL',
+          latest_cycle_id: 4,
+          latest_status: 'open',
+          latest_started_at: 't1',
+          cycle_count: 1,
+        },
+      ],
+    ]);
+    const repo = createRepo(createDb(pool));
+    const rows = await repo.listTickersWithCycles();
+    expect(rows.map((r) => r.symbol)).toEqual(['NVDA', 'AAPL']);
+    expect(rows[0].cycle_count).toBe(2);
+    expect(pool.calls[0].text).toMatch(/DISTINCT ON \(symbol\)/);
+    expect(pool.calls[0].text).toMatch(/FROM legion\.cycles/);
+    expect(pool.calls[0].text).toMatch(/ORDER BY latest_started_at DESC/);
+  });
+
   it('fetches a single cycle', async () => {
     const pool = poolReturning([[{ id: 9, symbol: 'NVDA', status: 'converged' }]]);
     const repo = createRepo(createDb(pool));

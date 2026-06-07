@@ -93,11 +93,22 @@ npm run kick NVDA          # one-shot: evaluate NVDA now
 npm run scheduler -- --now # runs the cron loop AND fires one sweep immediately
 ```
 
+Or trigger over HTTP without shell access on the box — the `api` service exposes it (needs
+the NATS bus connected; returns `503` otherwise). Useful to re-run after a fix instead of
+waiting for the 4h cron:
+
+```bash
+curl -X POST localhost:8088/api/trigger/NVDA   # kick one ticker  -> 202 {symbol, cycleId}
+curl -X POST localhost:8088/api/trigger        # sweep all enabled -> 202 {kicked: [...]}
+```
+
 A converged signal (or `NO_CONSENSUS`) is sent to Telegram (if configured) and every round
 is written to `legion.rounds` / `legion.votes`.
 
 A cycle is **4 agents × up to 3 rounds**, serialized through one Ollama → expect minutes,
-not seconds, on CPU.
+not seconds, on CPU. Inference is serial by server config (`OLLAMA_NUM_PARALLEL=1`) so
+each request gets all CPU cores; the model stays resident (`OLLAMA_KEEP_ALIVE=-1`) to
+avoid a ~5 GB reload between calls.
 
 ---
 
@@ -121,7 +132,7 @@ docker compose run --rm emitter npm run db:migrate   # once
 docker compose logs -f emitter agent-technical
 ```
 
-The scheduler container fires on `LEGION_CRON` (default every 6h); for an immediate sweep use
+The scheduler container fires on `LEGION_CRON` (default every 4h); for an immediate sweep use
 the host one-shot `npm run kick NVDA` against the same NATS.
 
 ---
@@ -134,9 +145,11 @@ the host one-shot `npm run kick NVDA` against the same NATS.
 | `DATABASE_URL`                                                 | `postgres://postgres:postgres@localhost:5432/gunvest` | shared Postgres; `legion` schema                                                                                                          |
 | `NATS_URL`                                                     | `nats://localhost:4222`                               | message bus                                                                                                                               |
 | `OLLAMA_URL` / `OLLAMA_MODEL`                                  | `http://localhost:11434` / `qwen2.5:7b-instruct`      | local LLM                                                                                                                                 |
+| `OLLAMA_TIMEOUT_MS`                                            | `300000`                                              | per-request inference deadline (ms); raise on slow hardware                                                                               |
+| `OLLAMA_MAX_CONCURRENT`                                        | `1`                                                   | in-flight inferences per agent process; keep at 1 to match `OLLAMA_NUM_PARALLEL=1` on the server                                          |
 | `LEGION_EXPECTED_AGENTS`                                       | `4`                                                   | votes the emitter waits for per round                                                                                                     |
 | `LEGION_RISK_ENABLED`                                          | `true`                                                | also wait for the risk constraint before finalizing                                                                                       |
-| `LEGION_CRON`                                                  | `0 */6 * * *`                                         | scheduler cadence (every 6h)                                                                                                              |
+| `LEGION_CRON`                                                  | `0 */4 * * *`                                         | scheduler cadence (every 4h)                                                                                                              |
 | `CONSENSUS_THETA_V` / `_QUORUM` / `_MAX_ROUNDS` / `_HOLD_BAND` | `0.5` / `0.6667` / `3` / `0.5`                        | consensus tuning                                                                                                                          |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`                      | —                                                     | signal delivery (optional)                                                                                                                |
 | `FINNHUB_API_KEY`                                              | —                                                     | enables the Contrarian short-interest feed only; copy from GunVest. The other feeds (F&G, VIX, put/call, AAII, NAAIM) are live without it |
@@ -174,7 +187,7 @@ Run the test suite (infra-free): `npm test`.
 | Vote rationale `abstain (unparseable vote)`               | The local model returned no parseable JSON (too small / overloaded). Retry, or use a stronger `OLLAMA_MODEL`. The news feed is now trimmed + relevance-ranked to reduce this. |
 | Emitter never emits                                       | Fewer than `LEGION_EXPECTED_AGENTS` agents running, or `LEGION_RISK_ENABLED=true` but the `risk` process is down (emitter waits for the constraint). Start all 5 + risk. |
 | `ECONNREFUSED 4222`                                       | NATS not up — `docker compose up -d nats`.                                                                                                                               |
-| Ollama timeouts / `model not found`                       | `docker exec -it legion-ollama ollama pull qwen2.5:7b-instruct`; first inference is slow on CPU.                                                                         |
+| Ollama timeouts / `model not found`                       | `docker exec -it legion-ollama ollama pull qwen2.5:7b-instruct`; first inference is slow on CPU. If timeouts persist under load, confirm `OLLAMA_NUM_PARALLEL=1` is set on the container (prevents CPU saturation from concurrent requests) and raise `OLLAMA_TIMEOUT_MS` if needed.                              |
 | Short-interest feed always `null`                         | `FINNHUB_API_KEY` unset (expected — only that feed needs it).                                                                                                            |
 | AAII / NAAIM feed `null`                                  | HTML scrape of aaii.com / ycharts.com; layout-fragile and degrades to `null` on any change. Other feeds are unaffected.                                                  |
 | Docker agents can't reach DB/NATS                         | Using `localhost` inside containers — apply the §5 `nats`/`ollama`/`host.docker.internal` overrides.                                                                     |
