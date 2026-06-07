@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useParams } from 'react-router-dom';
 import { SignalFeed } from '../../src/pages/SignalFeed.jsx';
 import { api } from '../../src/api/client.js';
 
@@ -52,5 +52,24 @@ describe('SignalFeed', () => {
     fireEvent.click(screen.getByRole('button', { name: /Ticker/i }));
     const cells = screen.getAllByTestId('row-symbol').map((el) => el.textContent);
     expect(cells).toEqual(['NVDA', 'TSLA']); // ascending by symbol
+  });
+
+  it('navigates to /debate/:symbol when a row is clicked', async () => {
+    vi.spyOn(api, 'listSignals').mockResolvedValue(ROWS);
+    function DebateProbe() {
+      const { symbol } = useParams();
+      return <div>debate route: {symbol}</div>;
+    }
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<SignalFeed />} />
+          <Route path="/debate/:symbol" element={<DebateProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText('NVDA')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('NVDA').closest('tr'));
+    expect(await screen.findByText('debate route: NVDA')).toBeInTheDocument();
   });
 });

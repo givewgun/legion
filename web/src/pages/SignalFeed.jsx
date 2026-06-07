@@ -62,8 +62,20 @@ export function SignalFeed() {
             <thead>
               <tr className="border-b border-slate-200">
                 {COLUMNS.map((c) => (
-                  <th key={c.key} className="px-4 py-2 font-medium text-slate-500">
+                  <th
+                    key={c.key}
+                    scope="col"
+                    aria-sort={
+                      sort.key === c.key
+                        ? sort.dir === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
+                    className="px-4 py-2 font-medium text-slate-500"
+                  >
                     <button
+                      type="button"
                       className="inline-flex items-center gap-1 hover:text-slate-700"
                       onClick={() => toggleSort(c.key)}
                     >

@@ -13,7 +13,7 @@ export function summarize(rows) {
     if (BULL.has(r.band)) bull += 1;
     if (BEAR.has(r.band)) bear += 1;
     convSum += r.conviction ?? 0;
-    if (!last || (r.created_at && r.created_at > last)) last = r.created_at ?? last;
+    if (r.created_at && (!last || r.created_at > last)) last = r.created_at;
   }
   return {
     total: rows.length,
