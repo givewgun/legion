@@ -1,28 +1,25 @@
 import { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
-import { RoundCard } from '../components/RoundCard.jsx';
-import { ConsensusGuide } from '../components/ConsensusGuide.jsx';
 import { fmtDate } from '../lib/format.js';
+import { PageHeader } from '../ui/PageHeader.jsx';
+import { Card } from '../ui/Card.jsx';
+import { Badge } from '../ui/Badge.jsx';
+import { StanceFlowChart } from '../components/StanceFlowChart.jsx';
+import { DebateThread } from '../components/DebateThread.jsx';
+import { ConsensusGuide } from '../components/ConsensusGuide.jsx';
 
 function StatusBadge({ status }) {
-  const converged = status === 'converged';
-  return (
-    <span
-      className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-        converged ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-      }`}
-    >
-      {status}
-    </span>
-  );
+  const band = status === 'converged' ? 'BUY' : 'HOLD';
+  return <Badge band={band}>{status}</Badge>;
 }
 
 export function DebateViewer() {
+  const { symbol, cycleId } = useParams();
+  const navigate = useNavigate();
   const [tickers, setTickers] = useState([]);
   const [query, setQuery] = useState('');
-  const [selectedSymbol, setSelectedSymbol] = useState(null);
   const [cycles, setCycles] = useState([]);
-  const [selectedCycleId, setSelectedCycleId] = useState(null);
   const [debate, setDebate] = useState(null);
 
   useEffect(() => {
@@ -32,36 +29,43 @@ export function DebateViewer() {
       .catch(() => setTickers([]));
   }, []);
 
-  function selectTicker(symbol) {
-    setSelectedSymbol(symbol);
-    setSelectedCycleId(null);
-    setDebate(null);
-    setCycles([]);
+  useEffect(() => {
+    if (!symbol) {
+      setCycles([]);
+      return;
+    }
     api
       .listCycles(symbol)
       .then(setCycles)
       .catch(() => setCycles([]));
-  }
+  }, [symbol]);
 
-  function selectCycle(id) {
-    setSelectedCycleId(id);
+  useEffect(() => {
+    if (!cycleId) {
+      setDebate(null);
+      return;
+    }
     api
-      .getDebate(id)
+      .getDebate(Number(cycleId))
       .then(setDebate)
       .catch(() => setDebate(null));
-  }
+  }, [cycleId]);
 
   const filtered = tickers.filter((t) =>
     t.symbol.toLowerCase().includes(query.trim().toLowerCase()),
   );
+  const consensusS = debate?.rounds?.length
+    ? Number(debate.rounds[debate.rounds.length - 1].s_score)
+    : undefined;
 
   return (
     <div>
+      <PageHeader title="Debate" subtitle="How the agents argued their way to consensus" />
       <ConsensusGuide />
 
       <input
         aria-label="search-ticker"
-        className="mb-4 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+        className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Search ticker…"
@@ -72,18 +76,18 @@ export function DebateViewer() {
           <h2 className="mb-2 text-sm font-semibold text-slate-500">Tickers with debates</h2>
           {tickers.length === 0 && <p className="text-sm text-slate-400">No debate data yet.</p>}
           {tickers.length > 0 && filtered.length === 0 && (
-            <p className="text-sm text-slate-400">No ticker matches “{query}”.</p>
+            <p className="text-sm text-slate-400">No ticker matches &ldquo;{query}&rdquo;.</p>
           )}
           <ul className="space-y-1">
             {filtered.map((t) => {
-              const active = t.symbol === selectedSymbol;
+              const active = t.symbol === symbol;
               return (
                 <li key={t.symbol}>
                   <button
-                    className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm ${
+                    className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-sm ${
                       active ? 'bg-slate-100' : 'hover:bg-slate-50'
                     }`}
-                    onClick={() => selectTicker(t.symbol)}
+                    onClick={() => navigate(`/debate/${t.symbol}`)}
                   >
                     <span className="font-medium">{t.symbol}</span>
                     <span className="flex items-center gap-2">
@@ -91,7 +95,6 @@ export function DebateViewer() {
                       <StatusBadge status={t.latest_status} />
                     </span>
                   </button>
-
                   {active && (
                     <ul className="mb-1 ml-2 border-l border-slate-200 pl-2">
                       {cycles.length === 0 && (
@@ -100,17 +103,19 @@ export function DebateViewer() {
                       {cycles.map((c) => (
                         <li key={c.id}>
                           <button
-                            className={`flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs ${
-                              c.id === selectedCycleId
-                                ? 'bg-slate-800 text-white'
+                            className={`flex w-full items-center justify-between rounded-lg px-2 py-1 text-left text-xs ${
+                              String(c.id) === String(cycleId)
+                                ? 'bg-brand-500 text-white'
                                 : 'text-slate-600 hover:bg-slate-100'
                             }`}
-                            onClick={() => selectCycle(c.id)}
+                            onClick={() => navigate(`/debate/${t.symbol}/${c.id}`)}
                           >
                             <span>#{c.id}</span>
                             <span
                               className={
-                                c.id === selectedCycleId ? 'text-slate-300' : 'text-slate-400'
+                                String(c.id) === String(cycleId)
+                                  ? 'text-brand-100'
+                                  : 'text-slate-400'
                               }
                             >
                               {fmtDate(c.started_at)} · {c.status}
@@ -129,23 +134,24 @@ export function DebateViewer() {
         <section className="min-w-0 flex-1">
           {debate ? (
             <>
-              <h2 className="mb-1 text-lg font-semibold">
-                {debate.symbol} — cycle #{debate.id}{' '}
-                <span className="font-normal text-slate-400">({debate.status})</span>
-              </h2>
-              <p className="mb-3 text-xs text-slate-400">
+              <div className="mb-1 flex items-center gap-2">
+                <h2 className="text-lg font-semibold">
+                  {debate.symbol} — cycle #{debate.id}
+                </h2>
+                <StatusBadge status={debate.status} />
+              </div>
+              <p className="mb-4 text-xs text-slate-400">
                 Started {fmtDate(debate.started_at)}
                 {debate.ended_at && <> · ended {fmtDate(debate.ended_at)}</>}
               </p>
-              {debate.rounds.map((r) => (
-                <RoundCard key={r.round_no} round={r} />
-              ))}
+              <Card className="mb-6 p-3">
+                <StanceFlowChart rounds={debate.rounds} consensusS={consensusS} />
+              </Card>
+              <DebateThread rounds={debate.rounds} />
             </>
           ) : (
             <p className="text-slate-400">
-              {selectedSymbol
-                ? 'Pick a cycle to see the debate.'
-                : 'Pick a ticker to see its debates.'}
+              {symbol ? 'Pick a cycle to see the debate.' : 'Pick a ticker to see its debates.'}
             </p>
           )}
         </section>

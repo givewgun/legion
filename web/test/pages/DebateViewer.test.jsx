@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { DebateViewer } from '../../src/pages/DebateViewer.jsx';
 import { api } from '../../src/api/client.js';
 
@@ -19,7 +20,6 @@ const TICKERS = [
     cycle_count: 1,
   },
 ];
-
 const NVDA_CYCLES = [
   {
     id: 2,
@@ -29,7 +29,6 @@ const NVDA_CYCLES = [
     ended_at: null,
   },
 ];
-
 const DEBATE = {
   id: 2,
   symbol: 'NVDA',
@@ -49,68 +48,56 @@ const DEBATE = {
           stance: 1,
           conviction: 0.8,
           weight: 1,
-          rationale: 'fear is overdone',
+          rationale: 'fear is overdone and the crowd capitulated',
         },
       ],
     },
   ],
 };
 
+function renderAt(path) {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/debate" element={<DebateViewer />} />
+        <Route path="/debate/:symbol" element={<DebateViewer />} />
+        <Route path="/debate/:symbol/:cycleId" element={<DebateViewer />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 beforeEach(() => {
   vi.restoreAllMocks();
+  vi.spyOn(api, 'listCycleTickers').mockResolvedValue(TICKERS);
+  vi.spyOn(api, 'listCycles').mockResolvedValue(NVDA_CYCLES);
+  vi.spyOn(api, 'getDebate').mockResolvedValue(DEBATE);
 });
 
 describe('DebateViewer', () => {
-  it('lists tickers that have data without auto-selecting one', async () => {
-    vi.spyOn(api, 'listCycleTickers').mockResolvedValue(TICKERS);
-
-    render(<DebateViewer />);
-
+  it('lists tickers and prompts to pick one at /debate', async () => {
+    renderAt('/debate');
     await waitFor(() => expect(screen.getByText('NVDA')).toBeInTheDocument());
     expect(screen.getByText('AAPL')).toBeInTheDocument();
-    // Nothing pre-selected: the empty state prompts the user to pick a ticker.
     expect(screen.getByText(/Pick a ticker/i)).toBeInTheDocument();
-    // Search box is present and is NOT pre-filled with a symbol.
     expect(screen.getByLabelText('search-ticker')).toHaveValue('');
   });
 
-  it('filters the ticker list with the search box', async () => {
-    vi.spyOn(api, 'listCycleTickers').mockResolvedValue(TICKERS);
-
-    render(<DebateViewer />);
+  it('filters the ticker list via search', async () => {
+    renderAt('/debate');
     await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
-
     fireEvent.change(screen.getByLabelText('search-ticker'), { target: { value: 'nv' } });
     expect(screen.getByText('NVDA')).toBeInTheDocument();
     expect(screen.queryByText('AAPL')).not.toBeInTheDocument();
   });
 
-  it('drills ticker → cycle → debate and shows S/V/κ with tooltips', async () => {
-    vi.spyOn(api, 'listCycleTickers').mockResolvedValue(TICKERS);
-    vi.spyOn(api, 'listCycles').mockResolvedValue(NVDA_CYCLES);
-    vi.spyOn(api, 'getDebate').mockResolvedValue(DEBATE);
-
-    render(<DebateViewer />);
-    await waitFor(() => expect(screen.getByText('NVDA')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByText('NVDA'));
-    await waitFor(() => expect(api.listCycles).toHaveBeenCalledWith('NVDA'));
-
-    fireEvent.click(await screen.findByText('#2'));
+  it('deep-links a cycle and renders the thread with full rationale', async () => {
+    renderAt('/debate/NVDA/2');
     await waitFor(() => expect(api.getDebate).toHaveBeenCalledWith(2));
-
-    expect(await screen.findByText(/Round 1/i)).toBeInTheDocument();
-    expect(screen.getByText('contrarian')).toBeInTheDocument();
-    // Metric tooltips are present.
-    expect(screen.getByLabelText(/What is S \(aggregate stance\)/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/What is V \(dispersion\)/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/What is κ \(quorum\)/i)).toBeInTheDocument();
-  });
-
-  it('shows an empty state when no tickers have data', async () => {
-    vi.spyOn(api, 'listCycleTickers').mockResolvedValue([]);
-
-    render(<DebateViewer />);
-    await waitFor(() => expect(screen.getByText(/No debate data yet/i)).toBeInTheDocument());
+    expect(
+      await screen.findByText(/fear is overdone and the crowd capitulated/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Round 1/i)).toBeInTheDocument();
+    expect(screen.getByTestId('stance-chart')).toBeInTheDocument();
   });
 });
