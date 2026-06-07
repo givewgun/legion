@@ -300,6 +300,20 @@ Delivery / pipeline:
 | `LEGION_CRON` | scheduler cadence (default `0 */6 * * *`, every 6h) |
 | `FINNHUB_API_KEY` | Enables the Contrarian short-interest feed only; copy from GunVest. The other feeds (F&G, VIX, put/call, AAII, NAAIM) are live without it; short interest returns null when unset |
 
+Ollama tuning (app side):
+
+| Var | Default | Meaning |
+|---|---|---|
+| `OLLAMA_TIMEOUT_MS` | `300000` | per-request inference deadline (ms) |
+| `OLLAMA_MAX_CONCURRENT` | `1` | in-flight inferences per agent process |
+
+Ollama server vars (set on the `ollama` container, not the app):
+
+| Var | Value | Meaning |
+|---|---|---|
+| `OLLAMA_NUM_PARALLEL` | `1` | one inference at a time — each request gets all CPU cores |
+| `OLLAMA_KEEP_ALIVE` | `-1` | keep model resident; avoids ~5 GB reload between calls |
+
 LLM provider is pluggable (`local` Ollama by default; `gemini` / `openai` selectable per
 agent) via [`src/llm/provider.js`](src/llm/provider.js).
 

@@ -180,6 +180,8 @@ jobs:
             NATS_URL=nats://nats:4222
             OLLAMA_URL=http://ollama:11434
             OLLAMA_MODEL=${MODEL}
+            OLLAMA_TIMEOUT_MS=300000
+            OLLAMA_MAX_CONCURRENT=1
             DATABASE_URL=${DATABASE_URL}
             GUNVEST_API_URL=http://gunvest-app:3001
             FINNHUB_API_KEY=${FINNHUB_API_KEY}
