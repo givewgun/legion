@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 
-// Nodes positioned on a 320x140 viewBox. The pulse animates along PULSE_PATH,
-// looping data -> agents -> consensus -> signal -> outcome -> reliability -> agents.
+// Nodes positioned on a 320x140 viewBox.
 const NODES = [
   {
     id: 'data',
@@ -73,8 +72,6 @@ const NODES = [
   },
 ];
 
-const PULSE_PATH = 'M44,72 L120,72 L200,72 L278,72 L278,104 L168,118 L120,90';
-
 export function ConsensusPipeline() {
   const [active, setActive] = useState(null);
   const info = NODES.find((n) => n.id === active);
@@ -106,9 +103,11 @@ export function ConsensusPipeline() {
         <motion.circle
           r="4"
           fill="#4f46e5"
-          animate={{ offsetDistance: ['0%', '100%'] }}
+          animate={{
+            cx: [44, 120, 200, 278, 278, 130, 44],
+            cy: [68, 68, 68, 68, 116, 116, 68],
+          }}
           transition={{ duration: 6, repeat: Infinity, ease: 'linear' }}
-          style={{ offsetPath: `path('${PULSE_PATH}')` }}
         />
       </svg>
       <p className="mt-2 min-h-[2.5rem] text-sm text-slate-600">
