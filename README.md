@@ -380,3 +380,19 @@ npm run dev          # http://localhost:5174 (proxies /api to :8088)
 ```
 
 Tabs: **Signals** (latest calls), **Debate** (pick a ticker → cycle → rounds with S/V/κ and per-agent votes), **Config** (add/enable/disable tickers the scheduler monitors).
+
+## Phase 5 — Summary, provider switching, docs
+
+- **6h Telegram digest:** `src/run/summary.js` (cron `LEGION_SUMMARY_CRON`, default `0 */6 * * *`).
+  Run once: `npm run summary -- --now`.
+- **Per-agent provider switching:** dashboard **Agents** tab → set provider (`local`/`gemini`/`openai`)
+  and model per agent; persisted in `legion.agent_config`, applied on the next cycle. Disabled agents abstain.
+- **Add an agent:** see `docs/adding-an-agent.md`.
+- **Architecture decisions:** `docs/adr/0001`–`0004`.
+
+### Environment
+
+| Var                           | Default       | Meaning          |
+| ----------------------------- | ------------- | ---------------- |
+| `LEGION_SUMMARY_CRON`         | `0 */6 * * *` | digest schedule  |
+| `LEGION_SUMMARY_WINDOW_HOURS` | `6`           | digest look-back |

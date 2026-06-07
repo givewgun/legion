@@ -20,6 +20,7 @@
     "kick": "node src/run/orchestrator.js",
     "api": "node src/run/api.js",
     "reliability": "node src/run/reliability.js",
+    "summary": "node src/run/summary.js",
     "backtest": "node src/run/backtest.js"
   },
   "dependencies": {

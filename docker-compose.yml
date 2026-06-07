@@ -93,6 +93,14 @@ services:
     env_file: .env
     restart: unless-stopped
 
+  # Long-lived cron: sends the periodic Telegram digest of the window's signals.
+  summary:
+    build: .
+    container_name: legion-summary
+    command: npm run summary
+    env_file: .env
+    restart: unless-stopped
+
   web:
     build: ./web
     container_name: legion-web
