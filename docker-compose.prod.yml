@@ -26,6 +26,8 @@ services:
       - '4222:4222' # host-published so `npm run kick` from the host can reach it
     restart: unless-stopped
     networks: [legion]
+    environment:
+      - TZ=Asia/Bangkok
 
   ollama:
     image: ollama/ollama:latest
@@ -35,6 +37,7 @@ services:
     environment:
       - OLLAMA_NUM_PARALLEL=1
       - OLLAMA_KEEP_ALIVE=-1
+      - TZ=Asia/Bangkok
     restart: unless-stopped
     networks: [legion]
 
@@ -43,6 +46,8 @@ services:
     container_name: legion-emitter
     command: npm run emitter
     env_file: .env
+    environment:
+      - TZ=Asia/Bangkok
     depends_on: [nats]
     restart: unless-stopped
     networks: [legion, gunvest]
@@ -52,6 +57,8 @@ services:
     container_name: legion-agent-technical
     command: npm run agent:technical
     env_file: .env
+    environment:
+      - TZ=Asia/Bangkok
     depends_on: [nats, ollama]
     restart: unless-stopped
     networks: [legion, gunvest]
@@ -61,6 +68,8 @@ services:
     container_name: legion-agent-news
     command: npm run agent:news
     env_file: .env
+    environment:
+      - TZ=Asia/Bangkok
     depends_on: [nats, ollama]
     restart: unless-stopped
     networks: [legion, gunvest]
@@ -70,6 +79,8 @@ services:
     container_name: legion-agent-social
     command: npm run agent:social
     env_file: .env
+    environment:
+      - TZ=Asia/Bangkok
     depends_on: [nats, ollama]
     restart: unless-stopped
     networks: [legion, gunvest]
@@ -79,6 +90,8 @@ services:
     container_name: legion-agent-contrarian
     command: npm run agent:contrarian
     env_file: .env
+    environment:
+      - TZ=Asia/Bangkok
     depends_on: [nats, ollama]
     restart: unless-stopped
     networks: [legion, gunvest]
@@ -88,6 +101,8 @@ services:
     container_name: legion-risk
     command: npm run risk
     env_file: .env
+    environment:
+      - TZ=Asia/Bangkok
     depends_on: [nats]
     restart: unless-stopped
     networks: [legion, gunvest]
@@ -97,6 +112,8 @@ services:
     container_name: legion-scheduler
     command: npm run scheduler
     env_file: .env
+    environment:
+      - TZ=Asia/Bangkok
     depends_on: [nats]
     restart: unless-stopped
     networks: [legion, gunvest]
@@ -109,6 +126,8 @@ services:
     command: npm run api
     env_file: .env
     expose: ['8088']
+    environment:
+      - TZ=Asia/Bangkok
     depends_on: [nats]
     restart: unless-stopped
     networks: [legion, gunvest]
@@ -120,6 +139,7 @@ services:
     command: npm run preview -- --host --port 5174
     environment:
       LEGION_API_PROXY: http://api:8088
+      TZ: Asia/Bangkok
     expose: ['5174']
     depends_on: [api]
     restart: unless-stopped
