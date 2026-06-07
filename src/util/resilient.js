@@ -1,6 +1,7 @@
 // Limiter + retry helpers for resilient async operations.
 
-// Limit concurrent invocations of async fn. Returns run(fn) that queues excess calls.
+// Limit concurrent invocations of async fns. Returns run(fn) directly, so callers
+// invoke it as `const limit = createLimiter(n); limit(() => ...)`. Excess calls queue.
 export function createLimiter(max) {
   let active = 0;
   const queue = [];
@@ -15,12 +16,11 @@ export function createLimiter(max) {
     });
   };
 
-  return {
-    run: (fn) => new Promise((resolve, reject) => {
+  return (fn) =>
+    new Promise((resolve, reject) => {
       queue.push({ fn, resolve, reject });
       pump();
-    }),
-  };
+    });
 }
 
 // Retry async fn with exponential backoff + jitter on transient errors.

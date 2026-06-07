@@ -4,14 +4,14 @@ import { createLimiter, retryAsync } from '../../src/util/resilient.js';
 describe('createLimiter', () => {
   it('resolves with fn result value', async () => {
     const limiter = createLimiter(2);
-    const result = await limiter.run(async () => 'success');
+    const result = await limiter(async () => 'success');
     expect(result).toBe('success');
   });
 
   it('rejects with fn error', async () => {
     const limiter = createLimiter(2);
     const err = new Error('boom');
-    await expect(limiter.run(async () => { throw err; })).rejects.toThrow('boom');
+    await expect(limiter(async () => { throw err; })).rejects.toThrow('boom');
   });
 
   it('limits concurrent invocations to max', async () => {
@@ -27,7 +27,7 @@ describe('createLimiter', () => {
     };
 
     // Fire 8 concurrent runs
-    const promises = Array(8).fill(null).map(() => limiter.run(fn));
+    const promises = Array(8).fill(null).map(() => limiter(fn));
     await Promise.all(promises);
 
     expect(peak).toBeLessThanOrEqual(2);
@@ -43,9 +43,9 @@ describe('createLimiter', () => {
       callOrder.push(`${id}-end`);
     };
 
-    const p1 = limiter.run(mkFn(1));
-    const p2 = limiter.run(mkFn(2));
-    const p3 = limiter.run(mkFn(3));
+    const p1 = limiter(mkFn(1));
+    const p2 = limiter(mkFn(2));
+    const p3 = limiter(mkFn(3));
 
     await Promise.all([p1, p2, p3]);
 
