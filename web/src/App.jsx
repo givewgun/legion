@@ -1,39 +1,30 @@
-import { useState } from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { NavBar } from './ui/NavBar.jsx';
 import { SignalFeed } from './pages/SignalFeed.jsx';
 import { DebateViewer } from './pages/DebateViewer.jsx';
 import { TickerConfig } from './pages/TickerConfig.jsx';
 import { ReliabilityBoard } from './pages/ReliabilityBoard.jsx';
 import { BacktestPage } from './pages/BacktestPage.jsx';
-import { AgentConfig } from './pages/AgentConfig.jsx';
-
-const TABS = ['Signals', 'Debate', 'Config', 'Reliability', 'Backtest', 'Agents'];
+import { LearnPage } from './pages/LearnPage.jsx';
 
 export function App() {
-  const [tab, setTab] = useState('Signals');
-
   return (
-    <div className="mx-auto max-w-3xl p-6">
-      <header className="mb-6 flex items-center justify-between">
-        <h1 className="text-xl font-bold">Legion</h1>
-        <nav className="flex gap-2">
-          {TABS.map((t) => (
-            <button
-              key={t}
-              className={`rounded px-3 py-1 ${tab === t ? 'bg-slate-800 text-white' : 'text-slate-600'}`}
-              onClick={() => setTab(t)}
-            >
-              {t}
-            </button>
-          ))}
-        </nav>
-      </header>
-
-      {tab === 'Signals' && <SignalFeed />}
-      {tab === 'Debate' && <DebateViewer />}
-      {tab === 'Config' && <TickerConfig />}
-      {tab === 'Reliability' && <ReliabilityBoard />}
-      {tab === 'Backtest' && <BacktestPage />}
-      {tab === 'Agents' && <AgentConfig />}
-    </div>
+    <BrowserRouter>
+      <div className="min-h-screen bg-slate-50 text-slate-900">
+        <NavBar />
+        <main className="mx-auto max-w-5xl px-6 py-6">
+          <Routes>
+            <Route path="/" element={<SignalFeed />} />
+            <Route path="/debate" element={<DebateViewer />} />
+            <Route path="/debate/:symbol" element={<DebateViewer />} />
+            <Route path="/debate/:symbol/:cycleId" element={<DebateViewer />} />
+            <Route path="/learn" element={<LearnPage />} />
+            <Route path="/reliability" element={<ReliabilityBoard />} />
+            <Route path="/backtest" element={<BacktestPage />} />
+            <Route path="/config" element={<TickerConfig />} />
+          </Routes>
+        </main>
+      </div>
+    </BrowserRouter>
   );
 }
