@@ -8,7 +8,7 @@
 [![Code style: Prettier](https://img.shields.io/badge/code_style-prettier-ff69b4?logo=prettier&logoColor=white)](https://prettier.io)
 
 <div align="center">
-  <img src="legion.jpg" alt="Legion Mascot" width="300" />
+  <img src="legion_gpt.png" alt="Legion Mascot" width="300" />
 </div>
 
 **A leaderless, multi-agent stock-signal engine.** Independent expert agents each look at a

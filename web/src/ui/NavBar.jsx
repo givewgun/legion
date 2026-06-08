@@ -14,7 +14,10 @@ export function NavBar() {
   return (
     <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/80 backdrop-blur">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
-        <span className="text-lg font-bold tracking-tight text-slate-900">Legion</span>
+        <span className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
+          <img src="/legion_gpt.png" alt="Legion" className="h-8 w-8 object-contain" />
+          Legion
+        </span>
         <nav className="flex flex-wrap gap-1">
           {LINKS.map((l) => (
             <NavLink
