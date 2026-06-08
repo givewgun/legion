@@ -55,6 +55,48 @@ describe('createEmitter (v2)', () => {
     expect(out[0]).toMatchObject({ cycleId: 1, symbol: 'NVDA', band: 'STRONG_BUY' });
   });
 
+  it('captures entry prices from gunvest at fire time and persists them on the signal', async () => {
+    const bus = createMemoryBus();
+    const repo = fakeRepo();
+    const prices = { NVDA: 920.5, SPY: 540.1, QQQ: 470.2 };
+    const gunvest = {
+      getPrice: vi.fn(async (symbol) => ({ price: prices[symbol] })),
+    };
+
+    createEmitter({
+      bus,
+      repo,
+      telegram: vi.fn(async () => {}),
+      consensus,
+      expectedAgents: 2,
+      gunvest,
+    }).start();
+
+    emitVote(bus, {
+      cycleId: 5,
+      symbol: 'NVDA',
+      round: 1,
+      vote: { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'breakout' },
+    });
+    emitVote(bus, {
+      cycleId: 5,
+      symbol: 'NVDA',
+      round: 1,
+      vote: { agentId: 'news', stance: 2, conviction: 0.8, weight: 1, rationale: 'beat' },
+    });
+
+    await vi.waitFor(() => expect(repo.addSignal).toHaveBeenCalledTimes(1));
+    const [, signal] = repo.addSignal.mock.calls[0];
+    expect(signal).toMatchObject({
+      entryPrice: prices.NVDA,
+      spyEntryPrice: prices.SPY,
+      qqqEntryPrice: prices.QQQ,
+    });
+    expect(gunvest.getPrice).toHaveBeenCalledWith('NVDA');
+    expect(gunvest.getPrice).toHaveBeenCalledWith('SPY');
+    expect(gunvest.getPrice).toHaveBeenCalledWith('QQQ');
+  });
+
   it('iterates: a split round 1 republishes a round 2 request carrying priorVotes', async () => {
     const bus = createMemoryBus();
     const repo = fakeRepo();
