@@ -19,6 +19,10 @@ is delivered as a trade plan to Telegram and a dashboard.
 Inspired by the geth gestalt in *Mass Effect* ("Legion"): no single mind decides. Many
 narrow intelligences vote, and the agreement is the intelligence.
 
+> **🧭 New here? Start with [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md)** — the whole machine
+> in plain English (concept-first ELI5), then the exact algorithm, from consensus through
+> reliability and backtest. One read instead of sifting the README + 17 ADRs.
+>
 > **Architecture & diagrams:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · **Design decisions:** [`docs/adr/`](docs/adr/) (ADR 0001–0017)
 >
 > Full design: [`docs/superpowers/specs/2026-06-04-legion-design.md`](docs/superpowers/specs/2026-06-04-legion-design.md)
