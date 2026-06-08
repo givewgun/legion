@@ -132,3 +132,16 @@ CREATE TABLE IF NOT EXISTS legion.agent_config (
   enabled    BOOLEAN NOT NULL DEFAULT true,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ── Phase 6: agent vote co-movement ───────────────────────────────────────────
+-- Pairwise historical correlation of agents' stances (ADR 0015), recomputed by
+-- the reliability loop. Used to discount redundant agreement in the quorum so a
+-- cluster of co-moving agents counts as fewer independent confirmations.
+CREATE TABLE IF NOT EXISTS legion.agent_correlation (
+  agent_a      TEXT NOT NULL,
+  agent_b      TEXT NOT NULL,
+  corr         DOUBLE PRECISION NOT NULL,
+  sample_size  INTEGER NOT NULL DEFAULT 0,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (agent_a, agent_b)
+);

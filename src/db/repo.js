@@ -96,6 +96,38 @@ export function createRepo(db) {
       );
     },
 
+    // Stances for the most recent `signalLimit` signals, for co-movement (ADR 0015).
+    async getVoteHistory(signalLimit) {
+      return db.query(
+        `SELECT signal_id, agent_id, stance
+           FROM legion.signal_votes
+          WHERE signal_id IN (SELECT id FROM legion.signals ORDER BY id DESC LIMIT $1)
+          ORDER BY signal_id`,
+        [signalLimit],
+      );
+    },
+
+    async upsertCorrelation(agentA, agentB, corr, sampleSize) {
+      await db.query(
+        `INSERT INTO legion.agent_correlation (agent_a, agent_b, corr, sample_size, updated_at)
+         VALUES ($1, $2, $3, $4, now())
+         ON CONFLICT (agent_a, agent_b) DO UPDATE
+           SET corr = EXCLUDED.corr, sample_size = EXCLUDED.sample_size, updated_at = now()`,
+        [agentA, agentB, corr, sampleSize],
+      );
+    },
+
+    // Symmetric nested lookup { a: { b: corr }, b: { a: corr } } for the emitter.
+    async getAgentCorrelations() {
+      const rows = await db.query(`SELECT agent_a, agent_b, corr FROM legion.agent_correlation`);
+      const map = {};
+      for (const r of rows) {
+        (map[r.agent_a] ??= {})[r.agent_b] = r.corr;
+        (map[r.agent_b] ??= {})[r.agent_a] = r.corr;
+      }
+      return map;
+    },
+
     async getReliabilityLeaderboard() {
       const rows = await db.query(
         `SELECT agent_id, rho, sample_size FROM legion.agent_reliability ORDER BY rho DESC`,

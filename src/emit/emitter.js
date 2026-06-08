@@ -30,7 +30,7 @@ export function createEmitter({
   logger = console,
 }) {
   const rounds = new Map(); // `${cycleId}:${round}` -> { symbol, round, votes, constraint }
-  const learnedByCycle = new Map(); // cycleId -> { rho, calib } maps, loaded once per cycle
+  const learnedByCycle = new Map(); // cycleId -> { rho, calib, corr } loaded once per cycle
 
   function key(cycleId, round) {
     return `${cycleId}:${round}`;
@@ -48,11 +48,14 @@ export function createEmitter({
 
   async function learnedForCycle(cycleId) {
     if (!learnedByCycle.has(cycleId)) {
-      const [rho, calib] = await Promise.all([
+      const [rho, calib, corrMap] = await Promise.all([
         repo.getAllReliability?.() ?? {},
         repo.getAgentCalibration?.() ?? {},
+        repo.getAgentCorrelations?.() ?? {},
       ]);
-      learnedByCycle.set(cycleId, { rho, calib });
+      // Symmetric lookup; defaults to 0 (independent) for unseen pairs.
+      const corr = (a, b) => corrMap[a]?.[b] ?? 0;
+      learnedByCycle.set(cycleId, { rho, calib, corr });
     }
     return learnedByCycle.get(cycleId);
   }
@@ -64,11 +67,12 @@ export function createEmitter({
     // conviction (c'_i = c_i·cal_i), both loaded once per cycle. The round record stores
     // these effective inputs so any node recomputes the same S/V/κ (ADR 0001), while the
     // forecast snapshot below keeps RAW conviction to avoid a calibration feedback loop.
-    const { rho, calib } = await learnedForCycle(cycleId);
+    // `corr` discounts redundant agreement in the quorum (ADR 0015).
+    const { rho, calib, corr } = await learnedForCycle(cycleId);
     const scaled = scaleWeights(entry.votes, rho);
     const calibrated = scaleConviction(scaled, calib);
 
-    const result = evaluateRound(calibrated, consensus);
+    const result = evaluateRound(calibrated, { ...consensus, corr });
     const roundId = await repo.addRound(cycleId, entry.round, result);
     for (const v of calibrated) await repo.addVote(roundId, v);
 

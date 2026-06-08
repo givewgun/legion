@@ -3,12 +3,15 @@ import { createMemoryBus } from '../../src/bus/memory.js';
 import { createEmitter } from '../../src/emit/emitter.js';
 import { voteSubject } from '../../src/bus/subjects.js';
 
-function buildRepo({ calibration = {} } = {}) {
-  const calls = { signals: [], signalVotes: [], roundVotes: [] };
+function buildRepo({ calibration = {}, correlations = {} } = {}) {
+  const calls = { signals: [], signalVotes: [], roundVotes: [], rounds: [] };
   return {
     calls,
     createCycle: async () => 1,
-    addRound: async () => 1,
+    addRound: async (_cycleId, _roundNo, result) => {
+      calls.rounds.push(result);
+      return 1;
+    },
     addVote: async (_roundId, v) => calls.roundVotes.push(v),
     addSignal: async (_cycleId, s) => {
       calls.signals.push(s);
@@ -18,6 +21,7 @@ function buildRepo({ calibration = {} } = {}) {
     finishCycle: async () => {},
     getAllReliability: async () => ({ technical: 1.5, news: 0.5 }),
     getAgentCalibration: async () => calibration,
+    getAgentCorrelations: async () => correlations,
   };
 }
 
@@ -101,5 +105,39 @@ describe('emitter reliability', () => {
     const snap = repo.calls.signalVotes[0].votes;
     expect(snap.find((v) => v.agentId === 'technical').conviction).toBeCloseTo(0.9);
     expect(snap.find((v) => v.agentId === 'news').conviction).toBeCloseTo(0.9);
+  });
+
+  it('discounts redundant agreement in the quorum via loaded correlations', async () => {
+    const bus = createMemoryBus();
+    // All four agents are bullish; without correlation that is a unanimous quorum.
+    // Mark every pair as a perfect echo -> the quorum collapses below threshold.
+    const ids = ['technical', 'news', 'social', 'contrarian'];
+    const correlations = {};
+    for (const a of ids) {
+      correlations[a] = {};
+      for (const b of ids) if (a !== b) correlations[a][b] = 1;
+    }
+    const repo = buildRepo({ correlations });
+    createEmitter({
+      bus,
+      repo,
+      telegram: async () => {},
+      consensus: { maxRounds: 1, thetaV: 5, quorum: 2 / 3, holdBand: 0.5 },
+      expectedAgents: 4,
+      riskEnabled: false,
+      gunvest: { getPrice: async () => ({ price: 100 }) },
+      clock: () => new Date('2026-06-04T00:00:00Z'),
+      logger: { info() {}, error() {} },
+    }).start();
+
+    for (const vote of votes) {
+      bus.publishJSON(voteSubject('NVDA', 1), { cycleId: 1, symbol: 'NVDA', round: 1, vote });
+    }
+    await vi.waitFor(() => expect(repo.calls.rounds).toHaveLength(1));
+
+    // High dispersion is allowed (θ_v=5); only the redundancy-discounted quorum gates here.
+    expect(repo.calls.rounds[0].kappa).toBeLessThan(2 / 3);
+    expect(repo.calls.rounds[0].converged).toBe(false);
+    expect(repo.calls.signals[0].band).toBe('NO_CONSENSUS');
   });
 });

@@ -304,6 +304,13 @@ erDiagram
     agent_reliability {
         text agent_id PK
         double rho
+        double calibration
+        int sample_size
+    }
+    agent_correlation {
+        text agent_a PK
+        text agent_b PK
+        double corr
         int sample_size
     }
     backtest_results {
@@ -351,3 +358,4 @@ weighed, and the consequences. They live in [`docs/adr/`](adr/).
 | [0012](adr/0012-dashboard-read-write-split.md) | Dashboard: thin read API + separate SPA + trigger |
 | [0013](adr/0013-schema-management.md) | Single idempotent `schema.sql` (no migration tool) |
 | [0014](adr/0014-conviction-calibration.md) | Conviction calibration (cal scales c_i, distinct from ρ) |
+| [0015](adr/0015-correlated-agent-quorum.md) | Redundancy-discounted quorum (correlated agents count less) |
