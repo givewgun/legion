@@ -30,14 +30,34 @@ describe('repo phase4', () => {
     expect(pool.calls[0].text.toLowerCase()).toContain('from legion.agent_reliability');
   });
 
-  it('upsertReliability upserts rho + sample_size', async () => {
+  it('upsertReliability upserts rho + sample_size + calibration', async () => {
     const pool = poolReturning([[]]);
     const repo = createRepo(createDb(pool));
-    await repo.upsertReliability('technical', 1.25, 12);
+    await repo.upsertReliability('technical', 1.25, 12, 1.3);
     const { text, params } = pool.calls[0];
     expect(text.toLowerCase()).toContain('insert into legion.agent_reliability');
     expect(text.toLowerCase()).toContain('on conflict');
-    expect(params).toEqual(['technical', 1.25, 12]);
+    expect(params).toEqual(['technical', 1.25, 12, 1.3]);
+  });
+
+  it('upsertReliability defaults calibration to neutral 1.0', async () => {
+    const pool = poolReturning([[]]);
+    const repo = createRepo(createDb(pool));
+    await repo.upsertReliability('technical', 1.25, 12);
+    expect(pool.calls[0].params).toEqual(['technical', 1.25, 12, 1.0]);
+  });
+
+  it('getAgentCalibration returns an agentId->calibration map', async () => {
+    const pool = poolReturning([
+      [
+        { agent_id: 'technical', calibration: 1.4 },
+        { agent_id: 'news', calibration: 0.8 },
+      ],
+    ]);
+    const repo = createRepo(createDb(pool));
+    const map = await repo.getAgentCalibration();
+    expect(map).toEqual({ technical: 1.4, news: 0.8 });
+    expect(pool.calls[0].text.toLowerCase()).toContain('calibration');
   });
 
   it('addSignal persists entry/horizon/resolve_after and returns id', async () => {

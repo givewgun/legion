@@ -77,13 +77,19 @@ export function createRepo(db) {
       return Object.fromEntries(rows.map((r) => [r.agent_id, r.rho]));
     },
 
-    async upsertReliability(agentId, rho, sampleSize) {
+    async getAgentCalibration() {
+      const rows = await db.query(`SELECT agent_id, calibration FROM legion.agent_reliability`);
+      return Object.fromEntries(rows.map((r) => [r.agent_id, r.calibration]));
+    },
+
+    async upsertReliability(agentId, rho, sampleSize, calibration = 1.0) {
       await db.query(
-        `INSERT INTO legion.agent_reliability (agent_id, rho, sample_size, updated_at)
-         VALUES ($1, $2, $3, now())
+        `INSERT INTO legion.agent_reliability (agent_id, rho, sample_size, calibration, updated_at)
+         VALUES ($1, $2, $3, $4, now())
          ON CONFLICT (agent_id) DO UPDATE
-           SET rho = EXCLUDED.rho, sample_size = EXCLUDED.sample_size, updated_at = now()`,
-        [agentId, rho, sampleSize],
+           SET rho = EXCLUDED.rho, sample_size = EXCLUDED.sample_size,
+               calibration = EXCLUDED.calibration, updated_at = now()`,
+        [agentId, rho, sampleSize, calibration],
       );
     },
 

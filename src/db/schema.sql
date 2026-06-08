@@ -79,6 +79,9 @@ CREATE TABLE IF NOT EXISTS legion.backtest_results (
 -- rho = clamp(1 + 2*(0.25 - meanBrier), 0.5, 1.5); sample_size = forecasts scored.
 ALTER TABLE legion.agent_reliability ADD COLUMN IF NOT EXISTS rho          DOUBLE PRECISION NOT NULL DEFAULT 1.0;
 ALTER TABLE legion.agent_reliability ADD COLUMN IF NOT EXISTS sample_size  INTEGER NOT NULL DEFAULT 0;
+-- calibration = clamp(1 + (meanConviction(hits) - meanConviction(misses)), 0.5, 1.5);
+-- scales the conviction term c_i (vs rho, which scales the prior w_i). See ADR 0014.
+ALTER TABLE legion.agent_reliability ADD COLUMN IF NOT EXISTS calibration  DOUBLE PRECISION NOT NULL DEFAULT 1.0;
 
 -- Per-agent forecast snapshot taken when a signal is emitted (denormalized).
 CREATE TABLE IF NOT EXISTS legion.signal_votes (

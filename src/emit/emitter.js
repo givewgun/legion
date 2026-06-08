@@ -5,7 +5,7 @@ import {
   consensusSubject,
 } from '../bus/subjects.js';
 import { evaluateRound } from '../consensus/aggregate.js';
-import { scaleWeights } from '../consensus/reliability.js';
+import { scaleWeights, scaleConviction } from '../consensus/reliability.js';
 import { buildSignal } from './plan.js';
 import { applyRiskConstraint } from '../risk/apply.js';
 import { formatSignal } from './telegram.js';
@@ -30,7 +30,7 @@ export function createEmitter({
   logger = console,
 }) {
   const rounds = new Map(); // `${cycleId}:${round}` -> { symbol, round, votes, constraint }
-  const rhoByCycle = new Map(); // cycleId -> reliability map, loaded once per cycle
+  const learnedByCycle = new Map(); // cycleId -> { rho, calib } maps, loaded once per cycle
 
   function key(cycleId, round) {
     return `${cycleId}:${round}`;
@@ -46,23 +46,31 @@ export function createEmitter({
     return entry.votes.length >= expectedAgents && (!riskEnabled || entry.constraint !== null);
   }
 
-  async function rhoForCycle(cycleId) {
-    if (!rhoByCycle.has(cycleId)) {
-      rhoByCycle.set(cycleId, (await repo.getAllReliability?.()) ?? {});
+  async function learnedForCycle(cycleId) {
+    if (!learnedByCycle.has(cycleId)) {
+      const [rho, calib] = await Promise.all([
+        repo.getAllReliability?.() ?? {},
+        repo.getAgentCalibration?.() ?? {},
+      ]);
+      learnedByCycle.set(cycleId, { rho, calib });
     }
-    return rhoByCycle.get(cycleId);
+    return learnedByCycle.get(cycleId);
   }
 
   async function process(cycleId, k, entry) {
     rounds.delete(k); // guard against double-finalize
 
-    // Aggregate with reliability-scaled weights, loaded once per cycle.
-    const rhoMap = await rhoForCycle(cycleId);
-    const scaled = scaleWeights(entry.votes, rhoMap);
+    // Aggregate with reliability-scaled weights (W_i = w_i·ρ_i) and calibration-scaled
+    // conviction (c'_i = c_i·cal_i), both loaded once per cycle. The round record stores
+    // these effective inputs so any node recomputes the same S/V/κ (ADR 0001), while the
+    // forecast snapshot below keeps RAW conviction to avoid a calibration feedback loop.
+    const { rho, calib } = await learnedForCycle(cycleId);
+    const scaled = scaleWeights(entry.votes, rho);
+    const calibrated = scaleConviction(scaled, calib);
 
-    const result = evaluateRound(scaled, consensus);
+    const result = evaluateRound(calibrated, consensus);
     const roundId = await repo.addRound(cycleId, entry.round, result);
-    for (const v of scaled) await repo.addVote(roundId, v);
+    for (const v of calibrated) await repo.addVote(roundId, v);
 
     const isFinal = result.converged || entry.round >= consensus.maxRounds;
     if (!isFinal) {
@@ -75,7 +83,7 @@ export function createEmitter({
       return;
     }
 
-    let signal = buildSignal(result, { symbol: entry.symbol, votes: scaled });
+    let signal = buildSignal(result, { symbol: entry.symbol, votes: calibrated });
     if (riskEnabled) signal = applyRiskConstraint(signal, entry.constraint);
 
     const now = clock();
@@ -96,6 +104,8 @@ export function createEmitter({
       horizonDays,
       resolveAfter,
     });
+    // Snapshot RAW self-reported conviction (from `scaled`, which leaves conviction
+    // untouched) so the calibration learner scores what the agent actually claimed.
     await repo.addSignalVotes?.(
       signalId,
       scaled.map((v) => ({
@@ -106,7 +116,7 @@ export function createEmitter({
       })),
     );
     await repo.finishCycle(cycleId, result.converged ? 'converged' : 'no_consensus');
-    rhoByCycle.delete(cycleId);
+    learnedByCycle.delete(cycleId);
 
     try {
       await telegram(formatSignal(signal));
