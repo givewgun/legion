@@ -101,7 +101,8 @@ W_i = w_i · ρ_i
 
 - `w_i` — **domain prior**, fixed per agent (see the roster table below).
 - `ρ_i` — **reliability**, starts at `1.0` and is updated from the agent's Brier score as
-  past signals resolve (Phase 4). Good forecasters gain weight; poor ones lose it — recent
+  past signals resolve (the [reliability loop](docs/HOW-IT-WORKS.md#10-learning-who-to-trust)).
+  Good forecasters gain weight; poor ones lose it — recent
   forecasts count most, and trust is lost faster than it is earned
   ([ADR 0017](docs/adr/0017-reliability-recency-asymmetry.md)).
 
@@ -186,8 +187,7 @@ strong dissent keeps dispersion high. So the round does **not** emit; instead it
 When a round fails to converge, the emitter re-publishes the cycle with `round + 1` and the
 prior round's votes attached. Each agent is shown the **strongest opposing rationales** and
 re-votes — it may hold its ground or move. This repeats until convergence or `R_max`
-(default 3) rounds, at which point an unresolved panel emits `NO_CONSENSUS`. (Multi-round
-iteration and the extra agents land in Phase 2; see Status.)
+(default 3) rounds, at which point an unresolved panel emits `NO_CONSENSUS`.
 
 To keep revision honest, a consensus that only appears in a later round must still carry enough
 **independent round-1 backing** — otherwise it is treated as herding (agents caving to the
@@ -228,8 +228,8 @@ failure, so a dead upstream never blocks a vote.
 | **1 Single agent E2E** | Technical agent → vote → emitter → Telegram, one ticker | ✅ done |
 | **2 Consensus** | News / Social / Contrarian + Risk constraint, multi-round iteration, multi-ticker | ✅ done |
 | **3 Dashboard** | debate viewer, ticker config, signal feed | ✅ done |
-| **4 Backtest + reliability** | forward paper-test, index compare, `ρ_i` loop | ▫ planned |
-| **5 Summary + polish** | 6h Telegram summary, provider-switch UI, docs | ▫ planned |
+| **4 Backtest + reliability** | forward paper-test, index compare, `ρ_i` loop | ✅ done |
+| **5 Summary + polish** | 6h Telegram summary, provider-switch UI, docs | ✅ done |
 
 Phase plans live in [`docs/superpowers/plans/`](docs/superpowers/plans/); per-milestone
 handover notes in [`docs/superpowers/handovers/`](docs/superpowers/handovers/).
