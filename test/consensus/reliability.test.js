@@ -7,6 +7,8 @@ import {
   scaleConviction,
   calibrationFromSamples,
   directionalHit,
+  decayWeights,
+  weightedMean,
   MIN_RESOLVED,
 } from '../../src/consensus/reliability.js';
 
@@ -48,6 +50,30 @@ describe('reliabilityFromBrier', () => {
   });
   it('clamps below floor', () => {
     expect(reliabilityFromBrier(0.9, 50)).toBe(0.5);
+  });
+  it('penalizes worse-than-chance steeper than it rewards better-than-chance', () => {
+    // Same 0.05 distance either side of 0.25: up-slope 2, down-slope 4.
+    const better = reliabilityFromBrier(0.2, 50); // 1 + 2*0.05 = 1.10
+    const worse = reliabilityFromBrier(0.3, 50); // 1 - 4*0.05 = 0.80
+    expect(better).toBeCloseTo(1.1);
+    expect(worse).toBeCloseTo(0.8);
+    expect(1 - worse).toBeGreaterThan(better - 1); // asymmetric: drops faster than it climbs
+  });
+});
+
+describe('decayWeights / weightedMean', () => {
+  it('weights the most recent slot highest and decays monotonically', () => {
+    const w = decayWeights(4);
+    expect(w[0]).toBe(1);
+    expect(w[0]).toBeGreaterThan(w[1]);
+    expect(w[1]).toBeGreaterThan(w[2]);
+  });
+  it('reduces to a simple mean when weights are uniform', () => {
+    expect(weightedMean([1, 2, 3], [1, 1, 1])).toBeCloseTo(2);
+  });
+  it('pulls the mean toward the higher-weighted (recent) values', () => {
+    // value 0 most recent (weight 1), value 1 older (weight 0.5) -> below the flat mean 0.5
+    expect(weightedMean([0, 1], [1, 0.5])).toBeCloseTo(1 / 3);
   });
 });
 

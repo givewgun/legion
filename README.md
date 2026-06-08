@@ -19,7 +19,7 @@ is delivered as a trade plan to Telegram and a dashboard.
 Inspired by the geth gestalt in *Mass Effect* ("Legion"): no single mind decides. Many
 narrow intelligences vote, and the agreement is the intelligence.
 
-> **Architecture & diagrams:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · **Design decisions:** [`docs/adr/`](docs/adr/) (ADR 0001–0016)
+> **Architecture & diagrams:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · **Design decisions:** [`docs/adr/`](docs/adr/) (ADR 0001–0017)
 >
 > Full design: [`docs/superpowers/specs/2026-06-04-legion-design.md`](docs/superpowers/specs/2026-06-04-legion-design.md)
 
@@ -97,7 +97,9 @@ W_i = w_i · ρ_i
 
 - `w_i` — **domain prior**, fixed per agent (see the roster table below).
 - `ρ_i` — **reliability**, starts at `1.0` and is updated from the agent's Brier score as
-  past signals resolve (Phase 4). Good forecasters gain weight; poor ones lose it.
+  past signals resolve (Phase 4). Good forecasters gain weight; poor ones lose it — recent
+  forecasts count most, and trust is lost faster than it is earned
+  ([ADR 0017](docs/adr/0017-reliability-recency-asymmetry.md)).
 
 Conviction `c_i` is likewise scaled by a learned **calibration** factor — an agent whose
 confidence has historically tracked being right is trusted more, a loud-but-uninformative one
@@ -404,7 +406,7 @@ Tabs: **Signals** (latest calls), **Debate** (pick a ticker → cycle → rounds
   agents abstain (HOLD/0) without an LLM call. Only the `local` (Ollama) provider is implemented
   today — selecting `gemini`/`openai` makes that agent abstain until those providers are added.
 - **Add an agent:** see `docs/adding-an-agent.md`.
-- **Architecture & decisions:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), `docs/adr/0001`–`0016`.
+- **Architecture & decisions:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), `docs/adr/0001`–`0017`.
 
 ### Environment
 

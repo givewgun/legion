@@ -1,12 +1,21 @@
 // Min resolved forecasts before an agent's reliability is tuned away from neutral.
 export const MIN_RESOLVED = 5;
-// Most-recent resolved forecasts per agent used in the reliability window.
+// Most-recent resolved forecasts per agent considered in the reliability window.
 export const WINDOW = 50;
+// Recency half-life (in resolved forecasts): a forecast this many slots older than
+// the newest carries half its weight. Lets ρ/calibration track a regime shift instead
+// of being anchored to stale evidence inside the equal-weight WINDOW (ADR 0017).
+export const HALF_LIFE = 20;
+const DECAY = 0.5 ** (1 / HALF_LIFE);
 // Reliability (rho) is clamped to [floor, cap]: 0.5 halves weight, 1.5 boosts it.
 const RHO_FLOOR = 0.5;
 const RHO_CAP = 1.5;
 // Brier score of a coin-flip forecaster — the neutral (rho = 1.0) reference point.
 const RANDOM_BRIER = 0.25;
+// Asymmetric slopes around RANDOM_BRIER: a poor forecaster loses weight faster than a
+// good one gains it, because acting on a bad call costs capital (ADR 0017).
+const RHO_GAIN_UP = 2;
+const RHO_GAIN_DOWN = 4;
 
 // Calibration (cal) scales the conviction term c_i — distinct from rho, which scales
 // the prior w_i. It is clamped to the same [floor, cap] band and stays neutral at 1.0.
@@ -16,6 +25,21 @@ const CALIB_CAP = 1.5;
 const CALIB_GAIN = 1.0;
 
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+
+// Recency weights for rows ordered most-recent-first: 1, DECAY, DECAY², …
+export function decayWeights(n) {
+  return Array.from({ length: n }, (_, i) => DECAY ** i);
+}
+
+export function weightedMean(values, weights) {
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    num += values[i] * weights[i];
+    den += weights[i];
+  }
+  return den === 0 ? 0 : num / den;
+}
 
 export function forecastProb(stance, conviction) {
   return clamp(0.5 + (stance * conviction) / 4, 0, 1);
@@ -28,7 +52,9 @@ export function brier(prob, outcome) {
 
 export function reliabilityFromBrier(meanBrier, sampleSize) {
   if (sampleSize < MIN_RESOLVED) return 1.0;
-  return clamp(1 + 2 * (RANDOM_BRIER - meanBrier), RHO_FLOOR, RHO_CAP);
+  const edge = RANDOM_BRIER - meanBrier; // > 0 better than chance, < 0 worse
+  const delta = edge >= 0 ? RHO_GAIN_UP * edge : RHO_GAIN_DOWN * edge;
+  return clamp(1 + delta, RHO_FLOOR, RHO_CAP);
 }
 
 export function scaleWeights(votes, rhoMap = {}) {
@@ -49,17 +75,22 @@ export function directionalHit(stance, outcome) {
 }
 
 // Conviction calibration: does an agent state higher conviction when it turns out right
-// than when it turns out wrong? `samples` is [{ conviction, hit }] with hit ∈ {0,1}. The
-// discrimination d = meanConviction(hits) − meanConviction(misses) ∈ [-1, 1] is positive
-// for an agent whose confidence is informative, ~0 when conviction carries no signal (so a
-// loud-but-uninformative voice gets no extra trust), and negative when it is confidently
-// wrong. Stays neutral at 1.0 until the agent has both hits and misses across at least
-// MIN_RESOLVED directional forecasts (discrimination is undefined without both classes).
+// than when it turns out wrong? `samples` is [{ conviction, hit, weight? }] with hit ∈ {0,1}
+// and an optional recency weight (default 1). The discrimination
+// d = meanConviction(hits) − meanConviction(misses) ∈ [-1, 1] is positive for an agent whose
+// confidence is informative, ~0 when conviction carries no signal (so a loud-but-uninformative
+// voice gets no extra trust), and negative when it is confidently wrong. Stays neutral at 1.0
+// until the agent has both hits and misses across at least MIN_RESOLVED directional forecasts
+// (discrimination is undefined without both classes).
 export function calibrationFromSamples(samples) {
   const hits = samples.filter((s) => s.hit === 1);
   const misses = samples.filter((s) => s.hit === 0);
   if (samples.length < MIN_RESOLVED || hits.length === 0 || misses.length === 0) return 1.0;
-  const meanConviction = (xs) => xs.reduce((sum, s) => sum + s.conviction, 0) / xs.length;
+  const meanConviction = (xs) =>
+    weightedMean(
+      xs.map((s) => s.conviction),
+      xs.map((s) => s.weight ?? 1),
+    );
   const d = meanConviction(hits) - meanConviction(misses);
   return clamp(1 + CALIB_GAIN * d, CALIB_FLOOR, CALIB_CAP);
 }
