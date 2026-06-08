@@ -105,6 +105,11 @@ ALTER TABLE legion.backtest_results ADD COLUMN IF NOT EXISTS qqq_pnl   DOUBLE PR
 -- Resolution columns on signals: forward paper-test outcome vs SPY/QQQ.
 -- (Signal direction is derived from signals.band; no stance column is added.)
 ALTER TABLE legion.signals ADD COLUMN IF NOT EXISTS entry_price    DOUBLE PRECISION;
+-- Benchmark prices captured in the same instant as entry_price, so the forward
+-- paper-test measures stock and benchmarks from a shared "entered at signal time"
+-- base (ADR 0009). Null on legacy signals -> resolver falls back to close-to-close.
+ALTER TABLE legion.signals ADD COLUMN IF NOT EXISTS spy_entry_price DOUBLE PRECISION;
+ALTER TABLE legion.signals ADD COLUMN IF NOT EXISTS qqq_entry_price DOUBLE PRECISION;
 ALTER TABLE legion.signals ADD COLUMN IF NOT EXISTS horizon_days   INTEGER NOT NULL DEFAULT 5;
 ALTER TABLE legion.signals ADD COLUMN IF NOT EXISTS resolve_after  TIMESTAMPTZ;
 ALTER TABLE legion.signals ADD COLUMN IF NOT EXISTS resolved       BOOLEAN NOT NULL DEFAULT false;
@@ -126,4 +131,17 @@ CREATE TABLE IF NOT EXISTS legion.agent_config (
   model      TEXT,
   enabled    BOOLEAN NOT NULL DEFAULT true,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ── Phase 6: agent vote co-movement ───────────────────────────────────────────
+-- Pairwise historical correlation of agents' stances (ADR 0015), recomputed by
+-- the reliability loop. Used to discount redundant agreement in the quorum so a
+-- cluster of co-moving agents counts as fewer independent confirmations.
+CREATE TABLE IF NOT EXISTS legion.agent_correlation (
+  agent_a      TEXT NOT NULL,
+  agent_b      TEXT NOT NULL,
+  corr         DOUBLE PRECISION NOT NULL,
+  sample_size  INTEGER NOT NULL DEFAULT 0,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (agent_a, agent_b)
 );

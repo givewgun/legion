@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted (2026-06-04); implemented Phase 4 (2026-06-06).
+Accepted (2026-06-04); implemented Phase 4 (2026-06-06). Refined by ADR 0017 (recency decay +
+asymmetric penalty) and complemented by ADR 0014 (conviction calibration).
 
 ## Context
 
@@ -34,7 +35,7 @@ resolve.
 - **Static weights only** — never learns; the original Phase 0 behaviour, kept as the `ρ=1.0`
   default.
 - **Accuracy / hit-rate** — ignores calibration (confidence); Brier rewards being both right
-  *and* appropriately confident, which is what conviction encodes.
+  _and_ appropriately confident, which is what conviction encodes.
 - **Online gradient updates per signal** — noisier and harder to reason about than a windowed
   batch recompute on a cron.
 

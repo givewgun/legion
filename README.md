@@ -19,7 +19,7 @@ is delivered as a trade plan to Telegram and a dashboard.
 Inspired by the geth gestalt in *Mass Effect* ("Legion"): no single mind decides. Many
 narrow intelligences vote, and the agreement is the intelligence.
 
-> **Architecture & diagrams:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · **Design decisions:** [`docs/adr/`](docs/adr/) (ADR 0001–0014)
+> **Architecture & diagrams:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · **Design decisions:** [`docs/adr/`](docs/adr/) (ADR 0001–0017)
 >
 > Full design: [`docs/superpowers/specs/2026-06-04-legion-design.md`](docs/superpowers/specs/2026-06-04-legion-design.md)
 
@@ -97,7 +97,14 @@ W_i = w_i · ρ_i
 
 - `w_i` — **domain prior**, fixed per agent (see the roster table below).
 - `ρ_i` — **reliability**, starts at `1.0` and is updated from the agent's Brier score as
-  past signals resolve (Phase 4). Good forecasters gain weight; poor ones lose it.
+  past signals resolve (Phase 4). Good forecasters gain weight; poor ones lose it — recent
+  forecasts count most, and trust is lost faster than it is earned
+  ([ADR 0017](docs/adr/0017-reliability-recency-asymmetry.md)).
+
+Conviction `c_i` is likewise scaled by a learned **calibration** factor — an agent whose
+confidence has historically tracked being right is trusted more, a loud-but-uninformative one
+less ([ADR 0014](docs/adr/0014-conviction-calibration.md)). All of these start neutral and only
+move once enough forecasts resolve, so a fresh deploy behaves exactly like the formulas below.
 
 ### Aggregation (every node computes this identically)
 
@@ -115,7 +122,9 @@ Directional quorum    κ = Σ(W_i · c_i  over agents on sign(S)'s side) / Σ(W_
 - **`κ`** is *what fraction of the weight* sits on the winning side. When the panel is
   near-neutral (`|S| < holdBand`, default `0.5`), agents voting HOLD are also counted as
   agreeing — a flat consensus should credit the agents that actually sat flat, not just the
-  marginal lean.
+  marginal lean. Agreement among historically **co-moving** agents is discounted, so a cluster
+  of echoes counts as fewer independent confirmations than truly diverse agreement
+  ([ADR 0015](docs/adr/0015-correlated-agent-quorum.md)).
 
 ### Convergence
 
@@ -175,6 +184,10 @@ prior round's votes attached. Each agent is shown the **strongest opposing ratio
 re-votes — it may hold its ground or move. This repeats until convergence or `R_max`
 (default 3) rounds, at which point an unresolved panel emits `NO_CONSENSUS`. (Multi-round
 iteration and the extra agents land in Phase 2; see Status.)
+
+To keep revision honest, a consensus that only appears in a later round must still carry enough
+**independent round-1 backing** — otherwise it is treated as herding (agents caving to the
+loudest peer) and rejected rather than emitted ([ADR 0016](docs/adr/0016-anti-herding-guard.md)).
 
 ### The Risk Manager (a constraint, not a vote)
 
@@ -393,7 +406,7 @@ Tabs: **Signals** (latest calls), **Debate** (pick a ticker → cycle → rounds
   agents abstain (HOLD/0) without an LLM call. Only the `local` (Ollama) provider is implemented
   today — selecting `gemini`/`openai` makes that agent abstain until those providers are added.
 - **Add an agent:** see `docs/adding-an-agent.md`.
-- **Architecture & decisions:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), `docs/adr/0001`–`0014`.
+- **Architecture & decisions:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), `docs/adr/0001`–`0017`.
 
 ### Environment
 

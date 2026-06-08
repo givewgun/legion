@@ -89,9 +89,11 @@ flowchart TB
 ```
 
 Per round the emitter waits for `expectedAgents` votes (and the risk constraint, if enabled),
-scales each vote's weight by reliability `ρ`, and aggregates. If the round has not converged and
-the round cap is not reached, it republishes the cycle for the next round **with the prior
-votes attached as dissent**, so agents must confront disagreement before re-voting.
+scales each vote's weight by reliability `ρ` and conviction by calibration, discounts redundant
+agreement in the quorum (ADR 0015), and aggregates. If the round has not converged and the round
+cap is not reached, it republishes the cycle for the next round **with the prior votes attached as
+dissent**, so agents must confront disagreement before re-voting. A consensus reached only in a
+later round must still retain independent round-1 backing or it is rejected as herding (ADR 0016).
 
 ---
 
@@ -140,11 +142,11 @@ Agents self-tune from outcomes via a Brier score (ADR 0008), fed by the forward 
 ```mermaid
 flowchart LR
     emit["Emitter finalizes signal"]
-    snap["Snapshot per-agent forecasts<br/>+ entry price + resolve_after"]
+    snap["Snapshot per-agent forecasts<br/>+ entry prices (stock/SPY/QQQ) + resolve_after"]
     wait{"horizon elapsed?"}
-    resolve["Resolver: forward return<br/>vs SPY / QQQ"]
+    resolve["Resolver: return from captured<br/>entry → horizon close, vs SPY / QQQ"]
     outcome["outcome = return &gt; SPY<br/>(alpha)"]
-    brier["Brier loop:<br/>ρ = clamp(1 + 2(0.25 − meanBrier), 0.5, 1.5)"]
+    brier["Brier loop (recency-decayed, asymmetric):<br/>ρ = clamp(1 + gain·(0.25 − meanBrier), 0.5, 1.5)"]
     store[("agent_reliability.rho")]
     scale["Emitter scales weights<br/>W_i = w_i · ρ_i next cycle"]
 
@@ -154,7 +156,10 @@ flowchart LR
 ```
 
 `ρ` stays neutral at `1.0` until an agent has at least 5 resolved forecasts (over a trailing
-window of 50), so a fresh deploy behaves like an unweighted panel until evidence accrues.
+window of 50), so a fresh deploy behaves like an unweighted panel until evidence accrues. Within
+that window forecasts are **recency-weighted** (a ~20-forecast half-life) and the mapping is
+**asymmetric** — a deteriorating forecaster loses trust faster than an improving one gains it,
+because acting on a bad call costs capital (ADR 0017).
 
 The same Brier loop also learns a **calibration** factor `cal` per agent — does an agent state
 higher conviction when it turns out right than when it turns out wrong? `cal` scales the
@@ -285,6 +290,8 @@ erDiagram
         numeric conviction
         jsonb plan
         double entry_price
+        double spy_entry_price
+        double qqq_entry_price
         int horizon_days
         timestamptz resolve_after
         bool resolved
@@ -302,6 +309,13 @@ erDiagram
     agent_reliability {
         text agent_id PK
         double rho
+        double calibration
+        int sample_size
+    }
+    agent_correlation {
+        text agent_a PK
+        text agent_b PK
+        double corr
         int sample_size
     }
     backtest_results {
@@ -349,3 +363,6 @@ weighed, and the consequences. They live in [`docs/adr/`](adr/).
 | [0012](adr/0012-dashboard-read-write-split.md) | Dashboard: thin read API + separate SPA + trigger |
 | [0013](adr/0013-schema-management.md) | Single idempotent `schema.sql` (no migration tool) |
 | [0014](adr/0014-conviction-calibration.md) | Conviction calibration (cal scales c_i, distinct from ρ) |
+| [0015](adr/0015-correlated-agent-quorum.md) | Redundancy-discounted quorum (correlated agents count less) |
+| [0016](adr/0016-anti-herding-guard.md) | Anti-herding guard (revision consensus needs independent backing) |
+| [0017](adr/0017-reliability-recency-asymmetry.md) | Recency-decayed, asymmetric reliability (refines 0008) |

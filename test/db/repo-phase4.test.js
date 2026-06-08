@@ -60,7 +60,7 @@ describe('repo phase4', () => {
     expect(pool.calls[0].text.toLowerCase()).toContain('calibration');
   });
 
-  it('addSignal persists entry/horizon/resolve_after and returns id', async () => {
+  it('addSignal persists entry/benchmark/horizon/resolve_after and returns id', async () => {
     const pool = poolReturning([[{ id: 77 }]]);
     const repo = createRepo(createDb(pool));
     const id = await repo.addSignal(5, {
@@ -69,15 +69,27 @@ describe('repo phase4', () => {
       conviction: 0.7,
       plan: { foo: 1 },
       entryPrice: 100,
+      spyEntryPrice: 400,
+      qqqEntryPrice: 300,
       horizonDays: 5,
       resolveAfter: '2026-06-09T00:00:00Z',
     });
     expect(id).toBe(77);
     const { text, params } = pool.calls[0];
     expect(text.toLowerCase()).toContain('insert into legion.signals');
+    expect(text.toLowerCase()).toContain('spy_entry_price');
     expect(text.toLowerCase()).toContain('returning id');
     expect(params).toContain(100);
+    expect(params).toContain(400);
+    expect(params).toContain(300);
     expect(params).toContain('2026-06-09T00:00:00Z');
+  });
+
+  it('addSignal defaults benchmark entry prices to null when omitted', async () => {
+    const pool = poolReturning([[{ id: 78 }]]);
+    const repo = createRepo(createDb(pool));
+    await repo.addSignal(5, { symbol: 'NVDA', band: 'BUY', conviction: 0.7, plan: {} });
+    expect(pool.calls[0].params).toEqual([5, 'NVDA', 'BUY', 0.7, '{}', null, null, null, 5, null]);
   });
 
   it('addSignalVotes bulk-inserts a snapshot row per vote', async () => {

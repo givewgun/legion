@@ -3,6 +3,7 @@ import {
   weightedStance,
   weightedDispersion,
   directionalQuorum,
+  independentBacking,
   evaluateRound,
 } from '../../src/consensus/aggregate.js';
 
@@ -61,6 +62,52 @@ describe('directionalQuorum', () => {
     const votes = [v('a', 1, 1, 1), v('b', -1, 1, 1), v('c', 0, 1, 1)];
     const s = weightedStance(votes); // 0
     expect(directionalQuorum(votes, s, 0.5)).toBeCloseTo(1 / 3, 6);
+  });
+
+  describe('redundancy discount (ADR 0015)', () => {
+    // 3 bulls + 1 bear; without correlation κ = 3/4.
+    const votes = [v('a', 1, 1, 1), v('b', 1, 1, 1), v('c', 1, 1, 1), v('d', -1, 1, 1)];
+    const s = weightedStance(votes); // 0.5
+
+    const lookup = (table) => (x, y) => table[`${x}|${y}`] ?? table[`${y}|${x}`] ?? 0;
+
+    it('collapses perfectly co-moving agreement toward one confirmation', () => {
+      // a,b,c are perfect echoes -> the trio counts as ~1 independent confirmation.
+      const corr = lookup({ 'a|b': 1, 'a|c': 1, 'b|c': 1 });
+      // each mass = 1 + 1 + 1 = 3 -> effectiveAgree = 3*(1/3) = 1; den = 4.
+      expect(directionalQuorum(votes, s, 0.5, corr)).toBeCloseTo(0.25, 6);
+    });
+
+    it('partially discounts partially-correlated agreement', () => {
+      const corr = lookup({ 'a|b': 0.5, 'a|c': 0.5, 'b|c': 0.5 });
+      // each mass = 1 + 0.5 + 0.5 = 2 -> effectiveAgree = 3*0.5 = 1.5; den = 4.
+      expect(directionalQuorum(votes, s, 0.5, corr)).toBeCloseTo(0.375, 6);
+    });
+
+    it('does not discount independent (or negatively correlated) agreement', () => {
+      const corr = lookup({ 'a|b': -0.8, 'a|c': 0, 'b|c': -0.3 });
+      // negative/zero correlation -> no redundancy -> plain κ = 3/4.
+      expect(directionalQuorum(votes, s, 0.5, corr)).toBeCloseTo(0.75, 6);
+    });
+
+    it('can drop a redundant supermajority below quorum so it fails to converge', () => {
+      const corr = lookup({ 'a|b': 1, 'a|c': 1, 'b|c': 1 });
+      const res = evaluateRound(votes, { thetaV: 5, quorum: 2 / 3, holdBand: 0.5, corr });
+      expect(res.kappa).toBeLessThan(2 / 3);
+      expect(res.converged).toBe(false);
+    });
+  });
+});
+
+describe('independentBacking', () => {
+  it('is the weighted fraction whose side already matched the target', () => {
+    // one BUY (w·c=0.9) vs three SELL → BUY backing = 0.9 / 3.6 = 0.25
+    const votes = [v('a', 1, 0.9, 1), v('b', -1, 0.9, 1), v('c', -1, 0.9, 1), v('d', -1, 0.9, 1)];
+    expect(independentBacking(votes, 1)).toBeCloseTo(0.25, 6);
+    expect(independentBacking(votes, -1)).toBeCloseTo(0.75, 6);
+  });
+  it('returns 0 for empty votes', () => {
+    expect(independentBacking([], 1)).toBe(0);
   });
 });
 

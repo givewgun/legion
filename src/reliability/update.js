@@ -4,13 +4,17 @@ import {
   reliabilityFromBrier,
   calibrationFromSamples,
   directionalHit,
+  decayWeights,
+  weightedMean,
   WINDOW,
 } from '../consensus/reliability.js';
 
 // Recompute, per agent, both learned weights from its trailing window of resolved
 // forecasts: rho (skill, via Brier — scales the prior w_i) and calibration (is its
-// conviction informative — scales the conviction term c_i). Persists both and returns
-// { agentId: { rho, calibration } }.
+// conviction informative — scales the conviction term c_i). Both are recency-weighted
+// (newest forecasts count most) so the panel tracks regime shifts. getResolvedForecasts
+// returns rows newest-first, so decay weight index 0 is the most recent. Persists both
+// and returns { agentId: { rho, calibration } }.
 export async function recomputeReliability(repo) {
   const rows = await repo.getResolvedForecasts(WINDOW * 8); // headroom for many agents
   const byAgent = new Map();
@@ -21,12 +25,17 @@ export async function recomputeReliability(repo) {
   }
   const map = {};
   for (const [agentId, agentRows] of byAgent) {
+    const weights = decayWeights(agentRows.length);
     const briers = agentRows.map((r) => brier(forecastProb(r.stance, r.conviction), r.outcome));
-    const meanBrier = briers.reduce((a, b) => a + b, 0) / briers.length;
+    const meanBrier = weightedMean(briers, weights);
     const rho = reliabilityFromBrier(meanBrier, briers.length);
 
     const samples = agentRows
-      .map((r) => ({ conviction: r.conviction, hit: directionalHit(r.stance, r.outcome) }))
+      .map((r, i) => ({
+        conviction: r.conviction,
+        hit: directionalHit(r.stance, r.outcome),
+        weight: weights[i],
+      }))
       .filter((s) => s.hit !== null);
     const calibration = calibrationFromSamples(samples);
 

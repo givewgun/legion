@@ -17,11 +17,16 @@ describe('runReliabilityOnce', () => {
         return [];
       },
       upsertReliability: async () => {},
+      getVoteHistory: async () => {
+        order.push('votes');
+        return [];
+      },
+      replaceCorrelations: async () => {},
     };
     const gunvest = { getCandles: async () => [] };
     const out = await runReliabilityOnce({ repo, gunvest, clock: () => new Date('2026-06-10') });
-    expect(order).toEqual(['list', 'forecasts']);
-    expect(out).toMatchObject({ resolved: 0 });
+    expect(order).toEqual(['list', 'forecasts', 'votes']);
+    expect(out).toMatchObject({ resolved: 0, correlations: 0 });
     expect(out.reliability).toEqual({});
   });
 });

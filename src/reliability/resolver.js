@@ -1,5 +1,10 @@
 // Forward paper-test resolver: turns due signals into realized forward/benchmark
-// returns and a binary alpha outcome (beat SPY?). Pure returnOver + I/O resolveSignals.
+// returns and a binary alpha outcome (beat SPY?). Pure return helpers + I/O resolveSignals.
+//
+// Each leg is measured from the price captured at signal-fire time (the stock's
+// entry_price plus the SPY/QQQ entry prices snapshotted in the same instant) to the
+// horizon-end close — a faithful "entered everything when the signal fired" test.
+// Signals predating benchmark-entry capture fall back to a close-to-close window.
 //
 // The holding window is pinned to the signal's fixed horizon — [created_at, resolve_after],
 // where resolve_after = created_at + horizonDays (set at emit time) — NOT to the cron fire
@@ -16,6 +21,9 @@ function day(ts) {
   return new Date(ts).toISOString().slice(0, 10);
 }
 
+// Close-to-close return over [from, to]. The legacy base, kept as the fallback
+// for signals emitted before benchmark entry prices were captured and for cycles
+// where the live entry-price fetch failed at emit time.
 export function returnOver(candles, fromTs, toTs) {
   const from = day(fromTs);
   const to = day(toTs);
@@ -25,6 +33,26 @@ export function returnOver(candles, fromTs, toTs) {
   const c1 = within[within.length - 1].close;
   if (!c0) return null;
   return (c1 - c0) / c0;
+}
+
+// Last candle close on or before `toTs` (candles are ascending by date) — the
+// horizon-end exit used by the live-entry paper-test.
+export function closeOnOrBefore(candles, toTs) {
+  const to = day(toTs);
+  const within = candles.filter((c) => c.date <= to);
+  if (within.length === 0) return null;
+  return within[within.length - 1].close;
+}
+
+// Return from the price captured at signal-fire time (entry_price) to the
+// horizon-end close. This is the honest base: the stock and its benchmarks all
+// "enter" at the same instant the signal fired, immune to candle lag and to the
+// intraday/daily-close mismatch of measuring from the signal day's close.
+export function returnFromEntry(candles, entryPrice, toTs) {
+  if (!entryPrice) return null;
+  const exit = closeOnOrBefore(candles, toTs);
+  if (exit == null) return null;
+  return (exit - entryPrice) / entryPrice;
 }
 
 export async function resolveSignals(repo, gunvest, now) {
@@ -37,9 +65,24 @@ export async function resolveSignals(repo, gunvest, now) {
       gunvest.getCandles('QQQ', HORIZON_FETCH_DAYS),
     ]);
     const windowEnd = sig.resolve_after;
-    const forwardReturn = returnOver(stock, sig.created_at, windowEnd);
-    const spyReturn = returnOver(spy, sig.created_at, windowEnd);
-    const qqqReturn = returnOver(qqq, sig.created_at, windowEnd);
+
+    // Live-entry paper-test: measure each leg from the price captured at signal
+    // fire time to the horizon-end close, so the stock and its benchmarks share
+    // the same "entered at signal time" convention and the comparison is fair.
+    // Legacy signals (and cycles where the entry fetch failed) lack benchmark
+    // entry prices — fall back to a consistent close-to-close window for those.
+    const liveEntry = sig.entry_price != null && sig.spy_entry_price != null;
+    let forwardReturn, spyReturn, qqqReturn;
+    if (liveEntry) {
+      forwardReturn = returnFromEntry(stock, sig.entry_price, windowEnd);
+      spyReturn = returnFromEntry(spy, sig.spy_entry_price, windowEnd);
+      qqqReturn =
+        sig.qqq_entry_price != null ? returnFromEntry(qqq, sig.qqq_entry_price, windowEnd) : null;
+    } else {
+      forwardReturn = returnOver(stock, sig.created_at, windowEnd);
+      spyReturn = returnOver(spy, sig.created_at, windowEnd);
+      qqqReturn = returnOver(qqq, sig.created_at, windowEnd);
+    }
     if (forwardReturn == null || spyReturn == null) continue;
 
     const outcome = forwardReturn > spyReturn ? 1 : 0;

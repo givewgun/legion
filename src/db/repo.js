@@ -39,8 +39,9 @@ export function createRepo(db) {
     async addSignal(cycleId, signal) {
       const row = await db.queryOne(
         `INSERT INTO legion.signals
-           (cycle_id, symbol, band, conviction, plan, entry_price, horizon_days, resolve_after)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           (cycle_id, symbol, band, conviction, plan, entry_price, spy_entry_price,
+            qqq_entry_price, horizon_days, resolve_after)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING id`,
         [
           cycleId,
@@ -49,6 +50,8 @@ export function createRepo(db) {
           signal.conviction,
           JSON.stringify(signal.plan),
           signal.entryPrice ?? null,
+          signal.spyEntryPrice ?? null,
+          signal.qqqEntryPrice ?? null,
           signal.horizonDays ?? 5,
           signal.resolveAfter ?? null,
         ],
@@ -93,6 +96,49 @@ export function createRepo(db) {
       );
     },
 
+    // Stances for the most recent `signalLimit` signals, for co-movement (ADR 0015).
+    async getVoteHistory(signalLimit) {
+      return db.query(
+        `SELECT signal_id, agent_id, stance
+           FROM legion.signal_votes
+          WHERE signal_id IN (SELECT id FROM legion.signals ORDER BY id DESC LIMIT $1)
+          ORDER BY signal_id`,
+        [signalLimit],
+      );
+    },
+
+    // Replace the whole correlation table with the freshly computed pairs. A full
+    // replace (not upsert) so pairs that age out of the recent window — fell below
+    // MIN_CORR_PAIRS, went zero-variance, or lost an agent — stop discounting the
+    // quorum instead of lingering as stale rows (ADR 0015).
+    async replaceCorrelations(pairs) {
+      await db.query(`DELETE FROM legion.agent_correlation`);
+      if (!pairs.length) return;
+      const tuples = [];
+      const params = [];
+      pairs.forEach((p, i) => {
+        const b = i * 4;
+        tuples.push(`($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, now())`);
+        params.push(p.a, p.b, p.corr, p.n);
+      });
+      await db.query(
+        `INSERT INTO legion.agent_correlation (agent_a, agent_b, corr, sample_size, updated_at)
+         VALUES ${tuples.join(', ')}`,
+        params,
+      );
+    },
+
+    // Symmetric nested lookup { a: { b: corr }, b: { a: corr } } for the emitter.
+    async getAgentCorrelations() {
+      const rows = await db.query(`SELECT agent_a, agent_b, corr FROM legion.agent_correlation`);
+      const map = {};
+      for (const r of rows) {
+        (map[r.agent_a] ??= {})[r.agent_b] = r.corr;
+        (map[r.agent_b] ??= {})[r.agent_a] = r.corr;
+      }
+      return map;
+    },
+
     async getReliabilityLeaderboard() {
       const rows = await db.query(
         `SELECT agent_id, rho, sample_size FROM legion.agent_reliability ORDER BY rho DESC`,
@@ -102,7 +148,7 @@ export function createRepo(db) {
 
     async listUnresolvedSignals(now) {
       return db.query(
-        `SELECT id, symbol, created_at, entry_price, resolve_after
+        `SELECT id, symbol, created_at, entry_price, spy_entry_price, qqq_entry_price, resolve_after
            FROM legion.signals
           WHERE resolved = false AND resolve_after IS NOT NULL AND resolve_after <= $1
           ORDER BY resolve_after ASC`,

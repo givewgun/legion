@@ -101,6 +101,22 @@ describe('recomputeReliability', () => {
     expect(map.news.calibration).toBe(1.0);
   });
 
+  it('weights recent forecasts more, so ordering of the same outcomes changes rho', async () => {
+    // Moderate briers (won't saturate the clamp): stance 1, conviction 0.5 -> prob 0.625.
+    const good = (id) => ({ agent_id: id, stance: 1, conviction: 0.5, outcome: 1 }); // brier 0.14
+    const bad = (id) => ({ agent_id: id, stance: 1, conviction: 0.5, outcome: 0 }); // brier 0.39
+    const five = (fn, id) => Array.from({ length: 5 }, () => fn(id));
+    // Rows are newest-first. Same 5 good + 5 bad, only the recency order differs.
+    const recentlyGood = [...five(good, 'a'), ...five(bad, 'a')];
+    const recentlyBad = [...five(bad, 'b'), ...five(good, 'b')];
+    const repo = {
+      getResolvedForecasts: async () => [...recentlyGood, ...recentlyBad],
+      upsertReliability: async () => {},
+    };
+    const map = await recomputeReliability(repo);
+    expect(map.a.rho).toBeGreaterThan(map.b.rho); // recent good > recent bad
+  });
+
   it('computes per-agent independently in one pass', async () => {
     const mk = (id, outcome) =>
       Array.from({ length: 5 }, () => ({ agent_id: id, stance: 2, conviction: 1, outcome }));

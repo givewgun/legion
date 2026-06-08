@@ -6,14 +6,17 @@ import { createRepo } from '../db/repo.js';
 import { createGunvestClient } from '../data/gunvest.js';
 import { resolveSignals } from '../reliability/resolver.js';
 import { recomputeReliability } from '../reliability/update.js';
+import { recomputeCorrelations } from '../reliability/correlations.js';
 
-// One pass: resolve every due signal against forward/benchmark returns, then
-// recompute each agent's reliability ρ from its resolved forecasts.
+// One pass: resolve every due signal against forward/benchmark returns, recompute
+// each agent's reliability ρ and calibration from its resolved forecasts, then
+// recompute pairwise vote correlations for the quorum redundancy discount.
 export async function runReliabilityOnce({ repo, gunvest, clock = () => new Date() }) {
   const now = clock().toISOString();
   const resolved = await resolveSignals(repo, gunvest, now);
   const reliability = await recomputeReliability(repo);
-  return { resolved, reliability };
+  const correlations = await recomputeCorrelations(repo);
+  return { resolved, reliability, correlations: correlations.length };
 }
 
 function main() {

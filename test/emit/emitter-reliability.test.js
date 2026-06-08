@@ -3,12 +3,19 @@ import { createMemoryBus } from '../../src/bus/memory.js';
 import { createEmitter } from '../../src/emit/emitter.js';
 import { voteSubject } from '../../src/bus/subjects.js';
 
-function buildRepo({ calibration = {} } = {}) {
-  const calls = { signals: [], signalVotes: [], roundVotes: [] };
+function buildRepo({
+  calibration = {},
+  correlations = {},
+  reliability = { technical: 1.5, news: 0.5 },
+} = {}) {
+  const calls = { signals: [], signalVotes: [], roundVotes: [], rounds: [] };
   return {
     calls,
     createCycle: async () => 1,
-    addRound: async () => 1,
+    addRound: async (_cycleId, _roundNo, result) => {
+      calls.rounds.push(result);
+      return 1;
+    },
     addVote: async (_roundId, v) => calls.roundVotes.push(v),
     addSignal: async (_cycleId, s) => {
       calls.signals.push(s);
@@ -16,8 +23,9 @@ function buildRepo({ calibration = {} } = {}) {
     },
     addSignalVotes: async (id, votes) => calls.signalVotes.push({ id, votes }),
     finishCycle: async () => {},
-    getAllReliability: async () => ({ technical: 1.5, news: 0.5 }),
+    getAllReliability: async () => reliability,
     getAgentCalibration: async () => calibration,
+    getAgentCorrelations: async () => correlations,
   };
 }
 
@@ -32,7 +40,8 @@ describe('emitter reliability', () => {
   it('scales vote weights by rho before persisting the forecast snapshot', async () => {
     const bus = createMemoryBus();
     const repo = buildRepo();
-    const gunvest = { getPrice: async () => ({ price: 120 }) };
+    const prices = { NVDA: 120, SPY: 400, QQQ: 300 };
+    const gunvest = { getPrice: async (sym) => ({ price: prices[sym] }) };
     createEmitter({
       bus,
       repo,
@@ -53,6 +62,8 @@ describe('emitter reliability', () => {
 
     const sig = repo.calls.signals[0];
     expect(sig.entryPrice).toBe(120);
+    expect(sig.spyEntryPrice).toBe(400);
+    expect(sig.qqqEntryPrice).toBe(300);
     expect(sig.horizonDays).toBe(5);
     expect(new Date(sig.resolveAfter).toISOString()).toBe('2026-06-09T00:00:00.000Z');
 
@@ -98,5 +109,125 @@ describe('emitter reliability', () => {
     const snap = repo.calls.signalVotes[0].votes;
     expect(snap.find((v) => v.agentId === 'technical').conviction).toBeCloseTo(0.9);
     expect(snap.find((v) => v.agentId === 'news').conviction).toBeCloseTo(0.9);
+  });
+
+  it('discounts redundant agreement in the quorum via loaded correlations', async () => {
+    const bus = createMemoryBus();
+    // All four agents are bullish; without correlation that is a unanimous quorum.
+    // Mark every pair as a perfect echo -> the quorum collapses below threshold.
+    const ids = ['technical', 'news', 'social', 'contrarian'];
+    const correlations = {};
+    for (const a of ids) {
+      correlations[a] = {};
+      for (const b of ids) if (a !== b) correlations[a][b] = 1;
+    }
+    const repo = buildRepo({ correlations });
+    createEmitter({
+      bus,
+      repo,
+      telegram: async () => {},
+      consensus: { maxRounds: 1, thetaV: 5, quorum: 2 / 3, holdBand: 0.5 },
+      expectedAgents: 4,
+      riskEnabled: false,
+      gunvest: { getPrice: async () => ({ price: 100 }) },
+      clock: () => new Date('2026-06-04T00:00:00Z'),
+      logger: { info() {}, error() {} },
+    }).start();
+
+    for (const vote of votes) {
+      bus.publishJSON(voteSubject('NVDA', 1), { cycleId: 1, symbol: 'NVDA', round: 1, vote });
+    }
+    await vi.waitFor(() => expect(repo.calls.rounds).toHaveLength(1));
+
+    // High dispersion is allowed (θ_v=5); only the redundancy-discounted quorum gates here.
+    expect(repo.calls.rounds[0].kappa).toBeLessThan(2 / 3);
+    expect(repo.calls.rounds[0].converged).toBe(false);
+    expect(repo.calls.signals[0].band).toBe('NO_CONSENSUS');
+  });
+});
+
+describe('emitter herding guard (ADR 0016)', () => {
+  const mkVote = (agentId, stance) => ({
+    agentId,
+    stance,
+    conviction: 0.9,
+    weight: 1,
+    rationale: agentId,
+  });
+  const consensus = { maxRounds: 2, thetaV: 0.5, quorum: 2 / 3, holdBand: 0.5, priorQuorum: 1 / 3 };
+
+  function run(repo, round1, round2) {
+    const bus = createMemoryBus();
+    createEmitter({
+      bus,
+      repo,
+      telegram: async () => {},
+      consensus,
+      expectedAgents: 4,
+      riskEnabled: false,
+      gunvest: { getPrice: async () => ({ price: 100 }) },
+      clock: () => new Date('2026-06-04T00:00:00Z'),
+      logger: { info() {}, error() {} },
+    }).start();
+    const publish = (round, votes) => {
+      for (const vote of votes) {
+        bus.publishJSON(voteSubject('NVDA', round), { cycleId: 1, symbol: 'NVDA', round, vote });
+      }
+    };
+    return { publish, round1, round2 };
+  }
+
+  it('blocks a revision consensus with too little independent backing', async () => {
+    const repo = buildRepo({ reliability: {} }); // neutral weights for clean backing math
+    // Round 1: a lone bull vs three bears -> no convergence, BUY backing 0.25.
+    const round1 = [
+      mkVote('technical', 1),
+      mkVote('news', -1),
+      mkVote('social', -1),
+      mkVote('contrarian', -1),
+    ];
+    // Round 2: everyone flips to BUY -> would converge, but it is a herd.
+    const round2 = [
+      mkVote('technical', 1),
+      mkVote('news', 1),
+      mkVote('social', 1),
+      mkVote('contrarian', 1),
+    ];
+    const { publish } = run(repo, round1, round2);
+
+    publish(1, round1);
+    await vi.waitFor(() => expect(repo.calls.rounds).toHaveLength(1));
+    expect(repo.calls.rounds[0].converged).toBe(false); // split round 1
+
+    publish(2, round2);
+    await vi.waitFor(() => expect(repo.calls.signals).toHaveLength(1));
+    expect(repo.calls.rounds[1].converged).toBe(false); // herding guard blocked it
+    expect(repo.calls.signals[0].band).toBe('NO_CONSENSUS');
+  });
+
+  it('allows a revision consensus that retains independent backing', async () => {
+    const repo = buildRepo({ reliability: {} }); // neutral weights for clean backing math
+    // Round 1: an even 2-2 split (BUY backing 0.5) that does not converge.
+    const round1 = [
+      mkVote('technical', 1),
+      mkVote('news', 1),
+      mkVote('social', -1),
+      mkVote('contrarian', -1),
+    ];
+    // Round 2: the two bears come around -> BUY, with 0.5 >= priorQuorum independent backing.
+    const round2 = [
+      mkVote('technical', 1),
+      mkVote('news', 1),
+      mkVote('social', 1),
+      mkVote('contrarian', 1),
+    ];
+    const { publish } = run(repo, round1, round2);
+
+    publish(1, round1);
+    await vi.waitFor(() => expect(repo.calls.rounds).toHaveLength(1));
+    publish(2, round2);
+    await vi.waitFor(() => expect(repo.calls.signals).toHaveLength(1));
+    expect(repo.calls.rounds[1].converged).toBe(true);
+    expect(repo.calls.signals[0].band).toBe('BUY');
   });
 });
