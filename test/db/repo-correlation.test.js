@@ -28,14 +28,25 @@ describe('repo agent_correlation', () => {
     expect(params).toEqual([200]);
   });
 
-  it('upsertCorrelation upserts a symmetric pair row', async () => {
+  it('replaceCorrelations clears the table then bulk-inserts the new pairs', async () => {
+    const pool = poolReturning([[], []]);
+    const repo = createRepo(createDb(pool));
+    await repo.replaceCorrelations([
+      { a: 'news', b: 'technical', corr: 0.8, n: 12 },
+      { a: 'social', b: 'technical', corr: -0.3, n: 9 },
+    ]);
+    expect(pool.calls[0].text.toLowerCase()).toContain('delete from legion.agent_correlation');
+    const insert = pool.calls[1];
+    expect(insert.text.toLowerCase()).toContain('insert into legion.agent_correlation');
+    expect(insert.params).toEqual(['news', 'technical', 0.8, 12, 'social', 'technical', -0.3, 9]);
+  });
+
+  it('replaceCorrelations with no pairs clears the table and skips the insert', async () => {
     const pool = poolReturning([[]]);
     const repo = createRepo(createDb(pool));
-    await repo.upsertCorrelation('news', 'technical', 0.8, 12);
-    const { text, params } = pool.calls[0];
-    expect(text.toLowerCase()).toContain('insert into legion.agent_correlation');
-    expect(text.toLowerCase()).toContain('on conflict');
-    expect(params).toEqual(['news', 'technical', 0.8, 12]);
+    await repo.replaceCorrelations([]);
+    expect(pool.calls).toHaveLength(1); // delete only, no insert
+    expect(pool.calls[0].text.toLowerCase()).toContain('delete from legion.agent_correlation');
   });
 
   it('getAgentCorrelations builds a symmetric nested lookup', async () => {

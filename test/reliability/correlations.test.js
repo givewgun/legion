@@ -9,24 +9,28 @@ describe('recomputeCorrelations', () => {
       rows.push({ signal_id: signal, agent_id: 'technical', stance });
       rows.push({ signal_id: signal, agent_id: 'news', stance }); // perfect echo
     }
-    const writes = [];
+    let replaced = null;
     const repo = {
       getVoteHistory: async () => rows,
-      upsertCorrelation: async (a, b, corr, n) => writes.push({ a, b, corr, n }),
+      replaceCorrelations: async (pairs) => {
+        replaced = pairs;
+      },
     };
     const pairs = await recomputeCorrelations(repo);
     expect(pairs).toHaveLength(1);
-    expect(writes[0]).toMatchObject({ a: 'news', b: 'technical', n: 6 });
-    expect(writes[0].corr).toBeCloseTo(1);
+    expect(replaced[0]).toMatchObject({ a: 'news', b: 'technical', n: 6 });
+    expect(replaced[0].corr).toBeCloseTo(1);
   });
 
-  it('persists nothing when there is no co-rated history', async () => {
-    const writes = [];
+  it('replaces with an empty set when there is no co-rated history (clears stale rows)', async () => {
+    let replaced = null;
     const repo = {
       getVoteHistory: async () => [],
-      upsertCorrelation: async (...args) => writes.push(args),
+      replaceCorrelations: async (pairs) => {
+        replaced = pairs;
+      },
     };
     expect(await recomputeCorrelations(repo)).toHaveLength(0);
-    expect(writes).toHaveLength(0);
+    expect(replaced).toEqual([]); // called with [] so the table is cleared, not left stale
   });
 });

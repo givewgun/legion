@@ -107,13 +107,24 @@ export function createRepo(db) {
       );
     },
 
-    async upsertCorrelation(agentA, agentB, corr, sampleSize) {
+    // Replace the whole correlation table with the freshly computed pairs. A full
+    // replace (not upsert) so pairs that age out of the recent window — fell below
+    // MIN_CORR_PAIRS, went zero-variance, or lost an agent — stop discounting the
+    // quorum instead of lingering as stale rows (ADR 0015).
+    async replaceCorrelations(pairs) {
+      await db.query(`DELETE FROM legion.agent_correlation`);
+      if (!pairs.length) return;
+      const tuples = [];
+      const params = [];
+      pairs.forEach((p, i) => {
+        const b = i * 4;
+        tuples.push(`($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, now())`);
+        params.push(p.a, p.b, p.corr, p.n);
+      });
       await db.query(
         `INSERT INTO legion.agent_correlation (agent_a, agent_b, corr, sample_size, updated_at)
-         VALUES ($1, $2, $3, $4, now())
-         ON CONFLICT (agent_a, agent_b) DO UPDATE
-           SET corr = EXCLUDED.corr, sample_size = EXCLUDED.sample_size, updated_at = now()`,
-        [agentA, agentB, corr, sampleSize],
+         VALUES ${tuples.join(', ')}`,
+        params,
       );
     },
 

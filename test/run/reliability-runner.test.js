@@ -21,7 +21,7 @@ describe('runReliabilityOnce', () => {
         order.push('votes');
         return [];
       },
-      upsertCorrelation: async () => {},
+      replaceCorrelations: async () => {},
     };
     const gunvest = { getCandles: async () => [] };
     const out = await runReliabilityOnce({ repo, gunvest, clock: () => new Date('2026-06-10') });

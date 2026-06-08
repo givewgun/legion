@@ -22,7 +22,10 @@ Learn each agent pair's historical vote **co-movement** and discount redundant a
   Pearson correlation of each pair's stances over recent signals
   ([`src/consensus/correlation.js`](../../src/consensus/correlation.js)) and persists it to
   `agent_correlation`. A pair stays independent (correlation `0`) until it has co-rated at least
-  `MIN_CORR_PAIRS = 5` signals — the same cold-start neutrality as `ρ`.
+  `MIN_CORR_PAIRS = 5` signals — the same cold-start neutrality as `ρ`. The recompute **fully
+  replaces** the stored set, so a pair that ages out of the recent window (drops below the
+  minimum, goes zero-variance, or loses an agent) reverts to independent instead of lingering as
+  a stale discount.
 - The quorum ([`src/consensus/aggregate.js`](../../src/consensus/aggregate.js)) divides each
   agreeing vote by the correlation mass it shares with the rest of the agreeing coalition
   (`mass_i = 1 + Σ_{j≠i} max(0, corr(i,j))`), so `κ = Σ_{i∈agree} (W_i·c_i)/mass_i / Σ_all W_i·c_i`.

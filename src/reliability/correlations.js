@@ -6,12 +6,12 @@ import { pairwiseCorrelations } from '../consensus/correlation.js';
 export const CORR_SIGNAL_HISTORY = 200;
 
 // Recompute every agent pair's historical vote correlation from recent signal
-// snapshots and persist it (ADR 0015). Returns the persisted pairs.
+// snapshots and persist it (ADR 0015), fully replacing the previous set so pairs
+// that no longer co-move in the recent window revert to independent. Returns the
+// persisted pairs.
 export async function recomputeCorrelations(repo) {
   const rows = await repo.getVoteHistory(CORR_SIGNAL_HISTORY);
   const pairs = pairwiseCorrelations(rows);
-  for (const p of pairs) {
-    await repo.upsertCorrelation(p.a, p.b, p.corr, p.n);
-  }
+  await repo.replaceCorrelations(pairs);
   return pairs;
 }
