@@ -77,13 +77,19 @@ export function createRepo(db) {
       return Object.fromEntries(rows.map((r) => [r.agent_id, r.rho]));
     },
 
-    async upsertReliability(agentId, rho, sampleSize) {
+    async getAgentCalibration() {
+      const rows = await db.query(`SELECT agent_id, calibration FROM legion.agent_reliability`);
+      return Object.fromEntries(rows.map((r) => [r.agent_id, r.calibration]));
+    },
+
+    async upsertReliability(agentId, rho, sampleSize, calibration = 1.0) {
       await db.query(
-        `INSERT INTO legion.agent_reliability (agent_id, rho, sample_size, updated_at)
-         VALUES ($1, $2, $3, now())
+        `INSERT INTO legion.agent_reliability (agent_id, rho, sample_size, calibration, updated_at)
+         VALUES ($1, $2, $3, $4, now())
          ON CONFLICT (agent_id) DO UPDATE
-           SET rho = EXCLUDED.rho, sample_size = EXCLUDED.sample_size, updated_at = now()`,
-        [agentId, rho, sampleSize],
+           SET rho = EXCLUDED.rho, sample_size = EXCLUDED.sample_size,
+               calibration = EXCLUDED.calibration, updated_at = now()`,
+        [agentId, rho, sampleSize, calibration],
       );
     },
 
@@ -96,7 +102,7 @@ export function createRepo(db) {
 
     async listUnresolvedSignals(now) {
       return db.query(
-        `SELECT id, symbol, created_at, entry_price
+        `SELECT id, symbol, created_at, entry_price, resolve_after
            FROM legion.signals
           WHERE resolved = false AND resolve_after IS NOT NULL AND resolve_after <= $1
           ORDER BY resolve_after ASC`,
@@ -284,10 +290,7 @@ export function createRepo(db) {
         `SELECT agent_id, provider, model, enabled FROM legion.agent_config`,
       );
       return Object.fromEntries(
-        rows.map((r) => [
-          r.agent_id,
-          { provider: r.provider, model: r.model, enabled: r.enabled },
-        ]),
+        rows.map((r) => [r.agent_id, { provider: r.provider, model: r.model, enabled: r.enabled }]),
       );
     },
 

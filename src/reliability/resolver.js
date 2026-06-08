@@ -1,9 +1,19 @@
 // Forward paper-test resolver: turns due signals into realized forward/benchmark
 // returns and a binary alpha outcome (beat SPY?). Pure returnOver + I/O resolveSignals.
+//
+// The holding window is pinned to the signal's fixed horizon — [created_at, resolve_after],
+// where resolve_after = created_at + horizonDays (set at emit time) — NOT to the cron fire
+// time. Scoring to "now" let a late-running resolver stretch the window, so two signals with
+// the same horizon could be scored over different elapsed times and their Brier scores were
+// not comparable. Pinning to resolve_after makes resolution deterministic and horizon-faithful.
 const HORIZON_FETCH_DAYS = 90; // candle history wide enough to span any open holding window
 
+// Normalize to a YYYY-MM-DD (UTC) day key. Accepts both ISO strings and the JS
+// Date objects node-postgres returns for TIMESTAMPTZ columns (created_at,
+// resolve_after) — String(Date) yields "Mon Jun 08 …", which would match no
+// candle rows and silently skip every due signal.
 function day(ts) {
-  return String(ts).slice(0, 10);
+  return new Date(ts).toISOString().slice(0, 10);
 }
 
 export function returnOver(candles, fromTs, toTs) {
@@ -26,9 +36,10 @@ export async function resolveSignals(repo, gunvest, now) {
       gunvest.getCandles('SPY', HORIZON_FETCH_DAYS),
       gunvest.getCandles('QQQ', HORIZON_FETCH_DAYS),
     ]);
-    const forwardReturn = returnOver(stock, sig.created_at, now);
-    const spyReturn = returnOver(spy, sig.created_at, now);
-    const qqqReturn = returnOver(qqq, sig.created_at, now);
+    const windowEnd = sig.resolve_after;
+    const forwardReturn = returnOver(stock, sig.created_at, windowEnd);
+    const spyReturn = returnOver(spy, sig.created_at, windowEnd);
+    const qqqReturn = returnOver(qqq, sig.created_at, windowEnd);
     if (forwardReturn == null || spyReturn == null) continue;
 
     const outcome = forwardReturn > spyReturn ? 1 : 0;

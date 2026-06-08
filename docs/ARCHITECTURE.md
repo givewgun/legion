@@ -156,6 +156,12 @@ flowchart LR
 `ρ` stays neutral at `1.0` until an agent has at least 5 resolved forecasts (over a trailing
 window of 50), so a fresh deploy behaves like an unweighted panel until evidence accrues.
 
+The same Brier loop also learns a **calibration** factor `cal` per agent — does an agent state
+higher conviction when it turns out right than when it turns out wrong? `cal` scales the
+conviction term (`c'_i = c_i · cal_i`), distinct from `ρ` which scales the prior `w_i`, so a
+confident-but-uninformative voice cannot buy influence by always shouting. It is bounded to
+`[0.5, 1.5]` and cold-start neutral on the same `MIN_RESOLVED`/`WINDOW` guardrails (ADR 0014).
+
 ---
 
 ## 5. Inference serialization
@@ -342,3 +348,4 @@ weighed, and the consequences. They live in [`docs/adr/`](adr/).
 | [0011](adr/0011-risk-manager-constraint.md) | Risk Manager as a deterministic, non-voting constraint |
 | [0012](adr/0012-dashboard-read-write-split.md) | Dashboard: thin read API + separate SPA + trigger |
 | [0013](adr/0013-schema-management.md) | Single idempotent `schema.sql` (no migration tool) |
+| [0014](adr/0014-conviction-calibration.md) | Conviction calibration (cal scales c_i, distinct from ρ) |

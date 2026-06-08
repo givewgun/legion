@@ -12,11 +12,14 @@ describe('recomputeReliability', () => {
     const writes = [];
     const repo = {
       getResolvedForecasts: async () => forecasts,
-      upsertReliability: async (id, rho, n) => writes.push({ id, rho, n }),
+      upsertReliability: async (id, rho, n, calibration) =>
+        writes.push({ id, rho, n, calibration }),
     };
     const map = await recomputeReliability(repo);
-    expect(map.technical).toBeCloseTo(1.5);
-    expect(writes[0]).toMatchObject({ id: 'technical', n: 6 });
+    expect(map.technical.rho).toBeCloseTo(1.5);
+    // All hits, no misses -> conviction discrimination undefined -> neutral calibration.
+    expect(map.technical.calibration).toBe(1.0);
+    expect(writes[0]).toMatchObject({ id: 'technical', n: 6, calibration: 1.0 });
   });
 
   it('penalizes an agent whose confident calls resolved wrong', async () => {
@@ -31,7 +34,57 @@ describe('recomputeReliability', () => {
       upsertReliability: async () => {},
     };
     const map = await recomputeReliability(repo);
-    expect(map.social).toBeCloseTo(0.5);
+    expect(map.social.rho).toBeCloseTo(0.5);
+    expect(map.social.calibration).toBe(1.0);
+  });
+
+  it('boosts calibration when conviction discriminates hits from misses', async () => {
+    // Confident (0.9) when right, hedged (0.2) when wrong -> informative conviction.
+    const forecasts = [
+      ...Array.from({ length: 3 }, () => ({
+        agent_id: 'tech',
+        stance: 2,
+        conviction: 0.9,
+        outcome: 1,
+      })),
+      ...Array.from({ length: 3 }, () => ({
+        agent_id: 'tech',
+        stance: 2,
+        conviction: 0.2,
+        outcome: 0,
+      })),
+    ];
+    const repo = {
+      getResolvedForecasts: async () => forecasts,
+      upsertReliability: async () => {},
+    };
+    const map = await recomputeReliability(repo);
+    // d = 0.9 - 0.2 = 0.7 -> calibration = 1 + 0.7 = 1.7, clamped to 1.5 cap.
+    expect(map.tech.calibration).toBeCloseTo(1.5);
+  });
+
+  it('cuts calibration when conviction is anti-informative (confidently wrong)', async () => {
+    const forecasts = [
+      ...Array.from({ length: 3 }, () => ({
+        agent_id: 'social',
+        stance: 2,
+        conviction: 0.3,
+        outcome: 1,
+      })),
+      ...Array.from({ length: 3 }, () => ({
+        agent_id: 'social',
+        stance: 2,
+        conviction: 0.9,
+        outcome: 0,
+      })),
+    ];
+    const repo = {
+      getResolvedForecasts: async () => forecasts,
+      upsertReliability: async () => {},
+    };
+    const map = await recomputeReliability(repo);
+    // d = 0.3 - 0.9 = -0.6 -> calibration = 1 - 0.6 = 0.4, clamped to 0.5 floor.
+    expect(map.social.calibration).toBeCloseTo(0.5);
   });
 
   it('keeps neutral 1.0 below MIN_RESOLVED sample', async () => {
@@ -44,7 +97,8 @@ describe('recomputeReliability', () => {
       upsertReliability: async () => {},
     };
     const map = await recomputeReliability(repo);
-    expect(map.news).toBe(1.0);
+    expect(map.news.rho).toBe(1.0);
+    expect(map.news.calibration).toBe(1.0);
   });
 
   it('computes per-agent independently in one pass', async () => {
@@ -55,7 +109,7 @@ describe('recomputeReliability', () => {
       upsertReliability: async () => {},
     };
     const map = await recomputeReliability(repo);
-    expect(map.a).toBeCloseTo(1.5);
-    expect(map.b).toBeCloseTo(0.5);
+    expect(map.a.rho).toBeCloseTo(1.5);
+    expect(map.b.rho).toBeCloseTo(0.5);
   });
 });
