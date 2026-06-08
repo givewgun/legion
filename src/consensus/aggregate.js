@@ -56,6 +56,20 @@ export function directionalQuorum(votes, meanStance, holdBand = 0.5, corr = () =
   return effectiveAgree / den;
 }
 
+// Weighted fraction of (round-1) votes whose side already matched `targetSide` —
+// the *independent* backing for a direction, before any peer dissent was shown.
+// Used by the anti-herding guard (ADR 0016): a consensus reached only in revision
+// rounds must still rest on independent agreement, not social pressure.
+export function independentBacking(votes, targetSide) {
+  const den = totalWeight(votes);
+  if (den === 0) return 0;
+  const backing = votes.reduce(
+    (sum, vote) => (sideOf(vote.stance) === targetSide ? sum + vote.weight * vote.conviction : sum),
+    0,
+  );
+  return backing / den;
+}
+
 // Evaluates one round. Converged iff κ ≥ quorum AND V ≤ θ_v.
 export function evaluateRound(votes, { thetaV, quorum, holdBand = 0.5, corr } = {}) {
   const S = weightedStance(votes);

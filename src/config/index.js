@@ -28,6 +28,9 @@ export function loadConfig(env = process.env) {
       quorum: num(env, 'CONSENSUS_QUORUM', 0.6667),
       maxRounds: num(env, 'CONSENSUS_MAX_ROUNDS', 3),
       holdBand: num(env, 'CONSENSUS_HOLD_BAND', 0.5),
+      // Min independent (round-1) backing a revision-round consensus must retain,
+      // or it is treated as herding rather than agreement (ADR 0016).
+      priorQuorum: num(env, 'CONSENSUS_PRIOR_QUORUM', 0.3333),
     },
   };
 }

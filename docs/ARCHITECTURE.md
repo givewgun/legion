@@ -89,9 +89,11 @@ flowchart TB
 ```
 
 Per round the emitter waits for `expectedAgents` votes (and the risk constraint, if enabled),
-scales each vote's weight by reliability `ρ`, and aggregates. If the round has not converged and
-the round cap is not reached, it republishes the cycle for the next round **with the prior
-votes attached as dissent**, so agents must confront disagreement before re-voting.
+scales each vote's weight by reliability `ρ` and conviction by calibration, discounts redundant
+agreement in the quorum (ADR 0015), and aggregates. If the round has not converged and the round
+cap is not reached, it republishes the cycle for the next round **with the prior votes attached as
+dissent**, so agents must confront disagreement before re-voting. A consensus reached only in a
+later round must still retain independent round-1 backing or it is rejected as herding (ADR 0016).
 
 ---
 
@@ -359,3 +361,4 @@ weighed, and the consequences. They live in [`docs/adr/`](adr/).
 | [0013](adr/0013-schema-management.md) | Single idempotent `schema.sql` (no migration tool) |
 | [0014](adr/0014-conviction-calibration.md) | Conviction calibration (cal scales c_i, distinct from ρ) |
 | [0015](adr/0015-correlated-agent-quorum.md) | Redundancy-discounted quorum (correlated agents count less) |
+| [0016](adr/0016-anti-herding-guard.md) | Anti-herding guard (revision consensus needs independent backing) |

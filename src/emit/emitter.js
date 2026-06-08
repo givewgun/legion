@@ -4,7 +4,7 @@ import {
   cycleSubject,
   consensusSubject,
 } from '../bus/subjects.js';
-import { evaluateRound } from '../consensus/aggregate.js';
+import { evaluateRound, independentBacking } from '../consensus/aggregate.js';
 import { scaleWeights, scaleConviction } from '../consensus/reliability.js';
 import { buildSignal } from './plan.js';
 import { applyRiskConstraint } from '../risk/apply.js';
@@ -31,6 +31,7 @@ export function createEmitter({
 }) {
   const rounds = new Map(); // `${cycleId}:${round}` -> { symbol, round, votes, constraint }
   const learnedByCycle = new Map(); // cycleId -> { rho, calib, corr } loaded once per cycle
+  const firstVotesByCycle = new Map(); // cycleId -> round-1 votes (independent priors)
 
   function key(cycleId, round) {
     return `${cycleId}:${round}`;
@@ -73,6 +74,24 @@ export function createEmitter({
     const calibrated = scaleConviction(scaled, calib);
 
     const result = evaluateRound(calibrated, { ...consensus, corr });
+
+    // Anti-herding guard (ADR 0016): the first round we see is independent — remember
+    // it. A later round may only "converge" because agents flipped to match the loudest
+    // peer; require that the converged side still carries enough independent round-1
+    // backing, or treat it as social pressure, not agreement, and keep deliberating.
+    if (!firstVotesByCycle.has(cycleId)) firstVotesByCycle.set(cycleId, calibrated);
+    if (result.converged && entry.round > 1) {
+      const backing = independentBacking(firstVotesByCycle.get(cycleId), Math.sign(result.S));
+      const priorQuorum = consensus.priorQuorum ?? 0;
+      if (backing < priorQuorum) {
+        result.converged = false;
+        logger.info?.(
+          `[emitter] herding guard: ${entry.symbol} round ${entry.round} blocked ` +
+            `(independent backing ${backing.toFixed(2)} < ${priorQuorum})`,
+        );
+      }
+    }
+
     const roundId = await repo.addRound(cycleId, entry.round, result);
     for (const v of calibrated) await repo.addVote(roundId, v);
 
@@ -135,6 +154,7 @@ export function createEmitter({
     );
     await repo.finishCycle(cycleId, result.converged ? 'converged' : 'no_consensus');
     learnedByCycle.delete(cycleId);
+    firstVotesByCycle.delete(cycleId);
 
     try {
       await telegram(formatSignal(signal));

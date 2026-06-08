@@ -3,6 +3,7 @@ import {
   weightedStance,
   weightedDispersion,
   directionalQuorum,
+  independentBacking,
   evaluateRound,
 } from '../../src/consensus/aggregate.js';
 
@@ -95,6 +96,18 @@ describe('directionalQuorum', () => {
       expect(res.kappa).toBeLessThan(2 / 3);
       expect(res.converged).toBe(false);
     });
+  });
+});
+
+describe('independentBacking', () => {
+  it('is the weighted fraction whose side already matched the target', () => {
+    // one BUY (w·c=0.9) vs three SELL → BUY backing = 0.9 / 3.6 = 0.25
+    const votes = [v('a', 1, 0.9, 1), v('b', -1, 0.9, 1), v('c', -1, 0.9, 1), v('d', -1, 0.9, 1)];
+    expect(independentBacking(votes, 1)).toBeCloseTo(0.25, 6);
+    expect(independentBacking(votes, -1)).toBeCloseTo(0.75, 6);
+  });
+  it('returns 0 for empty votes', () => {
+    expect(independentBacking([], 1)).toBe(0);
   });
 });
 
