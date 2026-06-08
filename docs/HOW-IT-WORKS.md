@@ -284,6 +284,38 @@ flowchart LR
     conv -->|"no, and r = 3"| noc["emit NO_CONSENSUS"]
 ```
 
+### Worked example, continued — round 2 converges
+
+Recall round 1 failed on **dispersion, not quorum**: `κ = 0.84` already cleared the 2/3 bar, but
+the contrarian's confident SELL kept `V = 1.19` above `θ_v = 0.5`. So the panel iterates. The
+contrarian is now shown the bulls' strongest rationales (the catalyst the news agent flagged), and
+— reluctantly, with low conviction — capitulates from SELL (−1) to a hedged BUY (+1, conviction
+0.4). Everyone else holds. Round 2:
+
+| agent | `w_i` | stance `s_i` | conviction `c_i` | `W_i·c_i` |
+|---|---|---|---|---|
+| technical | 1.0 | +2 | 0.9 | 0.90 |
+| news | 1.2 | +2 | 0.8 | 0.96 |
+| social | 0.8 | +1 | 0.6 | 0.48 |
+| contrarian | 0.9 | **+1** | **0.4** | **0.36** |
+
+```
+Σ W·c = 2.70
+S = (0.90·2 + 0.96·2 + 0.48·1 + 0.36·1) / 2.70 = 4.56 / 2.70 ≈ +1.69   → band STRONG_BUY
+V = (0.90·0.31² + 0.96·0.31² + 0.48·0.69² + 0.36·0.69²) / 2.70 ≈ 0.21
+κ = 2.70 / 2.70 = 1.00        # all four are now on the + side
+```
+
+`κ = 1.00 ≥ 0.67` ✅ **and** `V = 0.21 ≤ 0.5` ✅ → **converged.** With the lone dissenter gone the
+spread collapses, and the call emits as **STRONG_BUY**, conviction `min(1.69/2, 1) ≈ 0.84`.
+
+**Why this isn't herding (§7b):** the convergence appears only in round 2, so the anti-herding
+guard checks the *round-1* independent backing for the `+` side — the three bulls, `(0.90 + 0.96 +
+0.48) / 2.79 ≈ 0.84`, well above `priorQuorum` (default `0.33`). The bulls were already strong on
+their own; the contrarian moved *toward* a pre-existing majority, not the other way around — so
+this is genuine agreement, and the guard lets it through. (Had the bulls been weak in round 1 and
+only piled on after hearing the loudest peer, the same guard would have blocked it.)
+
 ---
 
 ## 7. Three honesty guards
