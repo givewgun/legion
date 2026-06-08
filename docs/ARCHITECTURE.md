@@ -140,9 +140,9 @@ Agents self-tune from outcomes via a Brier score (ADR 0008), fed by the forward 
 ```mermaid
 flowchart LR
     emit["Emitter finalizes signal"]
-    snap["Snapshot per-agent forecasts<br/>+ entry price + resolve_after"]
+    snap["Snapshot per-agent forecasts<br/>+ entry prices (stock/SPY/QQQ) + resolve_after"]
     wait{"horizon elapsed?"}
-    resolve["Resolver: forward return<br/>vs SPY / QQQ"]
+    resolve["Resolver: return from captured<br/>entry → horizon close, vs SPY / QQQ"]
     outcome["outcome = return &gt; SPY<br/>(alpha)"]
     brier["Brier loop:<br/>ρ = clamp(1 + 2(0.25 − meanBrier), 0.5, 1.5)"]
     store[("agent_reliability.rho")]
@@ -285,6 +285,8 @@ erDiagram
         numeric conviction
         jsonb plan
         double entry_price
+        double spy_entry_price
+        double qqq_entry_price
         int horizon_days
         timestamptz resolve_after
         bool resolved

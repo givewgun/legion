@@ -39,8 +39,9 @@ export function createRepo(db) {
     async addSignal(cycleId, signal) {
       const row = await db.queryOne(
         `INSERT INTO legion.signals
-           (cycle_id, symbol, band, conviction, plan, entry_price, horizon_days, resolve_after)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           (cycle_id, symbol, band, conviction, plan, entry_price, spy_entry_price,
+            qqq_entry_price, horizon_days, resolve_after)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING id`,
         [
           cycleId,
@@ -49,6 +50,8 @@ export function createRepo(db) {
           signal.conviction,
           JSON.stringify(signal.plan),
           signal.entryPrice ?? null,
+          signal.spyEntryPrice ?? null,
+          signal.qqqEntryPrice ?? null,
           signal.horizonDays ?? 5,
           signal.resolveAfter ?? null,
         ],
@@ -102,7 +105,7 @@ export function createRepo(db) {
 
     async listUnresolvedSignals(now) {
       return db.query(
-        `SELECT id, symbol, created_at, entry_price, resolve_after
+        `SELECT id, symbol, created_at, entry_price, spy_entry_price, qqq_entry_price, resolve_after
            FROM legion.signals
           WHERE resolved = false AND resolve_after IS NOT NULL AND resolve_after <= $1
           ORDER BY resolve_after ASC`,

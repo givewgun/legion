@@ -32,7 +32,8 @@ describe('emitter reliability', () => {
   it('scales vote weights by rho before persisting the forecast snapshot', async () => {
     const bus = createMemoryBus();
     const repo = buildRepo();
-    const gunvest = { getPrice: async () => ({ price: 120 }) };
+    const prices = { NVDA: 120, SPY: 400, QQQ: 300 };
+    const gunvest = { getPrice: async (sym) => ({ price: prices[sym] }) };
     createEmitter({
       bus,
       repo,
@@ -53,6 +54,8 @@ describe('emitter reliability', () => {
 
     const sig = repo.calls.signals[0];
     expect(sig.entryPrice).toBe(120);
+    expect(sig.spyEntryPrice).toBe(400);
+    expect(sig.qqqEntryPrice).toBe(300);
     expect(sig.horizonDays).toBe(5);
     expect(new Date(sig.resolveAfter).toISOString()).toBe('2026-06-09T00:00:00.000Z');
 

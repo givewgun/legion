@@ -88,11 +88,23 @@ export function createEmitter({
 
     const now = clock();
     const resolveAfter = new Date(now.getTime() + horizonDays * DAY_MS).toISOString();
+    // Capture the stock and its benchmarks in the same instant so the forward
+    // paper-test measures all three from a shared "entered at signal time" base
+    // (ADR 0009). All-or-nothing: if any leg fails the resolver falls back to a
+    // consistent close-to-close window rather than mixing bases.
     let entryPrice = null;
+    let spyEntryPrice = null;
+    let qqqEntryPrice = null;
     if (gunvest) {
       try {
-        const p = await gunvest.getPrice(entry.symbol);
+        const [p, spy, qqq] = await Promise.all([
+          gunvest.getPrice(entry.symbol),
+          gunvest.getPrice('SPY'),
+          gunvest.getPrice('QQQ'),
+        ]);
         entryPrice = p?.price ?? null;
+        spyEntryPrice = spy?.price ?? null;
+        qqqEntryPrice = qqq?.price ?? null;
       } catch (err) {
         logger.error(`[emitter] entry price fetch failed for ${entry.symbol}: ${err.message}`);
       }
@@ -101,6 +113,8 @@ export function createEmitter({
     const signalId = await repo.addSignal(cycleId, {
       ...signal,
       entryPrice,
+      spyEntryPrice,
+      qqqEntryPrice,
       horizonDays,
       resolveAfter,
     });

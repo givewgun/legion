@@ -105,6 +105,11 @@ ALTER TABLE legion.backtest_results ADD COLUMN IF NOT EXISTS qqq_pnl   DOUBLE PR
 -- Resolution columns on signals: forward paper-test outcome vs SPY/QQQ.
 -- (Signal direction is derived from signals.band; no stance column is added.)
 ALTER TABLE legion.signals ADD COLUMN IF NOT EXISTS entry_price    DOUBLE PRECISION;
+-- Benchmark prices captured in the same instant as entry_price, so the forward
+-- paper-test measures stock and benchmarks from a shared "entered at signal time"
+-- base (ADR 0009). Null on legacy signals -> resolver falls back to close-to-close.
+ALTER TABLE legion.signals ADD COLUMN IF NOT EXISTS spy_entry_price DOUBLE PRECISION;
+ALTER TABLE legion.signals ADD COLUMN IF NOT EXISTS qqq_entry_price DOUBLE PRECISION;
 ALTER TABLE legion.signals ADD COLUMN IF NOT EXISTS horizon_days   INTEGER NOT NULL DEFAULT 5;
 ALTER TABLE legion.signals ADD COLUMN IF NOT EXISTS resolve_after  TIMESTAMPTZ;
 ALTER TABLE legion.signals ADD COLUMN IF NOT EXISTS resolved       BOOLEAN NOT NULL DEFAULT false;
