@@ -14,14 +14,25 @@
 **A leaderless, multi-agent stock-signal engine.** Independent expert agents each look at a
 ticker, cast a structured vote, are forced to confront each other's dissent, and iterate
 until a *deterministic* consensus emerges — or they honestly agree to disagree. The result
-is delivered as a trade plan to Telegram and a dashboard.
+is delivered as a trade plan to Telegram and a dashboard. It is **advisory only** — Legion
+never places orders.
 
 Inspired by the geth gestalt in *Mass Effect* ("Legion"): no single mind decides. Many
 narrow intelligences vote, and the agreement is the intelligence.
 
-> **Architecture & diagrams:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · **Design decisions:** [`docs/adr/`](docs/adr/) (ADR 0001–0017)
->
-> Full design: [`docs/superpowers/specs/2026-06-04-legion-design.md`](docs/superpowers/specs/2026-06-04-legion-design.md)
+## Documentation
+
+| Doc | What's in it |
+|---|---|
+| 🧭 **[How it works](docs/HOW-IT-WORKS.md)** | **Start here.** The whole machine in plain English (concept-first ELI5), then the exact algorithm — consensus → reliability → backtest. |
+| 🏗️ [Architecture](docs/ARCHITECTURE.md) | Runtime components, message flow, data model, Mermaid diagrams. |
+| 📐 [Design decisions](docs/adr/) | ADR 0001–0017 — the *why* behind each choice. |
+| ▶️ [Running locally](docs/RUNNING.md) | Full local-stack walkthrough: infra, migrate, seed, run, verify, troubleshoot. |
+| 🚀 [Deployment](docs/DEPLOYMENT.md) · [Adding an agent](docs/adding-an-agent.md) | Production topology · how to drop in a new agent. |
+
+This README is the operational overview — what it is, how the pieces run, and how to start it.
+For any formula, threshold, or worked example, the [How it works](docs/HOW-IT-WORKS.md) doc is
+the single source of truth.
 
 ---
 
@@ -34,14 +45,11 @@ Legion's bet is that a **diverse panel that argues** is more honest than any one
   contrarian are weighed *together*, not cherry-picked.
 - **Leaderless / verifiable** — there is **no prime decider**. Every node receives the same
   votes over the message bus and runs the *same* aggregation math, so the consensus is
-  emergent and reproducible (state-machine-replication style), not handed down by an
-  arbiter.
-- **Self-tuning** — each agent carries a reliability weight `ρ_i` that rises or falls with
-  its backtested track record. The gestalt learns which voices to trust.
+  emergent and reproducible (state-machine-replication style), not handed down by an arbiter.
+- **Self-tuning** — each agent carries a reliability weight that rises or falls with its
+  track record. The gestalt learns which voices to trust.
 - **≈ $0 runtime** — local LLM (Ollama) on an Oracle Always-Free VM, all data reused from
   the existing GunVest API, Telegram for delivery. The only real cost is development.
-
-It is **advisory only** — Legion never places orders.
 
 ---
 
@@ -66,135 +74,17 @@ It is **advisory only** — Legion never places orders.
               persist (Postgres) → Telegram signal → legion.consensus.NVDA
 ```
 
-Each agent is its **own process**, talking only over [NATS](https://nats.io). There is no
-shared memory and no coordinator — agents are interchangeable and independently
-restartable. A plain cron "kick" is orchestration, not a decision.
+Each agent is its **own process**, talking only over [NATS](https://nats.io) — no shared
+memory, no coordinator, all interchangeable and independently restartable. The emitter
+collects votes and runs the consensus math; if the panel hasn't converged it re-publishes the
+cycle with peers' dissent and they re-vote, up to a round cap. On convergence the score
+becomes a labelled trade plan; a panel that never agrees emits an honest `NO_CONSENSUS`.
+Resolved signals feed a reliability loop that re-weights each agent for the next cycle.
 
----
-
-## The consensus math
-
-This is the core of the project, so it is worth understanding. All of it lives in one
-heavily unit-tested module: [`src/consensus/aggregate.js`](src/consensus/aggregate.js).
-
-### A vote
-
-Every agent `i`, per ticker, per round, emits:
-
-| Field | Symbol | Range | Meaning |
-|---|---|---|---|
-| stance | `s_i` | `-2, -1, 0, +1, +2` | STRONG_SELL · SELL · HOLD · BUY · STRONG_BUY (ordinal) |
-| conviction | `c_i` | `0 … 1` | the agent's self-reported confidence |
-| rationale | — | text | shown in the dashboard, and fed to peers as dissent next round |
-
-### Weights
-
-Each agent's effective weight combines a static prior with a learned reliability:
-
-```
-W_i = w_i · ρ_i
-```
-
-- `w_i` — **domain prior**, fixed per agent (see the roster table below).
-- `ρ_i` — **reliability**, starts at `1.0` and is updated from the agent's Brier score as
-  past signals resolve (Phase 4). Good forecasters gain weight; poor ones lose it — recent
-  forecasts count most, and trust is lost faster than it is earned
-  ([ADR 0017](docs/adr/0017-reliability-recency-asymmetry.md)).
-
-Conviction `c_i` is likewise scaled by a learned **calibration** factor — an agent whose
-confidence has historically tracked being right is trusted more, a loud-but-uninformative one
-less ([ADR 0014](docs/adr/0014-conviction-calibration.md)). All of these start neutral and only
-move once enough forecasts resolve, so a fresh deploy behaves exactly like the formulas below.
-
-### Aggregation (every node computes this identically)
-
-For a round's votes, with `W_i·c_i` as the effective influence of agent `i`:
-
-```
-Weighted stance       S = Σ(W_i · c_i · s_i) / Σ(W_i · c_i)            ∈ [−2, +2]
-Weighted dispersion   V = Σ(W_i · c_i · (s_i − S)²) / Σ(W_i · c_i)     ≥ 0
-Directional quorum    κ = Σ(W_i · c_i  over agents on sign(S)'s side) / Σ(W_i · c_i)   ∈ [0, 1]
-```
-
-- **`S`** is *where* the panel leans (the conviction-and-weight-weighted average stance).
-- **`V`** is *how much they disagree* — a confident split has high `V`; near-unanimity has
-  low `V`.
-- **`κ`** is *what fraction of the weight* sits on the winning side. When the panel is
-  near-neutral (`|S| < holdBand`, default `0.5`), agents voting HOLD are also counted as
-  agreeing — a flat consensus should credit the agents that actually sat flat, not just the
-  marginal lean. Agreement among historically **co-moving** agents is discounted, so a cluster
-  of echoes counts as fewer independent confirmations than truly diverse agreement
-  ([ADR 0015](docs/adr/0015-correlated-agent-quorum.md)).
-
-### Convergence
-
-A round reaches consensus **only if both** hold:
-
-```
-κ ≥ 2/3        (a Byzantine-style supermajority is on the same side)
-V ≤ θ_v        (dispersion is low enough — default θ_v = 0.5)
-```
-
-Requiring **both** is deliberate: a bare majority that is loudly split (`κ` high but `V`
-high) is *not* consensus. With the launch roster of `N = 4` voting agents the fault
-tolerance is `f = ⌊(N−1)/3⌋ = 1` — a single outlier can neither force nor block a
-decision.
-
-### From score to signal
-
-On convergence the score becomes a label and a conviction
-([`src/consensus/stance.js`](src/consensus/stance.js), [`src/emit/plan.js`](src/emit/plan.js)):
-
-```
-band(S):  |S| < 0.5 → HOLD
-          |S| ≥ 1.5 → STRONG_BUY / STRONG_SELL
-          else      → BUY / SELL
-conviction = min(|S| / 2, 1)        # the [−2,2] score normalized to [0,1]
-```
-
-A non-converged final round emits `NO_CONSENSUS` (conviction 0). An honest "we're split"
-beats a forced trade.
-
-### Worked example
-
-Round 1 on NVDA, four agents (`θ_v = 0.5`, `quorum = 2/3`, all `ρ_i = 1`):
-
-| agent | `w_i` | stance `s_i` | conviction `c_i` | `W_i·c_i` |
-|---|---|---|---|---|
-| technical | 1.0 | +2 | 0.9 | 0.90 |
-| news | 1.2 | +2 | 0.8 | 0.96 |
-| social | 0.8 | +1 | 0.6 | 0.48 |
-| contrarian | 0.9 | −1 | 0.5 | 0.45 |
-
-```
-Σ W·c = 2.79
-S = (0.90·2 + 0.96·2 + 0.48·1 + 0.45·(−1)) / 2.79 = 3.75 / 2.79 ≈ +1.34   → band BUY
-V = (0.90·0.66² + 0.96·0.66² + 0.48·0.34² + 0.45·2.34²) / 2.79 ≈ 1.19
-κ = (0.90 + 0.96 + 0.48) / 2.79 ≈ 0.84        # the three bulls
-```
-
-`κ = 0.84 ≥ 0.67` ✅ **but** `V = 1.19 > 0.5` ❌ → **not converged.** The contrarian's
-strong dissent keeps dispersion high. So the round does **not** emit; instead it
-**iterates**.
-
-### Iteration & forced dissent
-
-When a round fails to converge, the emitter re-publishes the cycle with `round + 1` and the
-prior round's votes attached. Each agent is shown the **strongest opposing rationales** and
-re-votes — it may hold its ground or move. This repeats until convergence or `R_max`
-(default 3) rounds, at which point an unresolved panel emits `NO_CONSENSUS`. (Multi-round
-iteration and the extra agents land in Phase 2; see Status.)
-
-To keep revision honest, a consensus that only appears in a later round must still carry enough
-**independent round-1 backing** — otherwise it is treated as herding (agents caving to the
-loudest peer) and rejected rather than emitted ([ADR 0016](docs/adr/0016-anti-herding-guard.md)).
-
-### The Risk Manager (a constraint, not a vote)
-
-The Risk Manager is **non-voting**. It never enters the aggregation. After consensus it may
-**cap conviction** or **block a new long** on volatility/downside rules — it constrains
-magnitude and entry, but **never flips direction**. Leaderless purity is preserved: risk
-limits the trade, it doesn't decide it.
+> **The full algorithm** — the vote schema, the `S` / `V` / `κ` aggregation, convergence,
+> the honesty guards, the risk constraint, the Brier-score reliability loop, and the
+> backtest — is laid out concept-first then formula-first in
+> **[docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md)**.
 
 ---
 
@@ -209,10 +99,10 @@ limits the trade, it doesn't decide it.
 | **Risk Manager** | — | volatility, downside, sizing | ❌ | deterministic safety constraint |
 
 Adding an agent is config + a `gather` function + a persona prompt — every voting agent
-shares one runner. The contrarian pulls a live crowd-positioning panel via `src/data/feeds/`:
-Fear & Greed + VIX (GunVest REST), put/call (CNN `graphdata`), AAII (aaii.com scrape), NAAIM
-(YCharts scrape), short interest (Finnhub). Each source is isolated and degrades to `null` on
-failure, so a dead upstream never blocks a vote.
+shares one runner ([docs/adding-an-agent.md](docs/adding-an-agent.md)). The contrarian pulls a
+live crowd-positioning panel via `src/data/feeds/`: Fear & Greed + VIX (GunVest REST), put/call
+(CNN `graphdata`), AAII (aaii.com scrape), NAAIM (YCharts scrape), short interest (Finnhub).
+Each source is isolated and degrades to `null` on failure, so a dead upstream never blocks a vote.
 
 ---
 
@@ -224,8 +114,8 @@ failure, so a dead upstream never blocks a vote.
 | **1 Single agent E2E** | Technical agent → vote → emitter → Telegram, one ticker | ✅ done |
 | **2 Consensus** | News / Social / Contrarian + Risk constraint, multi-round iteration, multi-ticker | ✅ done |
 | **3 Dashboard** | debate viewer, ticker config, signal feed | ✅ done |
-| **4 Backtest + reliability** | forward paper-test, index compare, `ρ_i` loop | ▫ planned |
-| **5 Summary + polish** | 6h Telegram summary, provider-switch UI, docs | ▫ planned |
+| **4 Backtest + reliability** | forward paper-test, index compare, `ρ_i` loop | ✅ done |
+| **5 Summary + polish** | 6h Telegram summary, provider-switch UI, docs | ✅ done |
 
 Phase plans live in [`docs/superpowers/plans/`](docs/superpowers/plans/); per-milestone
 handover notes in [`docs/superpowers/handovers/`](docs/superpowers/handovers/).
@@ -241,7 +131,7 @@ handover notes in [`docs/superpowers/handovers/`](docs/superpowers/handovers/).
 (REST API + PostgreSQL).
 
 ```bash
-cp .env.example .env       # fill in values (see below)
+cp .env.example .env       # fill in values (see Configuration)
 npm install
 docker compose up -d       # start NATS + Ollama
 docker exec -it legion-ollama ollama pull qwen2.5:7b-instruct
@@ -249,7 +139,7 @@ npm run db:migrate         # create the legion schema in GunVest's Postgres
 npm test                   # full suite, infra-free
 ```
 
-### Run the Phase 2 gestalt
+### Run the gestalt
 
 Seed at least one enabled ticker:
 
@@ -270,10 +160,19 @@ npm run risk               # non-voting deterministic constraint node
 npm run scheduler -- --now # kicks every enabled ticker immediately
 ```
 
-Or bring the whole topology up with Docker: `docker compose up -d`.
+Or bring the whole topology up with Docker: `docker compose up -d`. A consensus signal (or
+`NO_CONSENSUS`) lands in Telegram per ticker, and `legion.rounds` holds every round of the
+debate for the dashboard.
 
-A consensus signal (or `NO_CONSENSUS`) lands in Telegram per ticker, and `legion.rounds`
-holds every round of the debate for the dashboard.
+### Background crons
+
+```bash
+npm run reliability -- --now   # resolve due signals → recompute ρ, calibration, correlations
+npm run summary -- --now       # post the 6h Telegram digest for the recent window
+```
+
+Both also run on a schedule (`LEGION_*_CRON`). The reliability cron is what makes the panel
+self-tune; see [How it works §10–§12](docs/HOW-IT-WORKS.md#10-learning-who-to-trust).
 
 ### Run the dashboard
 
@@ -281,6 +180,45 @@ holds every round of the debate for the dashboard.
 npm run api                          # REST API on :8088 (serves the legion schema)
 cd web && npm install && npm run dev # dashboard on :5174, proxies /api → :8088
 ```
+
+Tabs: **Signals** (latest calls), **Debate** (pick a ticker → cycle → rounds with `S`/`V`/`κ`
+and per-agent votes), **Config** (tickers the scheduler monitors), **Agents** (per-agent
+provider/model, or disable an agent — persisted in `legion.agent_config`, read per cycle).
+
+---
+
+## Configuration
+
+Read by [`src/config/index.js`](src/config/index.js). Consensus thresholds and what each one
+does in the algorithm are detailed in
+[How it works §14](docs/HOW-IT-WORKS.md#14-constants--dials).
+
+**Consensus**
+
+| Var | Default | Meaning |
+|---|---|---|
+| `CONSENSUS_THETA_V` | `0.5` | max dispersion `V` allowed for convergence |
+| `CONSENSUS_QUORUM` | `0.6667` | min directional quorum `κ` (2/3 supermajority) |
+| `CONSENSUS_MAX_ROUNDS` | `3` | round cap before `NO_CONSENSUS` |
+| `CONSENSUS_HOLD_BAND` | `0.5` | neutral half-width: `|S| < this` ⇒ HOLD |
+
+**Delivery / pipeline**
+
+| Var | Meaning |
+|---|---|
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | signal delivery (reuses GunVest's bot) |
+| `LEGION_EXPECTED_AGENTS` | votes the emitter waits for before evaluating (4) |
+| `LEGION_RISK_ENABLED` | require the risk constraint before finalizing (`true` by default) |
+| `LEGION_CRON` | scheduler cadence (default `0 */4 * * *`, every 4h) |
+| `LEGION_SUMMARY_CRON` / `LEGION_SUMMARY_WINDOW_HOURS` | digest schedule (`0 */6 * * *`) / look-back (`6`) |
+| `FINNHUB_API_KEY` | enables the Contrarian short-interest feed only; the other feeds are live without it (short interest returns `null` when unset) |
+
+**Ollama** (app side — `OLLAMA_TIMEOUT_MS`=`300000`, `OLLAMA_MAX_CONCURRENT`=`1`; container
+side — `OLLAMA_NUM_PARALLEL`=`1`, `OLLAMA_KEEP_ALIVE`=`-1` to keep the model resident).
+
+LLM provider is pluggable (`local` Ollama by default; `gemini` / `openai` selectable per agent)
+via [`src/llm/provider.js`](src/llm/provider.js). Only `local` is implemented today — selecting
+another provider makes that agent abstain until it's added.
 
 ---
 
@@ -298,59 +236,6 @@ through the shared Cloudflare tunnel. Full guide: **[docs/DEPLOYMENT.md](docs/DE
 
 ---
 
-## Configuration
-
-Consensus thresholds (env, read by [`src/config/index.js`](src/config/index.js)):
-
-| Var | Default | Meaning |
-|---|---|---|
-| `CONSENSUS_THETA_V` | `0.5` | max dispersion `V` allowed for convergence |
-| `CONSENSUS_QUORUM` | `0.6667` | min directional quorum `κ` (2/3 supermajority) |
-| `CONSENSUS_MAX_ROUNDS` | `3` | round cap before `NO_CONSENSUS` |
-| `CONSENSUS_HOLD_BAND` | `0.5` | neutral half-width: `|S| < this` ⇒ HOLD |
-
-Delivery / pipeline:
-
-| Var | Meaning |
-|---|---|
-| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | signal delivery (reuses GunVest's bot) |
-| `LEGION_EXPECTED_AGENTS` | votes the emitter waits for before evaluating (4 in Phase 2) |
-| `LEGION_RISK_ENABLED` | require the risk constraint before finalizing (`true` by default) |
-| `LEGION_CRON` | scheduler cadence (default `0 */4 * * *`, every 4h) |
-| `FINNHUB_API_KEY` | Enables the Contrarian short-interest feed only; copy from GunVest. The other feeds (F&G, VIX, put/call, AAII, NAAIM) are live without it; short interest returns null when unset [...] |
-
-Ollama tuning (app side):
-
-| Var | Default | Meaning |
-|---|---|---|
-| `OLLAMA_TIMEOUT_MS` | `300000` | per-request inference deadline (ms) |
-| `OLLAMA_MAX_CONCURRENT` | `1` | in-flight inferences per agent process |
-
-Ollama server vars (set on the `ollama` container, not the app):
-
-| Var | Value | Meaning |
-|---|---|---|
-| `OLLAMA_NUM_PARALLEL` | `1` | one inference at a time — each request gets all CPU cores |
-| `OLLAMA_KEEP_ALIVE` | `-1` | keep model resident; avoids ~5 GB reload between calls |
-
-LLM provider is pluggable (`local` Ollama by default; `gemini` / `openai` selectable per
-agent) via [`src/llm/provider.js`](src/llm/provider.js).
-
----
-
-## Architecture notes
-
-- **Five agents = five processes/containers**, 1-agent-per-module. One Ollama container
-  serves the local model; agents queue serially, so a cycle is roughly
-  `agents × rounds × per-call latency` (~12–15 min/ticker on the A1 VM).
-- **Shared Postgres**, isolated `legion` schema: `tickers`, `cycles`, `rounds`, `votes`,
-  `signals`, `agent_reliability`, `backtest_results`. Every round is persisted so the
-  dashboard can replay the debate.
-- **All data via GunVest** — Legion never re-implements fetching. GunVest stays the source
-  of truth for prices, news, sentiment, macro.
-- **Tests are infra-free**: a fake `pg` pool, a stubbed LLM, and an in-memory bus double
-  (NATS-style wildcards) drive the whole pipeline — no broker or DB needed in CI.
-
 ## Repository layout
 
 ```
@@ -359,14 +244,26 @@ src/
   consensus/    vote schema, stance helpers, aggregation math (the core)
   agents/       per-agent gather / prompt / parse / runner
   emit/         signal builder, Telegram client, emitter (runs consensus)
-  risk/         (Phase 2) non-voting risk constraint
+  risk/         non-voting risk constraint
+  reliability/  resolver + ρ/calibration/correlation recompute (the self-tuning loop)
+  backtest/     deterministic indicator backtest
   db/           schema, client, repository, migrations
   llm/          pluggable provider (Ollama)
-  data/         GunVest REST client
-  run/          process entrypoints (orchestrator, agents, emitter)
-docs/superpowers/  design spec, phase plans, handover notes
+  data/         GunVest REST client + contrarian feeds
+  api/          read API for the dashboard
+  run/          process entrypoints (scheduler, agents, emitter, crons)
+web/            React + Vite dashboard
+docs/           HOW-IT-WORKS, ARCHITECTURE, ADRs, RUNNING, DEPLOYMENT
 test/           mirrors src/, infra-free
 ```
+
+**Architecture notes** — five agents = five processes; one Ollama container serves the local
+model and agents queue serially, so a cycle is roughly `agents × rounds × per-call latency`
+(~12–15 min/ticker on the A1 VM). All state lives in an isolated `legion` schema in GunVest's
+Postgres, with every round persisted so the dashboard can replay the debate. All market data
+comes via GunVest — Legion never re-implements fetching. Tests are infra-free: a fake `pg`
+pool, a stubbed LLM, and an in-memory bus double drive the whole pipeline, so CI needs no
+broker or DB. The full picture is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
@@ -375,42 +272,3 @@ test/           mirrors src/, infra-free
 Infra (Oracle A1 Always-Free), Postgres (shared), LLM (local, or Gemini free tier),
 data (GunVest free APIs), Telegram — **all $0**. Runtime total ≈ **$0**. The only cost is
 development tokens, bounded by phasing.
-
----
-
-## Phase 3 — dashboard
-
-Backend API (serves the `legion` schema):
-
-```bash
-npm run api          # http://localhost:8088
-```
-
-Frontend (separate app in web/):
-
-```bash
-cd web
-npm install
-npm run dev          # http://localhost:5174 (proxies /api to :8088)
-```
-
-Tabs: **Signals** (latest calls), **Debate** (pick a ticker → cycle → rounds with S/V/κ and per-agent votes), **Config** (add/enable/disable tickers the scheduler monitors).
-
-## Phase 5 — Summary, provider switching, docs
-
-- **6h Telegram digest:** `src/run/summary.js` (cron `LEGION_SUMMARY_CRON`, default `0 */6 * * *`).
-  Run once: `npm run summary -- --now`.
-- **Per-agent provider switching:** dashboard **Agents** tab → set provider/model per agent or
-  disable one; persisted in `legion.agent_config` and read by each agent **per cycle**
-  (`buildGetProvider`), so a change applies on the next evaluation with no redeploy. Disabled
-  agents abstain (HOLD/0) without an LLM call. Only the `local` (Ollama) provider is implemented
-  today — selecting `gemini`/`openai` makes that agent abstain until those providers are added.
-- **Add an agent:** see `docs/adding-an-agent.md`.
-- **Architecture & decisions:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), `docs/adr/0001`–`0017`.
-
-### Environment
-
-| Var                           | Default       | Meaning          |
-| ----------------------------- | ------------- | ---------------- |
-| `LEGION_SUMMARY_CRON`         | `0 */6 * * *` | digest schedule  |
-| `LEGION_SUMMARY_WINDOW_HOURS` | `6`           | digest look-back |
