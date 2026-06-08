@@ -5,7 +5,7 @@ describe('loadConfig', () => {
   it('applies defaults when env is empty', () => {
     const cfg = loadConfig({});
     expect(cfg.consensus).toEqual({
-      thetaV: 0.5,
+      thetaV: 0.75,
       quorum: 0.6667,
       maxRounds: 3,
       holdBand: 0.5,
