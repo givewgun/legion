@@ -25,7 +25,13 @@ describe('resolveSignals', () => {
     const resolved = [];
     const repo = {
       listUnresolvedSignals: async () => [
-        { id: 1, symbol: 'NVDA', created_at: '2026-06-01', entry_price: 100 },
+        {
+          id: 1,
+          symbol: 'NVDA',
+          created_at: '2026-06-01',
+          entry_price: 100,
+          resolve_after: '2026-06-08',
+        },
       ],
       resolveSignal: async (id, data) => resolved.push({ id, ...data }),
       getSignalStance: async () => 1,
@@ -55,7 +61,13 @@ describe('resolveSignals', () => {
     const resolved = [];
     const repo = {
       listUnresolvedSignals: async () => [
-        { id: 2, symbol: 'MU', created_at: '2026-06-01', entry_price: 50 },
+        {
+          id: 2,
+          symbol: 'MU',
+          created_at: '2026-06-01',
+          entry_price: 50,
+          resolve_after: '2026-06-08',
+        },
       ],
       resolveSignal: async (id, data) => resolved.push({ id, ...data }),
       getSignalStance: async () => 1,
@@ -83,7 +95,13 @@ describe('resolveSignals', () => {
     const resolved = [];
     const repo = {
       listUnresolvedSignals: async () => [
-        { id: 3, symbol: 'AMD', created_at: '2026-06-01', entry_price: 80 },
+        {
+          id: 3,
+          symbol: 'AMD',
+          created_at: '2026-06-01',
+          entry_price: 80,
+          resolve_after: '2026-06-08',
+        },
       ],
       resolveSignal: async (id, data) => resolved.push({ id, ...data }),
       getSignalStance: async () => 0,
@@ -107,11 +125,57 @@ describe('resolveSignals', () => {
     expect(resolved[0].forwardReturn).toBeCloseTo(0.025);
   });
 
+  it('pins the holding window to resolve_after, ignoring a late cron run', async () => {
+    const resolved = [];
+    const repo = {
+      // Cron fires late (2026-06-20), well past the signal's 2026-06-08 horizon end.
+      listUnresolvedSignals: async () => [
+        {
+          id: 5,
+          symbol: 'NVDA',
+          created_at: '2026-06-01',
+          entry_price: 100,
+          resolve_after: '2026-06-08',
+        },
+      ],
+      resolveSignal: async (id, data) => resolved.push({ id, ...data }),
+      getSignalStance: async () => 1,
+    };
+    const gunvest = gunvestStub({
+      NVDA: [
+        { date: '2026-06-01', close: 100 },
+        { date: '2026-06-08', close: 110 }, // +10% by horizon end
+        { date: '2026-06-20', close: 200 }, // post-horizon spike must NOT count
+      ],
+      SPY: [
+        { date: '2026-06-01', close: 400 },
+        { date: '2026-06-08', close: 408 },
+        { date: '2026-06-20', close: 800 },
+      ],
+      QQQ: [
+        { date: '2026-06-01', close: 300 },
+        { date: '2026-06-08', close: 309 },
+        { date: '2026-06-20', close: 600 },
+      ],
+    });
+    await resolveSignals(repo, gunvest, '2026-06-20');
+    // Return is measured over [created_at, resolve_after], so it stays +10%, not the spike.
+    expect(resolved[0].forwardReturn).toBeCloseTo(0.1);
+    expect(resolved[0].spyReturn).toBeCloseTo(0.02);
+    expect(resolved[0].outcome).toBe(1);
+  });
+
   it('skips a signal when candle data is insufficient', async () => {
     const resolved = [];
     const repo = {
       listUnresolvedSignals: async () => [
-        { id: 4, symbol: 'X', created_at: '2026-06-01', entry_price: 10 },
+        {
+          id: 4,
+          symbol: 'X',
+          created_at: '2026-06-01',
+          entry_price: 10,
+          resolve_after: '2026-06-08',
+        },
       ],
       resolveSignal: async (id, data) => resolved.push({ id, ...data }),
       getSignalStance: async () => 1,

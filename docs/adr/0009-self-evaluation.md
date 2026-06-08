@@ -19,7 +19,10 @@ Two complementary, deterministic evaluation paths:
    ([`src/reliability/resolver.js`](../../src/reliability/resolver.js)) computes the forward
    return and the SPY/QQQ returns over the same window; `outcome = forwardReturn > spyReturn`
    (alpha vs SPY), and `correct` records direction vs that excess. These resolved outcomes feed
-   the Brier loop. This measures the *live* gestalt, no replay.
+   the Brier loop. This measures the *live* gestalt, no replay. The window end is pinned to the
+   signal's fixed horizon (`resolve_after = created_at + horizonDays`), **not** the resolver's
+   run time — a late cron must not stretch the holding period, or two signals on the same horizon
+   would be scored over different elapsed times and their Brier scores would not be comparable.
 
 2. **Deterministic LLM-free backtest.** A pure engine
    ([`src/backtest/deterministic.js`](../../src/backtest/deterministic.js)) runs a transparent

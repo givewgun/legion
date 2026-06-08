@@ -96,7 +96,7 @@ export function createRepo(db) {
 
     async listUnresolvedSignals(now) {
       return db.query(
-        `SELECT id, symbol, created_at, entry_price
+        `SELECT id, symbol, created_at, entry_price, resolve_after
            FROM legion.signals
           WHERE resolved = false AND resolve_after IS NOT NULL AND resolve_after <= $1
           ORDER BY resolve_after ASC`,
@@ -284,10 +284,7 @@ export function createRepo(db) {
         `SELECT agent_id, provider, model, enabled FROM legion.agent_config`,
       );
       return Object.fromEntries(
-        rows.map((r) => [
-          r.agent_id,
-          { provider: r.provider, model: r.model, enabled: r.enabled },
-        ]),
+        rows.map((r) => [r.agent_id, { provider: r.provider, model: r.model, enabled: r.enabled }]),
       );
     },
 
