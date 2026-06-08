@@ -252,6 +252,40 @@ With `N` voting agents, the fault tolerance is `f = ⌊(N−1)/3⌋`. For the la
 defending against lying machines (the agents are cooperative and co-located) — it just borrows
 BFT's robustness shape: no leader, supermajority, single-outlier tolerance. (ADR 0001.)
 
+### Does convergence require unanimity? No.
+
+A common misread: that everyone must end up on the same side. They don't. A round can converge
+**with a dissenter still voting the opposite direction** — as long as that dissenter is a minority
+of the *weight* (so `κ ≥ 2/3` holds) **and** doesn't generate too much spread (so `V ≤ θ_v`). The
+second part is the catch: an opposite-side vote's contribution to `V` is `W_i·c_i·(s_i − S)²`, so
+it only stays small when the dissenter's **conviction (and weight) is low**.
+
+| agent | `w_i` | stance `s_i` | conviction `c_i` | `W_i·c_i` |
+|---|---|---|---|---|
+| technical | 1.0 | +1 | 0.8 | 0.80 |
+| news | 1.2 | +1 | 0.9 | 1.08 |
+| social | 0.8 | +1 | 0.6 | 0.48 |
+| **contrarian** | 0.9 | **−1** | **0.3** | **0.27** |
+
+```
+Σ W·c = 2.63
+S = (0.80·1 + 1.08·1 + 0.48·1 + 0.27·(−1)) / 2.63 ≈ +0.79   → band BUY
+V = (0.80·0.21² + 1.08·0.21² + 0.48·0.21² + 0.27·1.79²) / 2.63 ≈ 0.37
+κ = (0.80 + 1.08 + 0.48) / 2.63 ≈ 0.90        # the three bulls
+```
+
+`κ = 0.90 ≥ 0.67` ✅ **and** `V = 0.37 ≤ 0.5` ✅ → **converged as BUY**, *while the contrarian is
+still voting SELL.* At conviction 0.3 the dissenter is only ~10% of the weight: heard, but not
+enough to break quorum or blow up dispersion.
+
+The flip side is the lever that lets a dissenter **block**: give that same contrarian higher
+conviction, or a stance of −2 instead of −1, and its `(s_i − S)²·W_i·c_i` term balloons `V` past
+`θ_v` — back to iterating (exactly what happened in round 1 of the main example in §4, where the
+contrarian's conviction-0.5 SELL pushed `V` to 1.19). So a dissenter's power to stop a call scales
+with **how sure and how extreme** it is, not merely *that* it disagrees. That's the design intent:
+a robust supermajority, not a forced unanimity — one committed skeptic should be heard, but not
+hold a veto.
+
 ---
 
 ## 6. Iteration & dissent
@@ -283,6 +317,38 @@ flowchart LR
     dissent --> r1
     conv -->|"no, and r = 3"| noc["emit NO_CONSENSUS"]
 ```
+
+### Worked example, continued — round 2 converges
+
+Recall round 1 failed on **dispersion, not quorum**: `κ = 0.84` already cleared the 2/3 bar, but
+the contrarian's confident SELL kept `V = 1.19` above `θ_v = 0.5`. So the panel iterates. The
+contrarian is now shown the bulls' strongest rationales (the catalyst the news agent flagged), and
+— reluctantly, with low conviction — capitulates from SELL (−1) to a hedged BUY (+1, conviction
+0.4). Everyone else holds. Round 2:
+
+| agent | `w_i` | stance `s_i` | conviction `c_i` | `W_i·c_i` |
+|---|---|---|---|---|
+| technical | 1.0 | +2 | 0.9 | 0.90 |
+| news | 1.2 | +2 | 0.8 | 0.96 |
+| social | 0.8 | +1 | 0.6 | 0.48 |
+| contrarian | 0.9 | **+1** | **0.4** | **0.36** |
+
+```
+Σ W·c = 2.70
+S = (0.90·2 + 0.96·2 + 0.48·1 + 0.36·1) / 2.70 = 4.56 / 2.70 ≈ +1.69   → band STRONG_BUY
+V = (0.90·0.31² + 0.96·0.31² + 0.48·0.69² + 0.36·0.69²) / 2.70 ≈ 0.21
+κ = 2.70 / 2.70 = 1.00        # all four are now on the + side
+```
+
+`κ = 1.00 ≥ 0.67` ✅ **and** `V = 0.21 ≤ 0.5` ✅ → **converged.** With the lone dissenter gone the
+spread collapses, and the call emits as **STRONG_BUY**, conviction `min(1.69/2, 1) ≈ 0.84`.
+
+**Why this isn't herding (§7b):** the convergence appears only in round 2, so the anti-herding
+guard checks the *round-1* independent backing for the `+` side — the three bulls, `(0.90 + 0.96 +
+0.48) / 2.79 ≈ 0.84`, well above `priorQuorum` (default `0.33`). The bulls were already strong on
+their own; the contrarian moved *toward* a pre-existing majority, not the other way around — so
+this is genuine agreement, and the guard lets it through. (Had the bulls been weak in round 1 and
+only piled on after hearing the loudest peer, the same guard would have blocked it.)
 
 ---
 
