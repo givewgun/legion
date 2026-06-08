@@ -4,6 +4,9 @@
 
 Accepted (2026-06-08).
 
+> **Plain-English walkthrough:** [How it works §10 — Learning who to trust](../HOW-IT-WORKS.md#10-learning-who-to-trust)
+> (the calibration dial, alongside reliability).
+
 ## Context
 
 The aggregator (ADR 0001) weights every vote by `W_i · c_i`, where `c_i ∈ [0,1]` is the

@@ -56,7 +56,13 @@ Three things make this more than just averaging opinions:
    dashboard). A separate **safety officer** (Risk Manager) can tell it to "calm down" or "don't
    open a new long right now," but can never make it buy what the panel didn't want.
 
-That's the entire product. Everything below is just *how* each of those three ideas is made
+And because any voting system invites gaming, Legion bakes in **honesty guards** — it discounts
+agents that merely echo each other, throws out a late "agreement" that is really everyone caving to
+the loudest voice, and turns down forecasters who are confidently wrong. They are arguably the
+cleverest part; if you only dip into one deep section, make it
+[§7 Three honesty guards](#7-three-honesty-guards).
+
+That's the entire product. Everything below is just *how* each of these ideas is made
 precise.
 
 ### Why bother (vs. asking one model)?
@@ -380,6 +386,13 @@ plan, every agent's rationale, and `S / V / κ` so the dashboard can replay the 
 This is the feedback loop that makes Legion *self-tuning* rather than a fixed formula. It runs on a
 cron, **across days**, not inside one cycle.
 
+> **Build status —** implemented and running (the `legion-reliability` cron service), but
+> **cold-start neutral**: ρ and calibration stay pinned at `1.0` until an agent has accrued
+> `MIN_RESOLVED = 5` resolved forecasts. So on a fresh deploy the dials are wired and turning but
+> *read neutral* — the panel is weighted exactly like the unweighted formulas in §4 until enough
+> live signals resolve. Don't read this section as "ρ is reshaping weights today"; read it as "this
+> is the mechanism, and it engages as history accrues."
+
 ### 🧒 ELI5
 
 After each call, Legion writes down what every specialist predicted. Later — once enough time has
@@ -441,6 +454,10 @@ the learner must grade what the agent actually claimed, or you'd get a feedback 
 
 ## 11. Did the call work?
 
+> **Build status —** implemented and running on the same reliability cron, but it can only grade
+> signals that have **reached their fixed horizon**. Early in a deploy nothing has resolved yet, so
+> the dials in §10 stay neutral until the first horizons elapse and outcomes start landing.
+
 ### 🧒 ELI5
 
 To grade the panel we need to know if a call was *good*. "Good" here doesn't mean "the stock went
@@ -480,6 +497,9 @@ by the updated trust. The gestalt literally learns which voices to believe.
 ---
 
 ## 12. The deterministic backtest
+
+> **Build status —** runnable today as an on-demand tool (`npm run backtest`). It is a deterministic
+> yardstick, **not** part of the live signal path — no LLM, no effect on what the panel emits.
 
 ### 🧒 ELI5
 

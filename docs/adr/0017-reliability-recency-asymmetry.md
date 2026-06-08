@@ -4,6 +4,8 @@
 
 Accepted (2026-06-08). Refines ADR 0008.
 
+> **Plain-English walkthrough:** [How it works §10 — Learning who to trust](../HOW-IT-WORKS.md#10-learning-who-to-trust) (recency decay and the asymmetric ρ mapping).
+
 ## Context
 
 ADR 0008 learns each agent's reliability `ρ` (and ADR 0014 its calibration) from a trailing

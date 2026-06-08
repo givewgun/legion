@@ -5,6 +5,8 @@
 Accepted (2026-06-04); implemented Phase 4 (2026-06-06). Refined by ADR 0017 (recency decay +
 asymmetric penalty) and complemented by ADR 0014 (conviction calibration).
 
+> **Plain-English walkthrough:** [How it works §10 — Learning who to trust](../HOW-IT-WORKS.md#10-learning-who-to-trust).
+
 ## Context
 
 Every agent enters with a static prior weight `w_i` (a guess at how load-bearing its domain

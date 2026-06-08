@@ -4,6 +4,9 @@
 
 Accepted (2026-06-04).
 
+> **Plain-English walkthrough:** [How it works §4 — Consensus math](../HOW-IT-WORKS.md#4-consensus-math)
+> and [§5 — Convergence](../HOW-IT-WORKS.md#5-convergence) (concept first, then the formulas and a worked example).
+
 ## Context
 
 Legion must turn `N` independent expert votes into a single trade stance with **no prime

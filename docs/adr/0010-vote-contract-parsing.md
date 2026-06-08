@@ -4,6 +4,8 @@
 
 Accepted (2026-06-04); parser hardened 2026-06-06.
 
+> **Plain-English walkthrough:** [How it works §3 — A vote](../HOW-IT-WORKS.md#3-a-vote).
+
 ## Context
 
 The aggregator (ADR 0001) is pure math over structured votes, so every agent must return the

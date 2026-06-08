@@ -4,6 +4,8 @@
 
 Accepted (2026-06-08).
 
+> **Plain-English walkthrough:** [How it works §7 — Three honesty guards](../HOW-IT-WORKS.md#7-three-honesty-guards) (the redundancy discount).
+
 ## Context
 
 The consensus quorum `κ` (ADR 0001) is the weighted fraction of votes whose side agrees with the
