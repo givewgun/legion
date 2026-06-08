@@ -14,6 +14,11 @@ describe('returnOver', () => {
   it('returns null when window has <2 usable closes', () => {
     expect(returnOver(candles, '2026-06-10', '2026-06-20')).toBeNull();
   });
+  it('accepts Date bounds, normalizing them to UTC day keys', () => {
+    expect(
+      returnOver(candles, new Date('2026-06-01T00:00:00Z'), new Date('2026-06-06T00:00:00Z')),
+    ).toBeCloseTo(0.1);
+  });
 });
 
 describe('resolveSignals', () => {
@@ -162,6 +167,41 @@ describe('resolveSignals', () => {
     // Return is measured over [created_at, resolve_after], so it stays +10%, not the spike.
     expect(resolved[0].forwardReturn).toBeCloseTo(0.1);
     expect(resolved[0].spyReturn).toBeCloseTo(0.02);
+    expect(resolved[0].outcome).toBe(1);
+  });
+
+  it('resolves when created_at/resolve_after arrive as Date objects (node-postgres TIMESTAMPTZ)', async () => {
+    const resolved = [];
+    const repo = {
+      listUnresolvedSignals: async () => [
+        {
+          id: 6,
+          symbol: 'NVDA',
+          created_at: new Date('2026-06-01T00:00:00Z'),
+          entry_price: 100,
+          resolve_after: new Date('2026-06-08T00:00:00Z'),
+        },
+      ],
+      resolveSignal: async (id, data) => resolved.push({ id, ...data }),
+      getSignalStance: async () => 1,
+    };
+    const gunvest = gunvestStub({
+      NVDA: [
+        { date: '2026-06-01', close: 100 },
+        { date: '2026-06-08', close: 110 },
+      ],
+      SPY: [
+        { date: '2026-06-01', close: 400 },
+        { date: '2026-06-08', close: 408 },
+      ],
+      QQQ: [
+        { date: '2026-06-01', close: 300 },
+        { date: '2026-06-08', close: 309 },
+      ],
+    });
+    const count = await resolveSignals(repo, gunvest, new Date('2026-06-08T00:00:00Z'));
+    expect(count).toBe(1);
+    expect(resolved[0].forwardReturn).toBeCloseTo(0.1);
     expect(resolved[0].outcome).toBe(1);
   });
 

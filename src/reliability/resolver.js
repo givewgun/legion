@@ -8,8 +8,12 @@
 // not comparable. Pinning to resolve_after makes resolution deterministic and horizon-faithful.
 const HORIZON_FETCH_DAYS = 90; // candle history wide enough to span any open holding window
 
+// Normalize to a YYYY-MM-DD (UTC) day key. Accepts both ISO strings and the JS
+// Date objects node-postgres returns for TIMESTAMPTZ columns (created_at,
+// resolve_after) — String(Date) yields "Mon Jun 08 …", which would match no
+// candle rows and silently skip every due signal.
 function day(ts) {
-  return String(ts).slice(0, 10);
+  return new Date(ts).toISOString().slice(0, 10);
 }
 
 export function returnOver(candles, fromTs, toTs) {
