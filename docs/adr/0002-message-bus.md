@@ -4,6 +4,8 @@
 
 Accepted (2026-06-04).
 
+> **Plain-English walkthrough:** [How it works §2 — The one cycle, start to finish](../HOW-IT-WORKS.md#2-the-one-cycle-start-to-finish).
+
 ## Context
 
 The runtime is a set of independent processes — an orchestrator, four voting agents, a risk

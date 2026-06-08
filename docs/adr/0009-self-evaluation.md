@@ -4,6 +4,9 @@
 
 Accepted (2026-06-04); implemented Phase 4 (2026-06-06).
 
+> **Plain-English walkthrough:** [How it works §11 — Did the call work?](../HOW-IT-WORKS.md#11-did-the-call-work)
+> and [§12 — The deterministic backtest](../HOW-IT-WORKS.md#12-the-deterministic-backtest).
+
 ## Context
 
 Reliability weighting (ADR 0008) needs ground-truth outcomes, and operators need to know

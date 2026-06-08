@@ -4,6 +4,8 @@
 
 Accepted (2026-06-04).
 
+> **Plain-English walkthrough:** [How it works §8 — The Risk Manager](../HOW-IT-WORKS.md#8-the-risk-manager).
+
 ## Context
 
 The consensus panel can produce a confident BUY into a market regime where any buy is unwise

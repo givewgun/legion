@@ -4,6 +4,8 @@
 
 Accepted (2026-06-08).
 
+> **Plain-English walkthrough:** [How it works §7 — Three honesty guards](../HOW-IT-WORKS.md#7-three-honesty-guards) (the anti-herding guard).
+
 ## Context
 
 Consensus runs up to `R_max` rounds (ADR 0001); between rounds each agent is shown its peers'
