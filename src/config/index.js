@@ -24,7 +24,7 @@ export function loadConfig(env = process.env) {
       maxConcurrent: num(env, 'OLLAMA_MAX_CONCURRENT', 1),
     },
     consensus: {
-      thetaV: num(env, 'CONSENSUS_THETA_V', 0.5),
+      thetaV: num(env, 'CONSENSUS_THETA_V', 0.75),
       quorum: num(env, 'CONSENSUS_QUORUM', 0.6667),
       maxRounds: num(env, 'CONSENSUS_MAX_ROUNDS', 3),
       holdBand: num(env, 'CONSENSUS_HOLD_BAND', 0.5),
