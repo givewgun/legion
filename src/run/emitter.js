@@ -27,6 +27,7 @@ createEmitter({
   consensus: cfg.consensus,
   expectedAgents,
   riskEnabled,
+  staleEntryMs: cfg.emitter.staleEntryMs,
 }).start();
 console.log(
   `[emitter] listening for votes (expectedAgents=${expectedAgents}, risk=${riskEnabled})`,

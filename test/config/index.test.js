@@ -25,6 +25,7 @@ describe('loadConfig', () => {
       maxConcurrent: 6,
       macroTtlMs: 60000,
     });
+    expect(cfg.emitter).toEqual({ staleEntryMs: 1800000 });
   });
 
   it('reads overrides from env and coerces numbers', () => {
@@ -44,6 +45,7 @@ describe('loadConfig', () => {
       GUNVEST_RETRIES: '3',
       GUNVEST_MAX_CONCURRENT: '4',
       GUNVEST_MACRO_TTL_MS: '30000',
+      LEGION_EMITTER_STALE_MS: '120000',
       DATABASE_URL: 'postgres://u:p@db:5432/gunvest',
     });
     expect(cfg.consensus).toEqual({
@@ -67,6 +69,7 @@ describe('loadConfig', () => {
       maxConcurrent: 4,
       macroTtlMs: 30000,
     });
+    expect(cfg.emitter).toEqual({ staleEntryMs: 120000 });
     expect(cfg.databaseUrl).toBe('postgres://u:p@db:5432/gunvest');
   });
 
