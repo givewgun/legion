@@ -45,6 +45,6 @@ export function retryAsync(
     minTimeout: baseMs,
     maxTimeout: maxDelayMs,
     randomize: true, // jitter: multiply each delay by a factor in [1, 2)
-    shouldRetry: ({ error }) => isTransient(error),
+    shouldRetry: (error) => isTransient(error),
   });
 }
