@@ -11,6 +11,16 @@ import { applyRiskConstraint } from '../risk/apply.js';
 import { formatSignal } from './telegram.js';
 
 const DAY_MS = 86400000;
+// Buffered (cycleId, round) state is only freed on the happy path — a round that
+// collects all expected votes, or a cycle that finalizes. A round that never
+// completes (an agent process is down, a missing risk constraint, or a late
+// duplicate vote re-creating a finalized entry) would otherwise pin its buffers
+// forever, so we evict entries older than this. Generous vs. a real cycle
+// (seconds–minutes) to never drop one still in flight.
+const DefaultStaleEntryMs = 30 * 60 * 1000;
+// Upper bound on how often the lazy sweep scans; the actual cadence is the min of
+// this and staleEntryMs so a small staleEntryMs (tests) still sweeps promptly.
+const SweepThrottleMs = 60 * 1000;
 
 // Collects votes (+ optional risk constraint) per (cycleId, round). When the
 // round is complete it aggregates with reliability-scaled weights (W_i = w_i·ρ_i),
@@ -26,21 +36,60 @@ export function createEmitter({
   riskEnabled = false,
   gunvest = null,
   horizonDays = 5,
+  staleEntryMs = DefaultStaleEntryMs,
   clock = () => new Date(),
   logger = console,
 }) {
-  const rounds = new Map(); // `${cycleId}:${round}` -> { symbol, round, votes, constraint }
+  const rounds = new Map(); // `${cycleId}:${round}` -> { symbol, round, votes, constraint, createdAt }
   const learnedByCycle = new Map(); // cycleId -> { rho, calib, corr } loaded once per cycle
   const firstVotesByCycle = new Map(); // cycleId -> round-1 votes (independent priors)
+  const cycleSeenAt = new Map(); // cycleId -> ms first seen (drives stale-cycle eviction)
+  const sweepThrottleMs = Math.min(SweepThrottleMs, staleEntryMs);
+  let lastSweepMs = 0;
 
   function key(cycleId, round) {
     return `${cycleId}:${round}`;
   }
 
-  function touch(cycleId, round, symbol) {
+  function touch(cycleId, round, symbol, nowMs) {
     const k = key(cycleId, round);
-    if (!rounds.has(k)) rounds.set(k, { symbol, round, votes: [], constraint: null });
+    if (!rounds.has(k)) {
+      rounds.set(k, { symbol, round, votes: [], constraint: null, createdAt: nowMs });
+    }
+    if (!cycleSeenAt.has(cycleId)) cycleSeenAt.set(cycleId, nowMs);
     return { k, entry: rounds.get(k) };
+  }
+
+  // Drop buffers that have lingered past staleEntryMs — a round that never reached
+  // quorum and the per-cycle state of a cycle that never finalized. Bounds memory
+  // regardless of which agent or constraint went missing.
+  function sweepStale(nowMs) {
+    let evicted = 0;
+    for (const [k, entry] of rounds) {
+      if (nowMs - entry.createdAt > staleEntryMs) {
+        rounds.delete(k);
+        evicted += 1;
+      }
+    }
+    for (const [cycleId, seenAt] of cycleSeenAt) {
+      if (nowMs - seenAt > staleEntryMs) {
+        cycleSeenAt.delete(cycleId);
+        learnedByCycle.delete(cycleId);
+        firstVotesByCycle.delete(cycleId);
+      }
+    }
+    if (evicted > 0) {
+      logger.warn?.(
+        `[emitter] evicted ${evicted} stale round buffer(s) older than ${staleEntryMs}ms — ` +
+          `an agent likely never voted or a risk constraint never arrived`,
+      );
+    }
+  }
+
+  function maybeSweep(nowMs) {
+    if (nowMs - lastSweepMs < sweepThrottleMs) return;
+    lastSweepMs = nowMs;
+    sweepStale(nowMs);
   }
 
   function ready(entry) {
@@ -155,6 +204,7 @@ export function createEmitter({
     await repo.finishCycle(cycleId, result.converged ? 'converged' : 'no_consensus');
     learnedByCycle.delete(cycleId);
     firstVotesByCycle.delete(cycleId);
+    cycleSeenAt.delete(cycleId);
 
     try {
       await telegram(formatSignal(signal));
@@ -167,17 +217,26 @@ export function createEmitter({
   return {
     start() {
       bus.subscribeJSON(voteWildcard(), (msg) => {
+        const nowMs = clock().getTime();
+        maybeSweep(nowMs);
         const { cycleId, symbol, round, vote } = msg;
-        const { k, entry } = touch(cycleId, round, symbol);
+        const { k, entry } = touch(cycleId, round, symbol, nowMs);
         entry.votes.push(vote);
         if (ready(entry)) process(cycleId, k, entry);
       });
       bus.subscribeJSON(constraintWildcard(), (msg) => {
+        const nowMs = clock().getTime();
+        maybeSweep(nowMs);
         const { cycleId, symbol, round, constraint } = msg;
-        const { k, entry } = touch(cycleId, round, symbol);
+        const { k, entry } = touch(cycleId, round, symbol, nowMs);
         entry.constraint = constraint;
         if (ready(entry)) process(cycleId, k, entry);
       });
+    },
+    // Read-only buffer sizes for observability / leak detection (e.g. a health
+    // metric). Bounded in steady state; unbounded growth signals a missing agent.
+    stats() {
+      return { pendingRounds: rounds.size, pendingCycles: cycleSeenAt.size };
     },
   };
 }

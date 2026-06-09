@@ -161,6 +161,63 @@ describe('createEmitter (v2)', () => {
     await vi.waitFor(() => expect(repo.finishCycle).toHaveBeenCalledWith(3, 'no_consensus'));
   });
 
+  it('does not leak: cleans up after a healthy cycle and evicts orphaned buffers', async () => {
+    const bus = createMemoryBus();
+    const repo = fakeRepo();
+    const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn() };
+    let nowMs = 1_000_000;
+    const staleEntryMs = 60_000;
+    const emitter = createEmitter({
+      bus,
+      repo,
+      telegram: vi.fn(async () => {}),
+      consensus,
+      expectedAgents: 2,
+      staleEntryMs,
+      clock: () => new Date(nowMs),
+      logger,
+    });
+    emitter.start();
+
+    // Healthy converged cycle leaves no residue in any buffer.
+    emitVote(bus, {
+      cycleId: 6,
+      symbol: 'NVDA',
+      round: 1,
+      vote: { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'a' },
+    });
+    emitVote(bus, {
+      cycleId: 6,
+      symbol: 'NVDA',
+      round: 1,
+      vote: { agentId: 'news', stance: 2, conviction: 0.8, weight: 1, rationale: 'b' },
+    });
+    await vi.waitFor(() => expect(emitter.stats()).toEqual({ pendingRounds: 0, pendingCycles: 0 }));
+
+    // Only one of two expected agents votes — the round never completes and buffers.
+    emitVote(bus, {
+      cycleId: 8,
+      symbol: 'MU',
+      round: 1,
+      vote: { agentId: 'technical', stance: 1, conviction: 0.5, weight: 1, rationale: 'x' },
+    });
+    expect(emitter.stats()).toEqual({ pendingRounds: 1, pendingCycles: 1 });
+    expect(repo.finishCycle).toHaveBeenCalledTimes(1); // only the healthy cycle 6
+
+    // Advance past the stale window; the next message's lazy sweep drops the orphan.
+    nowMs += staleEntryMs + 1;
+    emitVote(bus, {
+      cycleId: 9,
+      symbol: 'TSLA',
+      round: 1,
+      vote: { agentId: 'technical', stance: 1, conviction: 0.5, weight: 1, rationale: 'z' },
+    });
+
+    // Cycle 8's orphan is evicted; only the just-arrived cycle 9 remains.
+    expect(emitter.stats()).toEqual({ pendingRounds: 1, pendingCycles: 1 });
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('evicted 1 stale round'));
+  });
+
   it('waits for the risk constraint before finalizing and applies it', async () => {
     const bus = createMemoryBus();
     const repo = fakeRepo();

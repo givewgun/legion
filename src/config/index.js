@@ -32,6 +32,11 @@ export function loadConfig(env = process.env) {
       maxConcurrent: num(env, 'GUNVEST_MAX_CONCURRENT', 6),
       macroTtlMs: num(env, 'GUNVEST_MACRO_TTL_MS', 60000),
     },
+    // Emitter buffers per-(cycle,round) vote state; entries older than this are
+    // swept so a missing agent / constraint can't leak them forever.
+    emitter: {
+      staleEntryMs: num(env, 'LEGION_EMITTER_STALE_MS', 1800000),
+    },
     consensus: {
       thetaV: num(env, 'CONSENSUS_THETA_V', 0.75),
       quorum: num(env, 'CONSENSUS_QUORUM', 0.6667),
