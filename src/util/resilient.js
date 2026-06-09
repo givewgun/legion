@@ -1,4 +1,5 @@
 // Limiter + retry helpers for resilient async operations.
+import pRetry from 'p-retry';
 
 // Limit concurrent invocations of async fns. Returns run(fn) directly, so callers
 // invoke it as `const limit = createLimiter(n); limit(() => ...)`. Excess calls queue.
@@ -23,27 +24,27 @@ export function createLimiter(max) {
     });
 }
 
-// Retry async fn with exponential backoff + jitter on transient errors.
-// Total attempts = retries + 1 (e.g., retries=2 means 3 total attempts).
-// isTransient(err) determines if an error is retryable.
-export async function retryAsync(fn, { retries = 2, baseMs = 200, isTransient = () => true } = {}) {
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  let lastErr;
-
-  for (let attempt = 1; attempt <= retries + 1; attempt += 1) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      const attemptsRemaining = retries + 1 - attempt;
-      if (attemptsRemaining === 0 || !isTransient(err)) {
-        throw err;
-      }
-      // Backoff: baseMs * 2^(attempt-1) + random jitter
-      const delayMs = baseMs * (2 ** (attempt - 1)) + Math.floor(Math.random() * baseMs);
-      await sleep(delayMs);
-    }
-  }
-
-  throw lastErr;
+// Retry async fn with exponential backoff + jitter on transient errors. A thin
+// adapter over p-retry (the de-facto Node retry library, built on `retry`) so we
+// don't own the backoff math, while keeping a stable signature for our call sites
+// and their domain-specific retry classification:
+//   - retries:     number of retries (total attempts = retries + 1)
+//   - baseMs:      first backoff delay; doubles each attempt (factor 2)
+//   - maxDelayMs:  caps the per-attempt backoff
+//   - isTransient: predicate deciding whether a thrown error is retryable
+// Note: p-retry treats a non-network TypeError as a fatal bug and never retries
+// it, regardless of isTransient — wrap such errors in a plain Error if you need
+// them retried.
+export function retryAsync(
+  fn,
+  { retries = 2, baseMs = 200, maxDelayMs = Infinity, isTransient = () => true } = {},
+) {
+  return pRetry(fn, {
+    retries,
+    factor: 2,
+    minTimeout: baseMs,
+    maxTimeout: maxDelayMs,
+    randomize: true, // jitter: multiply each delay by a factor in [1, 2)
+    shouldRetry: (error) => isTransient(error),
+  });
 }

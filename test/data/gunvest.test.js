@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createGunvestClient } from '../../src/data/gunvest.js';
+import { createGunvestClient, createGunvestFromConfig } from '../../src/data/gunvest.js';
 
 function fetchReturning(payload) {
   return vi.fn(async () => ({ ok: true, json: async () => payload }));
@@ -146,8 +146,57 @@ describe('createGunvestClient', () => {
           }),
       );
       const client = createGunvestClient('http://api', fetchMock, { maxConcurrent: 2, retries: 0 });
-      await Promise.all(Array.from({ length: 8 }, () => client.getMacro()));
+      // getPrice is not deduped (unlike getMacro), so 8 calls genuinely contend.
+      await Promise.all(Array.from({ length: 8 }, () => client.getPrice('NVDA')));
       expect(peak).toBeLessThanOrEqual(2);
+    });
+
+    it('dedupes concurrent macro fetches into one in-flight request', async () => {
+      let calls = 0;
+      const fetchMock = vi.fn(
+        () =>
+          new Promise((resolve) => {
+            calls += 1;
+            setTimeout(() => resolve({ ok: true, json: async () => ({ risk: 'LOW' }) }), 5);
+          }),
+      );
+      const client = createGunvestClient('http://api', fetchMock, { macroTtlMs: 60000 });
+      const results = await Promise.all(Array.from({ length: 5 }, () => client.getMacro()));
+      expect(calls).toBe(1);
+      expect(results.every((r) => r.risk === 'LOW')).toBe(true);
+    });
+
+    it('serves a cached macro snapshot within the TTL, then refetches after it', async () => {
+      const fetchMock = fetchReturning({ risk: 'MODERATE' });
+      const client = createGunvestClient('http://api', fetchMock, { macroTtlMs: 60000 });
+      await client.getMacro();
+      await client.getMacro();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      const fresh = createGunvestClient('http://api', fetchMock, { macroTtlMs: 0 });
+      await fresh.getMacro();
+      await fresh.getMacro();
+      expect(fetchMock).toHaveBeenCalledTimes(3); // ttl 0 disables caching
+    });
+
+    it('does not cache a failed macro fetch', async () => {
+      let calls = 0;
+      const fetchMock = vi.fn(async () => {
+        calls += 1;
+        if (calls === 1) {
+          const err = new TypeError('fetch failed');
+          err.cause = { code: 'ECONNRESET' };
+          throw err;
+        }
+        return { ok: true, json: async () => ({ risk: 'HIGH' }) };
+      });
+      const client = createGunvestClient('http://api', fetchMock, {
+        macroTtlMs: 60000,
+        retries: 0,
+      });
+      await expect(client.getMacro()).rejects.toThrow(/ECONNRESET/);
+      const data = await client.getMacro(); // retried, not the cached rejection
+      expect(data).toEqual({ risk: 'HIGH' });
     });
 
     it('aborts a hung request via the timeout signal', async () => {
@@ -161,6 +210,25 @@ describe('createGunvestClient', () => {
       );
       const client = createGunvestClient('http://api', fetchMock, { retries: 0, timeoutMs: 10 });
       await expect(client.getMacro()).rejects.toThrow();
+    });
+  });
+
+  describe('createGunvestFromConfig', () => {
+    it('builds a client from config and applies the configured resilience knobs', async () => {
+      const fetchMock = fetchReturning({ symbol: 'NVDA' });
+      const cfg = {
+        gunvestApiUrl: 'http://api:3001',
+        gunvest: { timeoutMs: 15000, retries: 2, maxConcurrent: 6, macroTtlMs: 60000 },
+      };
+      const client = createGunvestFromConfig(cfg, fetchMock);
+      await client.getPrice('NVDA');
+      expect(fetchMock).toHaveBeenCalledWith('http://api:3001/api/market/NVDA', expect.anything());
+
+      // macroTtlMs from config dedupes concurrent macro fetches.
+      const macroFetch = fetchReturning({ risk: 'LOW' });
+      const macroClient = createGunvestFromConfig(cfg, macroFetch);
+      await Promise.all([macroClient.getMacro(), macroClient.getMacro()]);
+      expect(macroFetch).toHaveBeenCalledTimes(1);
     });
   });
 });

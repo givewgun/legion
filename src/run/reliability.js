@@ -3,7 +3,7 @@ import 'dotenv/config';
 import { loadConfig } from '../config/index.js';
 import { connectDb } from '../db/client.js';
 import { createRepo } from '../db/repo.js';
-import { createGunvestClient } from '../data/gunvest.js';
+import { createGunvestFromConfig } from '../data/gunvest.js';
 import { resolveSignals } from '../reliability/resolver.js';
 import { recomputeReliability } from '../reliability/update.js';
 import { recomputeCorrelations } from '../reliability/correlations.js';
@@ -22,7 +22,7 @@ export async function runReliabilityOnce({ repo, gunvest, clock = () => new Date
 function main() {
   const cfg = loadConfig();
   const repo = createRepo(connectDb(cfg.databaseUrl));
-  const gunvest = createGunvestClient(cfg.gunvestApiUrl);
+  const gunvest = createGunvestFromConfig(cfg);
   const runner = () =>
     runReliabilityOnce({ repo, gunvest })
       .then((s) => console.log(`[reliability] resolved=${s.resolved}`, s.reliability))

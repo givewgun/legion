@@ -19,6 +19,12 @@ describe('loadConfig', () => {
       timeoutMs: 300000,
       maxConcurrent: 1,
     });
+    expect(cfg.gunvest).toEqual({
+      timeoutMs: 15000,
+      retries: 2,
+      maxConcurrent: 6,
+      macroTtlMs: 60000,
+    });
   });
 
   it('reads overrides from env and coerces numbers', () => {
@@ -34,6 +40,10 @@ describe('loadConfig', () => {
       OLLAMA_MODEL: 'llama3.1:8b',
       OLLAMA_TIMEOUT_MS: '120000',
       OLLAMA_MAX_CONCURRENT: '2',
+      GUNVEST_TIMEOUT_MS: '20000',
+      GUNVEST_RETRIES: '3',
+      GUNVEST_MAX_CONCURRENT: '4',
+      GUNVEST_MACRO_TTL_MS: '30000',
       DATABASE_URL: 'postgres://u:p@db:5432/gunvest',
     });
     expect(cfg.consensus).toEqual({
@@ -50,6 +60,12 @@ describe('loadConfig', () => {
       model: 'llama3.1:8b',
       timeoutMs: 120000,
       maxConcurrent: 2,
+    });
+    expect(cfg.gunvest).toEqual({
+      timeoutMs: 20000,
+      retries: 3,
+      maxConcurrent: 4,
+      macroTtlMs: 30000,
     });
     expect(cfg.databaseUrl).toBe('postgres://u:p@db:5432/gunvest');
   });
