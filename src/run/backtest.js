@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { loadConfig } from '../config/index.js';
 import { connectDb } from '../db/client.js';
 import { createRepo } from '../db/repo.js';
-import { createGunvestClient } from '../data/gunvest.js';
+import { createGunvestFromConfig } from '../data/gunvest.js';
 import { runBacktest } from '../backtest/deterministic.js';
 
 const FETCH_DAYS = 400; // ~18 months of candles, enough for sma50 + a horizon walk
@@ -27,7 +27,7 @@ async function main() {
   const cfg = loadConfig();
   const db = connectDb(cfg.databaseUrl);
   const repo = createRepo(db);
-  const gunvest = createGunvestClient(cfg.gunvestApiUrl);
+  const gunvest = createGunvestFromConfig(cfg);
   try {
     const s = await runBacktestOnce({ repo, gunvest, horizonDays: cfg.horizonDays });
     console.log(`[backtest] complete: ${s.tickers} tickers`);

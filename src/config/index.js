@@ -23,6 +23,15 @@ export function loadConfig(env = process.env) {
       timeoutMs: num(env, 'OLLAMA_TIMEOUT_MS', 300000),
       maxConcurrent: num(env, 'OLLAMA_MAX_CONCURRENT', 1),
     },
+    // Resilience knobs for the GunVest read client. Defaults live in
+    // src/data/gunvest.js; these env overrides let operators raise the timeout or
+    // throttle concurrency when a sweep bursts the single-threaded API.
+    gunvest: {
+      timeoutMs: num(env, 'GUNVEST_TIMEOUT_MS', 15000),
+      retries: num(env, 'GUNVEST_RETRIES', 2),
+      maxConcurrent: num(env, 'GUNVEST_MAX_CONCURRENT', 6),
+      macroTtlMs: num(env, 'GUNVEST_MACRO_TTL_MS', 60000),
+    },
     consensus: {
       thetaV: num(env, 'CONSENSUS_THETA_V', 0.75),
       quorum: num(env, 'CONSENSUS_QUORUM', 0.6667),
