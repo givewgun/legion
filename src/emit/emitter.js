@@ -43,7 +43,7 @@ export function createEmitter({
   const rounds = new Map(); // `${cycleId}:${round}` -> { symbol, round, votes, constraint, createdAt }
   const learnedByCycle = new Map(); // cycleId -> { rho, calib, corr } loaded once per cycle
   const firstVotesByCycle = new Map(); // cycleId -> round-1 votes (independent priors)
-  const cycleSeenAt = new Map(); // cycleId -> ms first seen (drives stale-cycle eviction)
+  const cycleSeenAt = new Map(); // cycleId -> ms of last activity (drives stale-cycle eviction)
   const sweepThrottleMs = Math.min(SweepThrottleMs, staleEntryMs);
   let lastSweepMs = 0;
 
@@ -56,7 +56,10 @@ export function createEmitter({
     if (!rounds.has(k)) {
       rounds.set(k, { symbol, round, votes: [], constraint: null, createdAt: nowMs });
     }
-    if (!cycleSeenAt.has(cycleId)) cycleSeenAt.set(cycleId, nowMs);
+    // Refresh on every message so the cycle's age tracks *last activity*, not
+    // first-seen — otherwise a slow multi-round cycle whose total span exceeds
+    // staleEntryMs would have its independent round-1 priors swept mid-flight.
+    cycleSeenAt.set(cycleId, nowMs);
     return { k, entry: rounds.get(k) };
   }
 
@@ -146,6 +149,9 @@ export function createEmitter({
 
     const isFinal = result.converged || entry.round >= consensus.maxRounds;
     if (!isFinal) {
+      // Mark activity at republish so the next round gets a full staleEntryMs
+      // window to arrive before this cycle's priors are considered abandoned.
+      cycleSeenAt.set(cycleId, clock().getTime());
       bus.publishJSON(cycleSubject(entry.symbol), {
         cycleId,
         symbol: entry.symbol,

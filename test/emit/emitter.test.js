@@ -218,6 +218,73 @@ describe('createEmitter (v2)', () => {
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('evicted 1 stale round'));
   });
 
+  it('keeps a slow multi-round cycle alive: round-1 priors survive a sweep so the herding guard still fires', async () => {
+    const bus = createMemoryBus();
+    const repo = fakeRepo();
+    const requests = [];
+    bus.subscribeJSON(cycleSubject('MU'), (m) => requests.push(m));
+    let nowMs = 1_000_000;
+    const staleEntryMs = 60_000;
+    // priorQuorum arms the anti-herding guard: a converged revision must retain
+    // >= 0.6 independent round-1 backing or it is treated as social pressure.
+    const herdConsensus = { thetaV: 0.5, quorum: 2 / 3, holdBand: 0.5, maxRounds: 3, priorQuorum: 0.6 };
+    createEmitter({
+      bus,
+      repo,
+      telegram: vi.fn(async () => {}),
+      consensus: herdConsensus,
+      expectedAgents: 2,
+      staleEntryMs,
+      clock: () => new Date(nowMs),
+    }).start();
+
+    // Round 1: opposed strong votes -> not converged -> republish round 2. Records
+    // the independent priors (technical +, news -). Second vote arrives slowly but
+    // within the window.
+    emitVote(bus, {
+      cycleId: 20,
+      symbol: 'MU',
+      round: 1,
+      vote: { agentId: 'technical', stance: 2, conviction: 1, weight: 1, rationale: 'up' },
+    });
+    nowMs += 40_000;
+    emitVote(bus, {
+      cycleId: 20,
+      symbol: 'MU',
+      round: 1,
+      vote: { agentId: 'news', stance: -2, conviction: 1, weight: 1, rationale: 'down' },
+    });
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0].round).toBe(2);
+
+    // Round 2 lands late: total span since the first vote (90s) exceeds staleEntryMs,
+    // but the gap since last activity (50s) does not. The sweep on the next message
+    // must NOT evict cycle 20's priors. Both agents now swing to + — agreement that
+    // only emerges under peer pressure.
+    nowMs += 50_000;
+    emitVote(bus, {
+      cycleId: 20,
+      symbol: 'MU',
+      round: 2,
+      vote: { agentId: 'technical', stance: 2, conviction: 1, weight: 1, rationale: 'up' },
+    });
+    emitVote(bus, {
+      cycleId: 20,
+      symbol: 'MU',
+      round: 2,
+      vote: { agentId: 'news', stance: 2, conviction: 1, weight: 1, rationale: 'flip' },
+    });
+
+    // With priors preserved, independent backing for + is only 0.5 (one of two
+    // round-1 agents) < 0.6 -> herding guard blocks convergence -> republish round 3,
+    // NOT finalize. If the priors had been evicted and reseeded from round 2, backing
+    // would be 1.0 and it would wrongly converge.
+    await vi.waitFor(() => expect(repo.addRound).toHaveBeenCalledTimes(2));
+    expect(repo.finishCycle).not.toHaveBeenCalled();
+    expect(requests).toHaveLength(2);
+    expect(requests[1].round).toBe(3);
+  });
+
   it('waits for the risk constraint before finalizing and applies it', async () => {
     const bus = createMemoryBus();
     const repo = fakeRepo();
