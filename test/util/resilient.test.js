@@ -103,6 +103,25 @@ describe('retryAsync', () => {
     expect(elapsed).toBeGreaterThanOrEqual(20);
   });
 
+  it('caps the exponential backoff at maxDelayMs', async () => {
+    // Pin jitter to 0 so the delays are exactly min(maxDelayMs, base * 2^n).
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
+    try {
+      const fn = vi.fn(async () => {
+        if (fn.mock.calls.length < 4) throw new Error('transient');
+        return 'ok';
+      });
+      const start = Date.now();
+      // Uncapped this would be 20 + 40 + 80 = 140ms; capped at 20 it is 3 × 20 = 60ms.
+      await retryAsync(fn, { retries: 3, baseMs: 20, maxDelayMs: 20 });
+      const elapsed = Date.now() - start;
+      expect(fn).toHaveBeenCalledTimes(4);
+      expect(elapsed).toBeLessThan(120);
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
   it('uses custom isTransient predicate', async () => {
     const transientErrs = new Set(['ECONNREFUSED', 'ECONNRESET']);
     const isTransient = (err) => transientErrs.has(err.code);

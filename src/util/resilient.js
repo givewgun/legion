@@ -26,7 +26,12 @@ export function createLimiter(max) {
 // Retry async fn with exponential backoff + jitter on transient errors.
 // Total attempts = retries + 1 (e.g., retries=2 means 3 total attempts).
 // isTransient(err) determines if an error is retryable.
-export async function retryAsync(fn, { retries = 2, baseMs = 200, isTransient = () => true } = {}) {
+// maxDelayMs caps the exponential term so a large `retries` can't grow the
+// backoff without bound (jitter, capped by baseMs, is still added on top).
+export async function retryAsync(
+  fn,
+  { retries = 2, baseMs = 200, maxDelayMs = Infinity, isTransient = () => true } = {},
+) {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   let lastErr;
 
@@ -39,8 +44,9 @@ export async function retryAsync(fn, { retries = 2, baseMs = 200, isTransient = 
       if (attemptsRemaining === 0 || !isTransient(err)) {
         throw err;
       }
-      // Backoff: baseMs * 2^(attempt-1) + random jitter
-      const delayMs = baseMs * (2 ** (attempt - 1)) + Math.floor(Math.random() * baseMs);
+      // Backoff: min(maxDelayMs, baseMs * 2^(attempt-1)) + random jitter
+      const expDelay = Math.min(maxDelayMs, baseMs * (2 ** (attempt - 1)));
+      const delayMs = expDelay + Math.floor(Math.random() * baseMs);
       await sleep(delayMs);
     }
   }
