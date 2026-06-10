@@ -117,7 +117,17 @@ describe('repo phase4', () => {
     const repo = createRepo(createDb(pool));
     await repo.addSignal(5, { symbol: 'NVDA', band: 'BUY', conviction: 0.7, plan: {} });
     expect(pool.calls[0].params).toEqual([
-      5, 'NVDA', 'BUY', 0.7, '{}', null, null, null, 5, null, null,
+      5,
+      'NVDA',
+      'BUY',
+      0.7,
+      '{}',
+      null,
+      null,
+      null,
+      5,
+      null,
+      null,
     ]);
   });
 

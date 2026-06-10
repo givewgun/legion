@@ -14,7 +14,10 @@ import { contrarianConfig } from '../agents/contrarian/config.js';
 const cfg = loadConfig();
 const bus = await connectBus(cfg.natsUrl);
 const gunvest = createGunvestFromConfig(cfg);
-const provider = createProvider(contrarianConfig.provider, withAgentOptions(cfg, contrarianConfig.options));
+const provider = createProvider(
+  contrarianConfig.provider,
+  withAgentOptions(cfg, contrarianConfig.options),
+);
 
 // Real crowd-positioning panel: F&G + VIX reused from GunVest; put/call, AAII,
 // NAAIM, and short interest fetched legion-side (each degrades to null on failure).
@@ -26,5 +29,13 @@ const getProvider = buildGetProvider({ repo, cfg, options: contrarianConfig.opti
 // Outcome-grounded memory (ADR 0025): the agent sees its own graded record.
 const getMemory = buildGetMemory({ repo, agentId: contrarianConfig.id });
 
-createContrarianAgent({ bus, gunvest, provider, getProvider, getMemory, config: contrarianConfig, feeds }).start();
+createContrarianAgent({
+  bus,
+  gunvest,
+  provider,
+  getProvider,
+  getMemory,
+  config: contrarianConfig,
+  feeds,
+}).start();
 console.log('[contrarian] listening for cycles');

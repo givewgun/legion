@@ -23,9 +23,7 @@ export function formatSignal(signal) {
     `Call: *${escapeMarkdown(signal.band)}* \\(conviction ${pct}%\\)`,
   ];
   if (signal.plan.degradedQuorum) {
-    lines.push(
-      escapeMarkdown(`⚠ degraded panel: only ${signal.plan.nEff} agents carried weight`),
-    );
+    lines.push(escapeMarkdown(`⚠ degraded panel: only ${signal.plan.nEff} agents carried weight`));
   }
   lines.push(
     '',

@@ -113,7 +113,12 @@ export function gradedOutcome(forwardReturn, spyReturn, scale = ALPHA_SCALE) {
 // instead of looking skilled just because outcomes cluster near 0.5.
 // `ess` is the (Kish) effective sample size backing the estimate; the edge is
 // shrunk by ess/(ess + SHRINK_K) so low-evidence agents stay near neutral.
-export function reliabilityFromBrier(meanBrier, sampleSize, baselineBrier = RANDOM_BRIER, ess = sampleSize) {
+export function reliabilityFromBrier(
+  meanBrier,
+  sampleSize,
+  baselineBrier = RANDOM_BRIER,
+  ess = sampleSize,
+) {
   if (sampleSize < MIN_RESOLVED) return 1.0;
   if (baselineBrier <= 0) return 1.0; // zero outcome spread: nothing to discriminate
   const edge = RANDOM_BRIER * (1 - meanBrier / baselineBrier);

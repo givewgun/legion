@@ -79,7 +79,9 @@ describe('buildGetMemory', () => {
     const getMemory = buildGetMemory({ repo, agentId: 'technical' });
     const text = await getMemory({ symbol: 'NVDA' });
     expect(text).toContain('4 of 6');
-    expect(text).toContain('Lesson you drew from your recent misses: Avoid chasing extended momentum.');
+    expect(text).toContain(
+      'Lesson you drew from your recent misses: Avoid chasing extended momentum.',
+    );
   });
 
   it('surfaces a lesson even before the track record has resolved entries', async () => {

@@ -716,6 +716,13 @@ The knobs you're most likely to touch. Consensus thresholds are env vars
 | `HALF_LIFE` | `20` | recency half-life (in forecasts) | code |
 | ρ band / gains | `[0.5, 1.5]`, up `2` / down `4` | reliability clamp + asymmetric slopes | code |
 | `cal` band | `[0.5, 1.5]` | calibration clamp | code |
+| `ALPHA_SCALE` | `0.05` | alpha at which a graded outcome saturates (ADR 0018) | code |
+| `SHRINK_K` | `10` | evidence shrinkage pseudo-count (ADR 0019) | code |
+| combined cap | `[0.4, 2.0]` | bound on ρ·cal per agent (ADR 0019) | code |
+| info factor | ref var `0.25`, floor `0.25` | constant-voter conviction discount (ADR 0021) | code |
+| regime split | VIX `20` | calm/stressed boundary (ADR 0023) | code |
+| roster watch | eps `0.55`, streak `6` | floored-rho review flag (ADR 0028) | code |
+| `LEGION_REFLECTION` | `false` | per-agent lesson distillation on the cron (ADR 0026) | env |
 | `LEGION_CRON` | `0 */4 * * *` | how often a cycle kicks (every 4h) | env |
 
 ---

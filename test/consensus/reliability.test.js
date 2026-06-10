@@ -53,7 +53,9 @@ describe('reliabilityFromBrier', () => {
     // shrinkage (ADR 0019): the cap is an asymptote, not a hot-streak destination
     expect(reliabilityFromBrier(0.0, 50)).toBeCloseTo(1 + 2 * 0.25 * shrink(50));
     expect(reliabilityFromBrier(0.0, 50)).toBeLessThan(1.5);
-    expect(reliabilityFromBrier(0.0, 1000)).toBeGreaterThan(reliabilityFromBrier(0.0, 50, 0.25, 50));
+    expect(reliabilityFromBrier(0.0, 1000)).toBeGreaterThan(
+      reliabilityFromBrier(0.0, 50, 0.25, 50),
+    );
   });
   it('random mean Brier 0.25 -> neutral 1.0', () => {
     expect(reliabilityFromBrier(0.25, 50)).toBeCloseTo(1.0);
@@ -262,7 +264,12 @@ describe('boundCombined', () => {
     expect(boundCombined(1.2, 1.1)).toEqual({ rho: 1.2, calibration: 1.1 });
   });
   it('adjusted calibration stays inside its own [0.5, 1.5] band', () => {
-    for (const [rho, cal] of [[1.5, 1.5], [0.5, 0.5], [0.6, 0.5], [1.4, 1.5]]) {
+    for (const [rho, cal] of [
+      [1.5, 1.5],
+      [0.5, 0.5],
+      [0.6, 0.5],
+      [1.4, 1.5],
+    ]) {
       const out = boundCombined(rho, cal);
       expect(out.calibration).toBeGreaterThanOrEqual(0.5);
       expect(out.calibration).toBeLessThanOrEqual(1.5);

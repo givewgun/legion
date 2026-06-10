@@ -327,29 +327,34 @@ LLM-free (ADR 0011 is right); just make the thresholds relative.
 
 ---
 
-## 7. Prioritized roadmap
+## 7. Prioritized roadmap — implementation status (2026-06-10)
 
-Ordered by **(impact toward the "real Legion" ideal) ÷ (risk + effort)**. Each row is a
-self-contained ADR + PR.
+All rows below have been implemented (one commit each, ADRs 0018–0028) unless marked
+*deferred*. Each row is a self-contained ADR + commit.
 
-| # | Change | Why it matters | Effort | Risk |
-|---|--------|----------------|--------|------|
-| **P0** | §1.1 θ_v doc/code drift; §1.2 surface `N_eff`/degraded quorum; §1.3 resolve QQQ ambiguity | Truth-in-docs + honest guarantees; near-zero risk | S | Min |
-| **P0** | §5.2 cache per-cycle gather | Cheaper, removes self-contamination | S | Low |
-| **P1** | §3.1 magnitude-aware (graded) reliability score | Makes ρ informative on small samples — unblocks all learning | M | Med |
-| **P1** | §4.1 heterogeneous models / per-agent temperature | Creates independence at the source; the thesis depends on it | M | Med |
-| **P2** | §3.2 Bayesian shrinkage + combined-multiplier cap | Stops streak-driven single-agent dominance | M | Low |
-| **P2** | §2.1 effective-voices redundancy via correlation eigenvalues | Replaces a noisy heuristic with a principled estimate | M | Med |
-| **P3** | §3.3 regime-conditional reliability + per-asset benchmark | Captures each agent's *actual* edge; large quality win | L | Med |
-| **P3** | §5.1 crash-recoverable emitter (pragmatic), then replicas (purist) | Removes the hidden leader; earns "leaderless" | L | Med |
-| **P4** | §3.4 outcome-grounded agent memory + meta-reflection | Agents that improve their *reasoning* — the real "self-learning" | L | High |
-| **P4** | §3.5 learn `w_i`; §4.3 dynamic roster; §3.6 info check; §2.2 agreement-strength gate; §6 vol-normalized risk | The long tail toward a self-managing gestalt | L | Med |
+| # | Change | Status |
+|---|--------|--------|
+| **P0** | §1.1 θ_v doc/code drift; §1.2 `N_eff`/degraded-quorum tagging; §1.3 QQQ display-only | ✅ done (docs + `effectivePanel`/`CONSENSUS_MIN_PANEL`) |
+| **P0** | §5.2 cache per-cycle gather | ✅ done (per-cycle TTL cache in the agent factory) |
+| **P1** | §3.1 magnitude-aware graded reliability | ✅ done — ADR 0018 (tanh-graded alpha + Brier *skill score* baseline) |
+| **P1** | §4.1 heterogeneous models / per-agent sampling | ✅ done (per-agent temperature+seed; OpenAI-compatible provider family for `openai`/`gemini`) |
+| **P2** | §3.2 shrinkage + combined-multiplier cap | ✅ done — ADR 0019 (Kish-ESS `n/(n+10)` shrinkage; ρ·cal ∈ [0.4, 2.0]) |
+| **P2** | §2.1 effective-voices redundancy | ✅ done — ADR 0020 (participation ratio via Frobenius norm) |
+| **P3** | §3.3 regime-conditional reliability | ✅ done — ADR 0023 (calm/stressed VIX buckets, overlay with fallback). *Per-asset benchmark deferred* — it changes outcome semantics (ADR 0008 comparability) and deserves its own decision. |
+| **P3** | §5.1 crash-recoverable emitter | ✅ done — ADR 0024 (pending-state mirror + replay). *Replicated aggregators (purist) deferred.* |
+| **P4** | §3.4 outcome-grounded memory + meta-reflection | ✅ done — ADR 0025 (graded track record in prompts) + ADR 0026 (flag-gated lesson distillation, default off) |
+| **P4** | §3.5 learn `w_i` | ✅ measured-not-applied — ADR 0027 (long-window learned prior on the leaderboard; blending awaits observed divergence) |
+| **P4** | §4.3 dynamic roster | ✅ done — ADR 0028 (floored-streak review flag; never auto-retires) |
+| **P4** | §3.6 information check | ✅ done — ADR 0021 (stance-variance conviction discount) |
+| **P4** | §2.2 agreement strength | ✅ measured-not-gated (A persisted per round/signal; gate awaits resolver evidence) |
+| **P4** | §6 vol-normalized risk | ✅ done — ADR 0022 (3σ-of-this-name trip, flat-8% fallback). *VIX percentile deferred (needs stored VIX history).* |
+| — | §4.2 data-aperture audit | ✅ done (ARCHITECTURE §2 table + aperture rule) |
+| — | §2.3 vote-drift herding telemetry | *deferred* — complements the backing gate; instrument when herding blocks appear in practice |
 
-**The throughline:** P0–P1 are honest cleanups and the two changes (graded scoring +
-model heterogeneity) that make every later learning improvement *work*. P2–P3 harden the
-math against its own failure modes. P4 is where Legion stops being "a good weighted vote
-with a learned mixer" and starts being a gestalt that edits its own reasoning and runs
-without a privileged node — the Mass Effect ideal.
+**Still open, in recommended order:** replicated aggregators (the purist leaderless
+runtime, on top of ADR 0024); per-asset/sector benchmarks; the A-gate and `w_i` blend once
+their measurements accumulate; similarity-retrieved memory episodes (the stronger ADR 0025);
+VIX-percentile risk; §2.3 drift telemetry.
 
 ---
 

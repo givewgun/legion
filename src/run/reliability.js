@@ -56,7 +56,9 @@ function main() {
     return;
   }
   cron.schedule(cfg.reliabilityCron, runner);
-  console.log(`[reliability] scheduled: ${cfg.reliabilityCron} (reflection=${cfg.reflectionEnabled})`);
+  console.log(
+    `[reliability] scheduled: ${cfg.reliabilityCron} (reflection=${cfg.reflectionEnabled})`,
+  );
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main();

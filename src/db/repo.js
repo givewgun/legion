@@ -326,10 +326,9 @@ export function createRepo(db) {
     },
 
     async getAgentLesson(agentId) {
-      const row = await db.queryOne(
-        `SELECT lesson FROM legion.agent_lessons WHERE agent_id = $1`,
-        [agentId],
-      );
+      const row = await db.queryOne(`SELECT lesson FROM legion.agent_lessons WHERE agent_id = $1`, [
+        agentId,
+      ]);
       return row?.lesson ?? null;
     },
 

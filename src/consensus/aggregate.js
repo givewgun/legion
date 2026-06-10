@@ -69,7 +69,11 @@ export function directionalQuorum(votes, meanStance, holdBand = 0.5, corr = () =
   const agreeing = agreeingVotes(votes, meanStance, holdBand);
   if (agreeing.length === 0) return 0;
   const agreeWeight = agreeing.reduce((sum, vote) => sum + vote.weight * vote.conviction, 0);
-  const discount = effectiveVoices(agreeing.map((v) => v.agentId), corr) / agreeing.length;
+  const discount =
+    effectiveVoices(
+      agreeing.map((v) => v.agentId),
+      corr,
+    ) / agreeing.length;
   return (agreeWeight * discount) / den;
 }
 
@@ -116,7 +120,10 @@ export function effectivePanel(votes) {
 // Evaluates one round. Converged iff κ ≥ quorum AND V ≤ θ_v. `degraded` flags a
 // round whose effective panel fell below minPanel — the signal still emits, but
 // the single-outlier tolerance documented in ADR 0001 no longer holds for it.
-export function evaluateRound(votes, { thetaV, quorum, holdBand = 0.5, corr, minPanel = MIN_PANEL } = {}) {
+export function evaluateRound(
+  votes,
+  { thetaV, quorum, holdBand = 0.5, corr, minPanel = MIN_PANEL } = {},
+) {
   const S = weightedStance(votes);
   const V = weightedDispersion(votes, S);
   const kappa = directionalQuorum(votes, S, holdBand, corr);

@@ -17,7 +17,16 @@ const isTransient = (err) => {
 };
 
 export function createOpenAICompatProvider(
-  { name = 'openai', url, apiKey, model, timeoutMs = 120000, maxConcurrent = 2, retries = 1, options = null },
+  {
+    name = 'openai',
+    url,
+    apiKey,
+    model,
+    timeoutMs = 120000,
+    maxConcurrent = 2,
+    retries = 1,
+    options = null,
+  },
   fetchImpl = fetch,
 ) {
   if (!apiKey) {

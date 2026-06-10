@@ -27,7 +27,9 @@ const wrapError = (err, timeoutMs) => {
     return new Error(`Ollama request timed out after ${timeoutMs}ms`);
   }
   if (err.cause != null || /fetch failed|ECONNRESET|ECONNREFUSED|socket/i.test(err.message)) {
-    return new Error(`Ollama request failed: ${err.cause?.code ?? err.cause?.message ?? err.message}`);
+    return new Error(
+      `Ollama request failed: ${err.cause?.code ?? err.cause?.message ?? err.message}`,
+    );
   }
   return err; // HTTP-status error already has the right message
 };

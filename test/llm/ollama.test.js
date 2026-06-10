@@ -68,7 +68,9 @@ describe('createOllamaProvider', () => {
       { url: 'http://o:11434', model: 'm', maxConcurrent: 1, retries: 0 },
       fetchMock,
     );
-    await Promise.all(Array.from({ length: 8 }, () => provider.generate({ system: 's', prompt: 'p' })));
+    await Promise.all(
+      Array.from({ length: 8 }, () => provider.generate({ system: 's', prompt: 'p' })),
+    );
     expect(peak).toBeLessThanOrEqual(1);
   });
 
@@ -133,9 +135,7 @@ describe('createOllamaProvider', () => {
       { url: 'http://o:11434', model: 'm', timeoutMs: 10, retries: 3, maxConcurrent: 1 },
       fetchMock,
     );
-    await expect(provider.generate({ system: 's', prompt: 'p' })).rejects.toThrow(
-      /timed out/i,
-    );
+    await expect(provider.generate({ system: 's', prompt: 'p' })).rejects.toThrow(/timed out/i);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

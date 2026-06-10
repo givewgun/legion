@@ -23,7 +23,9 @@ describe('buildReflectionPrompt', () => {
       miss('MU', 1, 0.7, -0.02),
     ]);
     expect(system).toContain('technical agent');
-    expect(prompt).toContain('NVDA: STRONG_BUY at conviction 0.9 in a stressed market -> wrong (-6.0% vs SPY)');
+    expect(prompt).toContain(
+      'NVDA: STRONG_BUY at conviction 0.9 in a stressed market -> wrong (-6.0% vs SPY)',
+    );
     expect(prompt).toContain('MU: BUY at conviction 0.7 -> wrong (-2.0% vs SPY)');
     expect(prompt).toContain('ONE concrete lesson');
   });

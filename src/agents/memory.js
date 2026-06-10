@@ -22,9 +22,10 @@ export function formatTrackRecord({ overall, recent } = {}) {
     `- Overall: ${overall.hits} of ${overall.total} directional calls beat SPY.`,
   ];
   for (const r of recent ?? []) {
-    const alpha = r.forward_return != null && r.spy_return != null
-      ? ` (${((r.forward_return - r.spy_return) * 100).toFixed(1)}% vs SPY)`
-      : '';
+    const alpha =
+      r.forward_return != null && r.spy_return != null
+        ? ` (${((r.forward_return - r.spy_return) * 100).toFixed(1)}% vs SPY)`
+        : '';
     const hit = r.stance > 0 ? r.outcome === 1 : r.stance < 0 ? r.outcome === 0 : null;
     const verdict = hit == null ? 'no directional claim' : hit ? 'hit' : 'missed';
     lines.push(
