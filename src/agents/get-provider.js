@@ -13,14 +13,16 @@ import { resolveProvider, createProvider } from '../llm/provider.js';
 //
 // `factory` is injectable for tests; the default routes through createProvider,
 // overlaying the chosen model onto the provider's config block while preserving the
-// rest of cfg (e.g. the Ollama URL and resilience options).
-export function buildGetProvider({ repo, cfg = {}, factory }) {
+// rest of cfg (e.g. the Ollama URL and resilience options). `options` carries the
+// agent's static sampling settings (temperature, seed) so a dashboard model switch
+// keeps the agent's sampling persona.
+export function buildGetProvider({ repo, cfg = {}, factory, options = null }) {
   const build =
     factory ??
     (({ type, model }) =>
       createProvider(type, {
         ...cfg,
-        ollama: { ...cfg.ollama, model: model ?? cfg.ollama?.model },
+        ollama: { ...cfg.ollama, model: model ?? cfg.ollama?.model, ...(options && { options }) },
       }));
 
   return async ({ agentId }) => {

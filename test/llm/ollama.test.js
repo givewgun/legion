@@ -21,8 +21,21 @@ describe('createOllamaProvider', () => {
     expect(body.system).toBe('You are a trader');
     expect(body.prompt).toBe('Rate NVDA');
     expect(body.stream).toBe(false);
+    // no sampling options configured -> none sent
+    expect(body.options).toBeUndefined();
     // new options: signal must be present; dispatcher optional
     expect(opts.signal).toBeDefined();
+  });
+
+  it('passes per-agent sampling options (temperature, seed) to the API', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ response: 'ok' }) }));
+    const provider = createOllamaProvider(
+      { url: 'http://o:11434', model: 'm', options: { temperature: 0.2, seed: 11 } },
+      fetchMock,
+    );
+    await provider.generate({ system: 's', prompt: 'p' });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.options).toEqual({ temperature: 0.2, seed: 11 });
   });
 
   it('throws on a non-ok response', async () => {

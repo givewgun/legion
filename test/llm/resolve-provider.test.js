@@ -1,5 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { resolveProvider, DEFAULT_MODELS } from '../../src/llm/provider.js';
+import { resolveProvider, withAgentOptions, DEFAULT_MODELS } from '../../src/llm/provider.js';
+
+describe('withAgentOptions', () => {
+  it('overlays sampling options onto the ollama config block', () => {
+    const cfg = { ollama: { url: 'http://o:11434', model: 'm' }, other: 1 };
+    const out = withAgentOptions(cfg, { temperature: 0.2, seed: 11 });
+    expect(out.ollama).toEqual({
+      url: 'http://o:11434',
+      model: 'm',
+      options: { temperature: 0.2, seed: 11 },
+    });
+    expect(out.other).toBe(1);
+    expect(cfg.ollama.options).toBeUndefined(); // input not mutated
+  });
+
+  it('returns the config unchanged when the agent has no options', () => {
+    const cfg = { ollama: { url: 'u' } };
+    expect(withAgentOptions(cfg, null)).toBe(cfg);
+  });
+});
 
 describe('resolveProvider', () => {
   it('fills the default model when none is given', () => {

@@ -33,7 +33,7 @@ const wrapError = (err, timeoutMs) => {
 };
 
 export function createOllamaProvider(
-  { url, model, timeoutMs = 300000, maxConcurrent = 1, retries = 1 },
+  { url, model, timeoutMs = 300000, maxConcurrent = 1, retries = 1, options = null },
   fetchImpl = fetch,
 ) {
   const limit = createLimiter(maxConcurrent);
@@ -45,7 +45,9 @@ export function createOllamaProvider(
       const res = await fetchImpl(`${url}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, system, prompt, stream: false }),
+        // `options` carries per-agent sampling settings (temperature, seed) so
+        // agents sharing one base model still sample decorrelated outputs.
+        body: JSON.stringify({ model, system, prompt, stream: false, ...(options && { options }) }),
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(`Ollama request failed: ${res.status}`);

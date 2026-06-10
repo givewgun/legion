@@ -17,6 +17,14 @@ export const DEFAULT_MODELS = {
   openai: 'gpt-4o-mini',
 };
 
+// Overlays an agent's sampling options (temperature, seed) onto the provider
+// config block. Distinct per-agent sampling decorrelates agents that share one
+// base model — the cheapest form of panel diversity.
+export function withAgentOptions(cfg, options) {
+  if (!options) return cfg;
+  return { ...cfg, ollama: { ...cfg.ollama, options } };
+}
+
 // Maps a stored { provider, model } config to a concrete provider instance.
 // `factory({ type, model })` is injectable for tests; the default routes through
 // createProvider, overlaying the chosen model onto the provider's config block.
