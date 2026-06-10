@@ -514,7 +514,7 @@ capital (ADR 0017). ρ is clamped to `[0.5, 1.5]` and scales the prior: `W_i = w
 `c'_i = c_i · cal_i` — separate from ρ, so a loud-but-uninformative voice can't buy influence by
 always shouting (ADR 0014).
 
-### Cold start & recency
+### Cold start, recency & shrinkage
 
 - **Cold start:** both dials sit at the neutral `1.0` until an agent has at least `MIN_RESOLVED = 5`
   resolved forecasts. So a fresh deploy behaves exactly like the unweighted formulas in §4.
@@ -522,6 +522,11 @@ always shouting (ADR 0014).
 - **Recency decay:** within that window, forecasts are weighted by a `HALF_LIFE = 20` exponential
   decay (a forecast 20 slots older counts half as much), so the panel can track a regime shift
   instead of being anchored to stale evidence (ADR 0017).
+- **Shrinkage (ADR 0019):** every learned edge is scaled by `ess/(ess + 10)` — `ess` being the
+  effective sample size of the decayed window — before it moves a dial. A 5-signal hot streak
+  lands near 1.19, not the 1.5 cap; the extremes are earned by a *consistent* record, not a week.
+- **Combined cap (ADR 0019):** the product `ρ·cal` is bounded to `[0.4, 2.0]` (by trimming
+  calibration, never ρ) so the two dials can't compound one streaky agent into panel dominance.
 
 ### Where the discounts plug back in
 

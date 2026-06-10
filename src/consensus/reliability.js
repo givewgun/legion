@@ -24,6 +24,20 @@ const CALIB_CAP = 1.5;
 // Gain λ mapping conviction discrimination d ∈ [-1, 1] onto the calibration band.
 const CALIB_GAIN = 1.0;
 
+// Bayesian-style shrinkage toward neutral (ADR 0019): every learned edge is
+// scaled by ess/(ess + SHRINK_K) before it moves a dial, so a short hot streak
+// cannot push an agent to the extremes — only consistent evidence can. At
+// ess = SHRINK_K the evidence counts half; the clamp bands become asymptotic
+// targets instead of a few-good-weeks destination.
+export const SHRINK_K = 10;
+
+// ρ and calibration multiply into effective influence; individually clamped to
+// [0.5, 1.5] they still compound to 0.25×–2.25× — enough for one streaky agent
+// to dominate the panel. The combined multiplier is bounded by adjusting the
+// secondary dial (calibration), never ρ, the primary skill signal (ADR 0019).
+const COMBINED_FLOOR = 0.4;
+const COMBINED_CAP = 2.0;
+
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 
 // Recency weights for rows ordered most-recent-first: 1, DECAY, DECAY², …
@@ -39,6 +53,19 @@ export function weightedMean(values, weights) {
     den += weights[i];
   }
   return den === 0 ? 0 : num / den;
+}
+
+// Kish effective sample size of a weighted sample: (Σw)² / Σw². Equals n for
+// uniform weights and shrinks as recency decay concentrates mass on few rows —
+// the honest n for shrinking a decay-weighted estimate.
+export function effectiveSampleSize(weights) {
+  let sum = 0;
+  let sumSq = 0;
+  for (const w of weights) {
+    sum += w;
+    sumSq += w * w;
+  }
+  return sumSq === 0 ? 0 : (sum * sum) / sumSq;
 }
 
 export function forecastProb(stance, conviction) {
@@ -74,12 +101,25 @@ export function gradedOutcome(forwardReturn, spyReturn, scale = ALPHA_SCALE) {
 // floor at 0.5) is unchanged. With graded outcomes the baseline shrinks with the
 // outcome spread, so an uninformative forecaster still lands exactly at ρ = 1
 // instead of looking skilled just because outcomes cluster near 0.5.
-export function reliabilityFromBrier(meanBrier, sampleSize, baselineBrier = RANDOM_BRIER) {
+// `ess` is the (Kish) effective sample size backing the estimate; the edge is
+// shrunk by ess/(ess + SHRINK_K) so low-evidence agents stay near neutral.
+export function reliabilityFromBrier(meanBrier, sampleSize, baselineBrier = RANDOM_BRIER, ess = sampleSize) {
   if (sampleSize < MIN_RESOLVED) return 1.0;
   if (baselineBrier <= 0) return 1.0; // zero outcome spread: nothing to discriminate
   const edge = RANDOM_BRIER * (1 - meanBrier / baselineBrier);
-  const delta = edge >= 0 ? RHO_GAIN_UP * edge : RHO_GAIN_DOWN * edge;
+  const shrunk = edge * (ess / (ess + SHRINK_K));
+  const delta = shrunk >= 0 ? RHO_GAIN_UP * shrunk : RHO_GAIN_DOWN * shrunk;
   return clamp(1 + delta, RHO_FLOOR, RHO_CAP);
+}
+
+// Bounds the combined ρ·cal influence multiplier into [COMBINED_FLOOR, COMBINED_CAP]
+// by adjusting calibration only. Given ρ ∈ [0.5, 1.5] the adjusted calibration
+// always lands back inside its own [0.5, 1.5] band.
+export function boundCombined(rho, calibration) {
+  const product = rho * calibration;
+  if (product > COMBINED_CAP) return { rho, calibration: COMBINED_CAP / rho };
+  if (product < COMBINED_FLOOR) return { rho, calibration: COMBINED_FLOOR / rho };
+  return { rho, calibration };
 }
 
 export function scaleWeights(votes, rhoMap = {}) {
@@ -117,7 +157,11 @@ export function calibrationFromSamples(samples) {
       xs.map((s) => s.weight ?? 1),
     );
   const d = meanConviction(hits) - meanConviction(misses);
-  return clamp(1 + CALIB_GAIN * d, CALIB_FLOOR, CALIB_CAP);
+  // Same shrinkage as ρ: a discriminator estimated from few directional
+  // forecasts moves the dial proportionally less (ADR 0019).
+  const ess = effectiveSampleSize(samples.map((s) => s.weight ?? 1));
+  const shrunk = d * (ess / (ess + SHRINK_K));
+  return clamp(1 + CALIB_GAIN * shrunk, CALIB_FLOOR, CALIB_CAP);
 }
 
 // Applies each agent's calibration to its conviction term (clamped back into [0,1]).

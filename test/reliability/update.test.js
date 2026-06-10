@@ -16,7 +16,9 @@ describe('recomputeReliability', () => {
         writes.push({ id, rho, n, calibration }),
     };
     const map = await recomputeReliability(repo);
-    expect(map.technical.rho).toBeCloseTo(1.5);
+    // perfect record, but only 6 resolved -> shrinkage keeps it well off the 1.5 cap
+    expect(map.technical.rho).toBeGreaterThan(1.15);
+    expect(map.technical.rho).toBeLessThan(1.5);
     // All hits, no misses -> conviction discrimination undefined -> neutral calibration.
     expect(map.technical.calibration).toBe(1.0);
     expect(writes[0]).toMatchObject({ id: 'technical', n: 6, calibration: 1.0 });
@@ -34,6 +36,7 @@ describe('recomputeReliability', () => {
       upsertReliability: async () => {},
     };
     const map = await recomputeReliability(repo);
+    // anti-skill saturates the floor even after shrinkage (down-slope is 4x)
     expect(map.social.rho).toBeCloseTo(0.5);
     expect(map.social.calibration).toBe(1.0);
   });
@@ -59,8 +62,9 @@ describe('recomputeReliability', () => {
       upsertReliability: async () => {},
     };
     const map = await recomputeReliability(repo);
-    // d = 0.9 - 0.2 = 0.7 -> calibration = 1 + 0.7 = 1.7, clamped to 1.5 cap.
-    expect(map.tech.calibration).toBeCloseTo(1.5);
+    // d = 0.9 - 0.2 = 0.7, shrunk by the 6-sample evidence (ADR 0019) -> ~1.26
+    expect(map.tech.calibration).toBeGreaterThan(1.2);
+    expect(map.tech.calibration).toBeLessThan(1.5);
   });
 
   it('cuts calibration when conviction is anti-informative (confidently wrong)', async () => {
@@ -83,8 +87,9 @@ describe('recomputeReliability', () => {
       upsertReliability: async () => {},
     };
     const map = await recomputeReliability(repo);
-    // d = 0.3 - 0.9 = -0.6 -> calibration = 1 - 0.6 = 0.4, clamped to 0.5 floor.
-    expect(map.social.calibration).toBeCloseTo(0.5);
+    // d = 0.3 - 0.9 = -0.6, shrunk by the 6-sample evidence -> ~0.78, below neutral
+    expect(map.social.calibration).toBeLessThan(0.85);
+    expect(map.social.calibration).toBeGreaterThanOrEqual(0.5);
   });
 
   it('keeps neutral 1.0 below MIN_RESOLVED sample', async () => {
@@ -125,8 +130,8 @@ describe('recomputeReliability', () => {
       upsertReliability: async () => {},
     };
     const map = await recomputeReliability(repo);
-    expect(map.a.rho).toBeCloseTo(1.5);
-    expect(map.b.rho).toBeCloseTo(0.5);
+    expect(map.a.rho).toBeGreaterThan(1.1); // shrunk, but clearly above neutral
+    expect(map.b.rho).toBeCloseTo(0.5); // anti-skill still saturates the floor
   });
 
   describe('graded outcomes (ADR 0018)', () => {
@@ -174,7 +179,9 @@ describe('recomputeReliability', () => {
         spy_return: null,
       }));
       const map = await recomputeReliability(repoFor(forecasts));
-      expect(map.legacy.rho).toBeCloseTo(1.5); // identical to the pre-graded behaviour
+      // scored exactly like the binary path (shrinkage applies either way)
+      expect(map.legacy.rho).toBeGreaterThan(1.15);
+      expect(map.legacy.rho).toBeLessThan(1.5);
     });
 
     it('punishes large misses harder than near-misses on the same hit record', async () => {

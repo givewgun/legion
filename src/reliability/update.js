@@ -4,9 +4,11 @@ import {
   gradedOutcome,
   reliabilityFromBrier,
   calibrationFromSamples,
+  boundCombined,
   directionalHit,
   decayWeights,
   weightedMean,
+  effectiveSampleSize,
   WINDOW,
 } from '../consensus/reliability.js';
 
@@ -41,7 +43,8 @@ export async function recomputeReliability(repo) {
     const baselines = outcomes.map((g) => brier(0.5, g));
     const meanBrier = weightedMean(briers, weights);
     const baselineBrier = weightedMean(baselines, weights);
-    const rho = reliabilityFromBrier(meanBrier, briers.length, baselineBrier);
+    const ess = effectiveSampleSize(weights);
+    const rho = reliabilityFromBrier(meanBrier, briers.length, baselineBrier, ess);
 
     // Calibration keeps the BINARY hit/miss: its discriminator needs two classes
     // (mean conviction on hits vs misses), which a graded outcome would dissolve.
@@ -54,8 +57,12 @@ export async function recomputeReliability(repo) {
       .filter((s) => s.hit !== null);
     const calibration = calibrationFromSamples(samples);
 
-    map[agentId] = { rho, calibration };
-    await repo.upsertReliability(agentId, rho, briers.length, calibration);
+    // Cap the combined ρ·cal influence so one streaky agent cannot compound the
+    // two dials into panel dominance (ADR 0019).
+    const bounded = boundCombined(rho, calibration);
+
+    map[agentId] = { rho: bounded.rho, calibration: bounded.calibration };
+    await repo.upsertReliability(agentId, bounded.rho, briers.length, bounded.calibration);
   }
   return map;
 }
