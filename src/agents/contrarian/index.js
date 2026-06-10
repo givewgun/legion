@@ -12,6 +12,7 @@ export function createContrarianAgent({
   config,
   feeds,
   getProvider = null,
+  getMemory = null,
   logger = console,
 }) {
   return createAgent({
@@ -23,6 +24,7 @@ export function createContrarianAgent({
     gunvest,
     provider,
     getProvider,
+    getMemory,
     logger,
   });
 }

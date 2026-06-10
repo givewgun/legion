@@ -225,6 +225,40 @@ export function createRepo(db) {
       );
     },
 
+    // One agent's graded history for the memory block (ADR 0025): overall
+    // directional hit count over the recent window, plus its latest resolved
+    // calls on this symbol (most recent first).
+    async getAgentTrackRecord(agentId, symbol, { overallLimit = 20, recentLimit = 3 } = {}) {
+      const [overallRow, recent] = await Promise.all([
+        db.queryOne(
+          `SELECT COUNT(*)::int AS total,
+                  COALESCE(SUM(CASE WHEN sv.stance > 0 THEN s.outcome
+                                    ELSE 1 - s.outcome END), 0)::int AS hits
+             FROM (SELECT sv.stance, sv.signal_id
+                     FROM legion.signal_votes sv
+                     JOIN legion.signals s ON s.id = sv.signal_id
+                    WHERE sv.agent_id = $1 AND sv.stance <> 0
+                      AND s.resolved = true AND s.outcome IS NOT NULL
+                    ORDER BY s.id DESC
+                    LIMIT $2) sv
+             JOIN legion.signals s ON s.id = sv.signal_id`,
+          [agentId, overallLimit],
+        ),
+        db.query(
+          `SELECT s.symbol, sv.stance, sv.conviction, s.outcome,
+                  s.forward_return, s.spy_return
+             FROM legion.signal_votes sv
+             JOIN legion.signals s ON s.id = sv.signal_id
+            WHERE sv.agent_id = $1 AND s.symbol = $2
+              AND s.resolved = true AND s.outcome IS NOT NULL
+            ORDER BY s.id DESC
+            LIMIT $3`,
+          [agentId, symbol, recentLimit],
+        ),
+      ]);
+      return { overall: { hits: overallRow?.hits ?? 0, total: overallRow?.total ?? 0 }, recent };
+    },
+
     async recordBacktestResult({ symbol, horizon, trades, hits, hitRate, pnl, spyPnl, qqqPnl }) {
       await db.query(
         `INSERT INTO legion.backtest_results

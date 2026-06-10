@@ -556,6 +556,16 @@ always shouting (ADR 0014).
   mid-range, instead of carrying one averaged number everywhere. Unknown regime ⇒ unconditional
   dials, bit-for-bit.
 
+### The agents remember being wrong (ADR 0025)
+
+The dials above turn each agent's *volume*; memory changes its *reasoning*. Before voting,
+every agent is shown its own graded track record — overall directional hit rate over its last
+20 resolved calls, plus its last 3 resolved calls on this very ticker with the realized alpha
+("BUY at conviction 0.8 → missed, −3.1% vs SPY"). The record is built from the same verified
+outcomes the Brier loop grades, never self-assessment, and an agent with no resolved history
+gets an unchanged prompt. So an agent that has been confidently wrong in this exact spot
+*sees that* while forming today's conviction, instead of merely being played quieter.
+
 ### Where the discounts plug back in
 
 The emitter loads ρ, cal, and the correlation map **once per cycle** and applies them before the

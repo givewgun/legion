@@ -25,6 +25,7 @@ export function createAgent({
   gunvest,
   provider,
   getProvider = null,
+  getMemory = null,
   logger = console,
   clock = () => Date.now(),
 }) {
@@ -65,8 +66,21 @@ export function createAgent({
       }
       const data = await gatherForCycle(cycleId, symbol);
       const peers = summarizePeers(priorVotes, id);
+      // Outcome-grounded memory (ADR 0025): the agent's own graded track record,
+      // prepended as context. Best-effort — a memory failure must not block a vote.
+      let memory = '';
+      if (getMemory) {
+        try {
+          memory = (await getMemory({ symbol })) ?? '';
+        } catch (err) {
+          logger.warn(`[${id}] memory fetch failed: ${err.message}`);
+        }
+      }
       const { system, prompt } = buildPrompt(symbol, data, peers);
-      const text = await activeProvider.generate({ system, prompt });
+      const text = await activeProvider.generate({
+        system,
+        prompt: memory ? `${memory}\n\n${prompt}` : prompt,
+      });
       const parsed = parseVote(text, { agentId: id, weight });
       if (parsed.ok) {
         vote = parsed.vote;

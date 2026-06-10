@@ -3,7 +3,7 @@ import { createMemoryBus } from '../../src/bus/memory.js';
 import { createAgent } from '../../src/agents/factory.js';
 import { cycleSubject, voteSubject } from '../../src/bus/subjects.js';
 
-function setup({ generateImpl, buildPrompt, gather, clock }) {
+function setup({ generateImpl, buildPrompt, gather, clock, getMemory }) {
   const bus = createMemoryBus();
   const gunvest = { getThing: async () => ({ ok: true }) };
   const provider = { name: 'local', generate: vi.fn(generateImpl) };
@@ -17,6 +17,8 @@ function setup({ generateImpl, buildPrompt, gather, clock }) {
     gunvest,
     provider,
     ...(clock ? { clock } : {}),
+    ...(getMemory ? { getMemory } : {}),
+    logger: { warn() {}, error() {} },
   });
   agent.start();
   return { bus, provider, gather: gatherFn };
@@ -73,6 +75,48 @@ describe('createAgent', () => {
     await vi.waitFor(() => expect(votes.length).toBe(1));
 
     expect(votes[0].vote).toMatchObject({ agentId: 'news', stance: 0, conviction: 0, weight: 1.3 });
+  });
+
+  describe('outcome-grounded memory (ADR 0025)', () => {
+    const voteJson = async () => '{"stance": 1, "conviction": 0.5, "rationale": "r"}';
+
+    it('prepends the track record to the prompt', async () => {
+      const { bus, provider } = setup({
+        generateImpl: voteJson,
+        getMemory: async () => 'Your verified track record: 3 of 5',
+      });
+      const votes = [];
+      bus.subscribeJSON(voteSubject('NVDA', 1), (m) => votes.push(m));
+      bus.publishJSON(cycleSubject('NVDA'), { cycleId: 1, symbol: 'NVDA', round: 1 });
+      await vi.waitFor(() => expect(votes.length).toBe(1));
+
+      const { prompt } = provider.generate.mock.calls[0][0];
+      expect(prompt.startsWith('Your verified track record: 3 of 5')).toBe(true);
+      expect(prompt).toContain('p NVDA');
+    });
+
+    it('leaves the prompt unchanged when memory is empty', async () => {
+      const { bus, provider } = setup({ generateImpl: voteJson, getMemory: async () => '' });
+      const votes = [];
+      bus.subscribeJSON(voteSubject('NVDA', 1), (m) => votes.push(m));
+      bus.publishJSON(cycleSubject('NVDA'), { cycleId: 1, symbol: 'NVDA', round: 1 });
+      await vi.waitFor(() => expect(votes.length).toBe(1));
+      expect(provider.generate.mock.calls[0][0].prompt).toBe('p NVDA');
+    });
+
+    it('still votes when the memory fetch fails', async () => {
+      const { bus } = setup({
+        generateImpl: voteJson,
+        getMemory: async () => {
+          throw new Error('db down');
+        },
+      });
+      const votes = [];
+      bus.subscribeJSON(voteSubject('NVDA', 1), (m) => votes.push(m));
+      bus.publishJSON(cycleSubject('NVDA'), { cycleId: 1, symbol: 'NVDA', round: 1 });
+      await vi.waitFor(() => expect(votes.length).toBe(1));
+      expect(votes[0].vote).toMatchObject({ agentId: 'news', stance: 1 });
+    });
   });
 
   describe('per-cycle gather cache', () => {

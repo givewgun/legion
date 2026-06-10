@@ -227,3 +227,37 @@ describe('repo phase4', () => {
     expect(await repo.getSignalStance(2)).toBe(0);
   });
 });
+
+describe('getAgentTrackRecord (ADR 0025)', () => {
+  it('returns the overall directional hit count and recent same-symbol calls', async () => {
+    const pool = poolReturning([
+      [{ total: 6, hits: 4 }],
+      [
+        {
+          symbol: 'NVDA',
+          stance: 1,
+          conviction: 0.8,
+          outcome: 1,
+          forward_return: 0.04,
+          spy_return: 0.01,
+        },
+      ],
+    ]);
+    const repo = createRepo(createDb(pool));
+    const record = await repo.getAgentTrackRecord('technical', 'NVDA');
+    expect(record.overall).toEqual({ hits: 4, total: 6 });
+    expect(record.recent).toHaveLength(1);
+    const texts = pool.calls.map((c) => c.text.toLowerCase());
+    expect(texts[0]).toContain('stance <> 0');
+    expect(texts[1]).toContain('s.symbol = $2');
+    expect(pool.calls[1].params).toEqual(['technical', 'NVDA', 3]);
+  });
+
+  it('reports a zero record when nothing has resolved', async () => {
+    const pool = poolReturning([[], []]);
+    const repo = createRepo(createDb(pool));
+    const record = await repo.getAgentTrackRecord('news', 'MU');
+    expect(record.overall).toEqual({ hits: 0, total: 0 });
+    expect(record.recent).toEqual([]);
+  });
+});

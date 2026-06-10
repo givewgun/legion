@@ -9,6 +9,7 @@ export function createTechnicalAgent({
   provider,
   config,
   getProvider = null,
+  getMemory = null,
   logger = console,
 }) {
   return createAgent({
@@ -20,6 +21,7 @@ export function createTechnicalAgent({
     gunvest,
     provider,
     getProvider,
+    getMemory,
     logger,
   });
 }

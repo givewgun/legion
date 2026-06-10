@@ -8,6 +8,7 @@ export function createNewsAgent({
   provider,
   config,
   getProvider = null,
+  getMemory = null,
   logger = console,
 }) {
   return createAgent({
@@ -19,6 +20,7 @@ export function createNewsAgent({
     gunvest,
     provider,
     getProvider,
+    getMemory,
     logger,
   });
 }
