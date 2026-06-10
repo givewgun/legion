@@ -6,6 +6,7 @@ const LINKS = [
   { to: '/learn', label: 'Learn' },
   { to: '/reliability', label: 'Reliability' },
   { to: '/backtest', label: 'Backtest' },
+  { to: '/portfolio', label: 'Portfolio' },
   { to: '/config', label: 'Config' },
   { to: '/agents', label: 'Agents' },
 ];

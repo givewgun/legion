@@ -536,6 +536,15 @@ export function createRepo(db) {
       return rows;
     },
 
+    // Every emitted signal, oldest-first, for the portfolio replay simulation.
+    async listAllSignals() {
+      const rows = await db.query(
+        `SELECT id, symbol, band, conviction, plan, created_at
+           FROM legion.signals ORDER BY created_at ASC`,
+      );
+      return rows;
+    },
+
     async listSignalsSince(since) {
       const rows = await db.query(
         `SELECT symbol, band, conviction, created_at
