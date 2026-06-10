@@ -453,6 +453,12 @@ conviction = min(|S| / 2, 1)        # the [−2,2] magnitude normalized to [0,1]
 A non-converged final round emits **`NO_CONSENSUS`** (conviction 0). The signal carries the trade
 plan, every agent's rationale, and `S / V / κ` so the dashboard can replay the whole debate.
 
+Each round also records a fourth diagnostic, **agreement strength `A`** — the weighted mean
+conviction of the agreeing side. `κ` and `V` cannot tell a timid unanimous panel (everyone at
+conviction 0.3) from a confident one (everyone at 0.95); `A` can. It is **measured, not gated
+on** — once enough signals resolve, the data can answer whether low-`A` consensus underperforms
+before any gate is added (the same instrument-then-gate discipline as the other guards).
+
 ---
 
 ## 10. Learning who to trust

@@ -42,10 +42,20 @@ export function effectiveVoices(agentIds, corr) {
   return (n * n) / frobSq;
 }
 
-// κ_r = redundancy-discounted weighted fraction of votes whose side agrees with
-// the aggregate. The target side is sign(S). When the aggregate is near-neutral
-// (|S| < holdBand), HOLD voters (side 0) are also counted as agreeing — a near-flat
+// Votes on the aggregate's side. When the aggregate is near-neutral (|S| <
+// holdBand), HOLD voters (side 0) are also counted as agreeing — a near-flat
 // consensus should credit the agents sitting at HOLD, not just the marginal lean.
+function agreeingVotes(votes, meanStance, holdBand) {
+  const inBand = Math.abs(meanStance) < holdBand;
+  const target = Math.sign(meanStance);
+  return votes.filter((vote) => {
+    const side = sideOf(vote.stance);
+    return side === target || (inBand && side === 0);
+  });
+}
+
+// κ_r = redundancy-discounted weighted fraction of votes whose side agrees with
+// the aggregate (sign(S), with the hold-band rule above).
 //
 // `corr(a, b)` returns the historical co-movement of two agents' votes (ADR 0015).
 // The agreeing coalition's weight is scaled by effectiveVoices/n (ADR 0020), so k
@@ -56,16 +66,23 @@ export function effectiveVoices(agentIds, corr) {
 export function directionalQuorum(votes, meanStance, holdBand = 0.5, corr = () => 0) {
   const den = totalWeight(votes);
   if (den === 0) return 0;
-  const inBand = Math.abs(meanStance) < holdBand;
-  const target = Math.sign(meanStance);
-  const agreeing = votes.filter((vote) => {
-    const side = sideOf(vote.stance);
-    return side === target || (inBand && side === 0);
-  });
+  const agreeing = agreeingVotes(votes, meanStance, holdBand);
   if (agreeing.length === 0) return 0;
   const agreeWeight = agreeing.reduce((sum, vote) => sum + vote.weight * vote.conviction, 0);
   const discount = effectiveVoices(agreeing.map((v) => v.agentId), corr) / agreeing.length;
   return (agreeWeight * discount) / den;
+}
+
+// A_r = prior-weighted mean conviction of the agreeing side — "how sure are the
+// winners", which κ (share of weight) and V (spread) both miss: a panel weakly
+// leaning BUY at conviction 0.3 converges identically to one at 0.95. Measured
+// and persisted, NOT gated on — the gate question (do low-A converged signals
+// underperform?) is for the resolver data to answer first (IMPROVEMENT-PLAN §2.2).
+export function agreementStrength(votes, meanStance, holdBand = 0.5) {
+  const agreeing = agreeingVotes(votes, meanStance, holdBand);
+  const wSum = agreeing.reduce((sum, vote) => sum + vote.weight, 0);
+  if (wSum === 0) return 0;
+  return agreeing.reduce((sum, vote) => sum + vote.weight * vote.conviction, 0) / wSum;
 }
 
 // Weighted fraction of (round-1) votes whose side already matched `targetSide` —
@@ -103,8 +120,9 @@ export function evaluateRound(votes, { thetaV, quorum, holdBand = 0.5, corr, min
   const S = weightedStance(votes);
   const V = weightedDispersion(votes, S);
   const kappa = directionalQuorum(votes, S, holdBand, corr);
+  const A = agreementStrength(votes, S, holdBand);
   const converged = kappa >= quorum && V <= thetaV;
   const nEff = effectivePanel(votes);
   const degraded = nEff < minPanel;
-  return { S, V, kappa, converged, nEff, degraded, band: stanceBand(S, holdBand) };
+  return { S, V, kappa, A, converged, nEff, degraded, band: stanceBand(S, holdBand) };
 }

@@ -18,11 +18,11 @@ export function createRepo(db) {
       return row.id;
     },
 
-    async addRound(cycleId, roundNo, { S, V, kappa, converged }) {
+    async addRound(cycleId, roundNo, { S, V, kappa, A = null, converged }) {
       const row = await db.queryOne(
-        `INSERT INTO legion.rounds (cycle_id, round_no, s_score, dispersion, quorum, converged)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        [cycleId, roundNo, S, V, kappa, converged],
+        `INSERT INTO legion.rounds (cycle_id, round_no, s_score, dispersion, quorum, agreement, converged)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        [cycleId, roundNo, S, V, kappa, A, converged],
       );
       return row.id;
     },

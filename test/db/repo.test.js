@@ -29,10 +29,10 @@ describe('createRepo', () => {
   it('adds a round and returns its id', async () => {
     const pool = poolReturning([[{ id: 5 }]]);
     const repo = createRepo(createDb(pool));
-    const id = await repo.addRound(42, 1, { S: 1.8, V: 0, kappa: 1, converged: true });
+    const id = await repo.addRound(42, 1, { S: 1.8, V: 0, kappa: 1, A: 0.85, converged: true });
     expect(id).toBe(5);
     expect(pool.calls[0].text).toMatch(/INSERT INTO legion\.rounds/);
-    expect(pool.calls[0].params).toEqual([42, 1, 1.8, 0, 1, true]);
+    expect(pool.calls[0].params).toEqual([42, 1, 1.8, 0, 1, 0.85, true]);
   });
 
   it('adds a vote', async () => {

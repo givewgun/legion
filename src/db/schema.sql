@@ -145,3 +145,10 @@ CREATE TABLE IF NOT EXISTS legion.agent_correlation (
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (agent_a, agent_b)
 );
+
+-- ── Phase 7: consensus diagnostics ───────────────────────────────────────────
+-- Agreement strength A — prior-weighted mean conviction of the agreeing side
+-- (IMPROVEMENT-PLAN §2.2). Measured per round, not gated on; collected so the
+-- resolver data can answer whether low-A converged signals underperform before
+-- any gate is added.
+ALTER TABLE legion.rounds ADD COLUMN IF NOT EXISTS agreement DOUBLE PRECISION;

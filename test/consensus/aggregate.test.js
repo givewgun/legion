@@ -6,6 +6,7 @@ import {
   independentBacking,
   effectivePanel,
   effectiveVoices,
+  agreementStrength,
   evaluateRound,
 } from '../../src/consensus/aggregate.js';
 
@@ -107,6 +108,41 @@ describe('directionalQuorum', () => {
       expect(res.kappa).toBeLessThan(2 / 3);
       expect(res.converged).toBe(false);
     });
+  });
+});
+
+describe('agreementStrength', () => {
+  it('is the prior-weighted mean conviction of the agreeing side', () => {
+    // bulls a (c=0.9, w=1) and b (c=0.3, w=1); bear c excluded
+    const votes = [v('a', 1, 0.9, 1), v('b', 1, 0.3, 1), v('c', -1, 0.9, 1)];
+    const s = weightedStance(votes);
+    expect(agreementStrength(votes, s)).toBeCloseTo(0.6, 6);
+  });
+
+  it('distinguishes a timid consensus from a confident one (same kappa)', () => {
+    const timid = [v('a', 1, 0.3, 1), v('b', 1, 0.3, 1), v('c', 1, 0.3, 1)];
+    const confident = [v('a', 1, 0.95, 1), v('b', 1, 0.95, 1), v('c', 1, 0.95, 1)];
+    const sTimid = weightedStance(timid);
+    const sConf = weightedStance(confident);
+    expect(directionalQuorum(timid, sTimid)).toBeCloseTo(directionalQuorum(confident, sConf), 6);
+    expect(agreementStrength(timid, sTimid)).toBeLessThan(agreementStrength(confident, sConf));
+  });
+
+  it('counts HOLD voters inside the hold band', () => {
+    const votes = [v('a', 1, 0.4, 1), v('b', -1, 0.4, 1), v('c', 0, 0.8, 1)];
+    const s = weightedStance(votes); // 0 -> in band, HOLD agrees
+    expect(agreementStrength(votes, s, 0.5)).toBeCloseTo(0.8, 6);
+  });
+
+  it('is 0 when nothing agrees', () => {
+    expect(agreementStrength([], 0)).toBe(0);
+  });
+
+  it('is reported by evaluateRound without affecting convergence', () => {
+    const votes = [v('a', 1, 0.3, 1), v('b', 1, 0.3, 1), v('c', 1, 0.3, 1), v('d', 1, 0.3, 1)];
+    const res = evaluateRound(votes, { thetaV: 0.75, quorum: 2 / 3, holdBand: 0.5 });
+    expect(res.A).toBeCloseTo(0.3, 6);
+    expect(res.converged).toBe(true); // timid but unanimous still converges — A is a diagnostic
   });
 });
 
