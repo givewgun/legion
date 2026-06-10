@@ -98,9 +98,12 @@ export function createEmitter({
     for (const [k, entry] of [...rounds]) {
       if (!ready(entry)) continue; // still waiting on votes; live subscription fills in
       if (await repo.roundExists?.(entry.cycleId, entry.round)) {
-        // Aggregated before the crash — only its (already republished or
-        // finalized) successors matter; drop the buffer, keep the priors.
+        // Aggregated before the crash — but the crash may have landed BETWEEN
+        // persisting the round and acting on it (republishing the next round,
+        // or emitting the final signal). Replay whichever action is missing
+        // instead of dropping the buffer and stranding the cycle.
         rounds.delete(k);
+        await resumeAfterRound(entry);
         continue;
       }
       resumed += 1;
@@ -111,6 +114,90 @@ export function createEmitter({
         `[emitter] recovered ${pendingVotes.length} pending vote(s), resumed ${resumed} round(s)`,
       );
     }
+  }
+
+  // A round that was persisted before the crash had exactly one pending action:
+  // a non-final round republishes round+1; a final round emits the signal and
+  // finishes the cycle. If the crash swallowed that action the cycle is stuck —
+  // its agents will never re-vote on their own. Determine which action is
+  // missing from the persisted state and replay it.
+  async function resumeAfterRound(entry) {
+    const { cycleId, round, symbol } = entry;
+    // Without a cycle-state surface we cannot tell what completed — keep the
+    // priors and leave the cycle alone (the pre-resume conservative behaviour).
+    if (!repo.getCycle || !repo.getRounds) return;
+    const cycle = await repo.getCycle(cycleId);
+    if (!cycle) return;
+    if (cycle.status !== 'running') {
+      // Finalized before the crash; only the pending rows are left to tidy.
+      await cleanupCycle(cycleId);
+      return;
+    }
+    const roundRow = ((await repo.getRounds(cycleId)) ?? []).find(
+      (r) => Number(r.round_no) === round,
+    );
+    if (!roundRow) return;
+    const converged = roundRow.converged === true;
+    const isFinal = converged || round >= consensus.maxRounds;
+
+    if (!isFinal) {
+      // The missing action was the round+1 republish. Even if it DID go out,
+      // the agents' replies were published into a dead subscription and are
+      // gone — re-kicking the round is correct in both cases. Drop any partial
+      // pre-crash round+1 buffer so the fresh votes form a clean round.
+      rounds.delete(key(cycleId, round + 1));
+      cycleSeenAt.set(cycleId, clock().getTime());
+      bus.publishJSON(cycleSubject(symbol), {
+        cycleId,
+        symbol,
+        round: round + 1,
+        priorVotes: entry.votes,
+      });
+      logger.info?.(
+        `[emitter] resumed ${symbol} cycle ${cycleId}: re-published round ${round + 1} after crash`,
+      );
+      return;
+    }
+
+    // Final round persisted but the cycle never finished. If the signal already
+    // landed (crash between addSignal and finishCycle), just complete the cycle
+    // — never emit twice.
+    if (await repo.cycleHasSignal?.(cycleId)) {
+      await repo.finishCycle(cycleId, converged ? 'converged' : 'no_consensus');
+      await cleanupCycle(cycleId);
+      logger.info?.(`[emitter] resumed ${symbol} cycle ${cycleId}: closed already-emitted signal`);
+      return;
+    }
+    // Replay the finalize tail. The persisted round votes ARE the calibrated
+    // aggregation inputs (ADR 0001's replication property — any node recomputes
+    // the same S/V/κ from them), and the recorded `converged` already reflects
+    // the herding guard's pre-crash decision, so it is honored, not re-derived.
+    const { rho, corr } = await learnedForCycle(cycleId);
+    const calibrated = ((await repo.getVotes?.(roundRow.id)) ?? []).map((v) => ({
+      agentId: v.agent_id,
+      stance: Number(v.stance),
+      conviction: Number(v.conviction),
+      weight: Number(v.weight),
+      rationale: v.rationale ?? '',
+    }));
+    if (calibrated.length === 0) return;
+    const result = evaluateRound(calibrated, { ...consensus, corr });
+    result.converged = converged;
+    const scaled = scaleWeights(entry.votes, rho);
+    await finalize(cycleId, entry, result, calibrated, scaled);
+    logger.info?.(
+      `[emitter] resumed ${symbol} cycle ${cycleId}: emitted final round ${round} after crash`,
+    );
+  }
+
+  // Frees all per-cycle state and the cycle's pending rows.
+  async function cleanupCycle(cycleId) {
+    learnedByCycle.delete(cycleId);
+    firstVotesByCycle.delete(cycleId);
+    cycleSeenAt.delete(cycleId);
+    await repo.deletePendingCycle?.(cycleId).catch((err) => {
+      logger.error(`[emitter] pending cleanup failed for cycle ${cycleId}: ${err.message}`);
+    });
   }
 
   // Drop buffers that have lingered past staleEntryMs — a round that never reached
@@ -205,7 +292,7 @@ export function createEmitter({
     // these effective inputs so any node recomputes the same S/V/κ (ADR 0001), while the
     // forecast snapshot below keeps RAW conviction to avoid a calibration feedback loop.
     // `corr` discounts redundant agreement in the quorum (ADR 0015).
-    const { rho, calib, corr, regime } = await learnedForCycle(cycleId);
+    const { rho, calib, corr } = await learnedForCycle(cycleId);
     const scaled = scaleWeights(entry.votes, rho);
     const calibrated = scaleConviction(scaled, calib);
 
@@ -249,8 +336,28 @@ export function createEmitter({
       return;
     }
 
+    await finalize(cycleId, entry, result, calibrated, scaled);
+  }
+
+  // The finalize tail of a final round: build the signal, apply risk, capture
+  // entry prices, persist the signal + RAW forecast snapshot, finish the cycle,
+  // notify. Shared by the live path (process) and crash recovery
+  // (resumeAfterRound), which replays it when a crash swallowed it (ADR 0024).
+  async function finalize(cycleId, entry, result, calibrated, scaled) {
+    const { regime } = await learnedForCycle(cycleId);
+
     let signal = buildSignal(result, { symbol: entry.symbol, votes: calibrated });
-    if (riskEnabled) signal = applyRiskConstraint(signal, entry.constraint);
+    if (riskEnabled) {
+      if (entry.constraint) {
+        signal = applyRiskConstraint(signal, entry.constraint);
+      } else {
+        // Only reachable on recovery (ready() guarantees a constraint live):
+        // the pending constraint row was lost — emit unconstrained, loudly.
+        logger.warn?.(
+          `[emitter] finalizing ${entry.symbol} cycle ${cycleId} without a risk constraint (lost in crash)`,
+        );
+      }
+    }
 
     const now = clock();
     const resolveAfter = new Date(now.getTime() + horizonDays * DAY_MS).toISOString();
@@ -299,13 +406,8 @@ export function createEmitter({
       })),
     );
     await repo.finishCycle(cycleId, result.converged ? 'converged' : 'no_consensus');
-    learnedByCycle.delete(cycleId);
-    firstVotesByCycle.delete(cycleId);
-    cycleSeenAt.delete(cycleId);
-    // The cycle is finalized — its pending rows have served their purpose.
-    await repo.deletePendingCycle?.(cycleId).catch((err) => {
-      logger.error(`[emitter] pending cleanup failed for cycle ${cycleId}: ${err.message}`);
-    });
+    // The cycle is finalized — free its state and its pending rows.
+    await cleanupCycle(cycleId);
 
     try {
       await telegram(formatSignal(signal));

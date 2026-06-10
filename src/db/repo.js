@@ -416,6 +416,15 @@ export function createRepo(db) {
       return row != null;
     },
 
+    // Whether the cycle already emitted its signal — recovery completing a
+    // crashed final round must never emit twice.
+    async cycleHasSignal(cycleId) {
+      const row = await db.queryOne(`SELECT 1 AS one FROM legion.signals WHERE cycle_id = $1`, [
+        cycleId,
+      ]);
+      return row != null;
+    },
+
     async finishCycle(cycleId, status) {
       await db.query(`UPDATE legion.cycles SET status = $1, ended_at = now() WHERE id = $2`, [
         status,

@@ -68,4 +68,12 @@ describe('repo pending state (ADR 0024)', () => {
     expect(await repo.roundExists(7, 1)).toBe(true);
     expect(await repo.roundExists(7, 2)).toBe(false);
   });
+
+  it('cycleHasSignal reports whether the cycle already emitted', async () => {
+    const pool = poolReturning([[{ one: 1 }], []]);
+    const repo = createRepo(createDb(pool));
+    expect(await repo.cycleHasSignal(7)).toBe(true);
+    expect(await repo.cycleHasSignal(8)).toBe(false);
+    expect(pool.calls[0].text.toLowerCase()).toContain('from legion.signals');
+  });
 });

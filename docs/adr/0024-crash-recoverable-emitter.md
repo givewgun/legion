@@ -27,8 +27,23 @@ Mirror the in-memory buffers in two pending tables and replay them on start:
 - **Recovery.** `start()` subscribes first (no live message is missed), then loads
   pending rows younger than `staleEntryMs`: rebuilds round buffers (deduped by agent
   against votes that raced in live), restores **round-1 priors** for the herding guard,
-  skips rounds that were already aggregated (`roundExists`), and processes any round that
-  is now complete. `start()` returns the recovery promise.
+  and processes any round that is now complete. `start()` returns the recovery promise.
+- **Post-round replay.** A round that was already aggregated (`roundExists`) is not
+  simply skipped: the crash may have landed *between* persisting the round and acting on
+  it, which would otherwise strand the cycle (agents never re-vote on their own).
+  Recovery inspects the persisted state and replays the missing action:
+  - cycle no longer `running` → only tidy the pending rows;
+  - persisted round **not final** → re-publish round+1 with the pending votes as
+    dissent (correct even if the original republish went out — the agents' replies
+    landed in a dead subscription and are gone), dropping any partial pre-crash
+    round+1 buffer so fresh votes form a clean round;
+  - persisted round **final**, signal already emitted → just `finishCycle` (never emit
+    twice);
+  - persisted round **final**, no signal → replay the finalize tail. The persisted
+    round votes are the exact calibrated aggregation inputs (ADR 0001's replication
+    property), and the recorded `converged` flag — which already reflects the herding
+    guard's decision — is honored, not re-derived. A pending risk constraint lost in
+    the crash finalizes unconstrained with a loud warning.
 - **Lifecycle.** A cycle's pending rows are deleted on finalize; the stale sweep ages out
   rows past `staleEntryMs` so an abandoned cycle cannot resurrect on the next restart.
 - **Herding-guard priors are now the RAW round-1 votes** (not the calibration-scaled
@@ -54,7 +69,7 @@ Mirror the in-memory buffers in two pending tables and replay them on start:
 ## Consequences
 
 - An emitter restart resumes in-flight cycles: complete rounds emit, partial rounds wait
-  for their remaining votes, and the herding guard keeps its memory.
-- Crash between `addRound` and `addSignal` on a *final* round remains unhandled (the
-  cycle stalls and is swept) — a narrower window than before, accepted for now.
+  for their remaining votes, the herding guard keeps its memory, and a crash at any point
+  *after* round persistence (before the republish, before `addSignal`, or between
+  `addSignal` and `finishCycle`) is replayed idempotently instead of stranding the cycle.
 - Two small tables of transient rows; steady-state size is bounded by in-flight cycles.
