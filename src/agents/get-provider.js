@@ -1,4 +1,4 @@
-import { resolveProvider, createProvider } from '../llm/provider.js';
+import { resolveProvider, createProvider, withAgentOptions, withModel } from '../llm/provider.js';
 
 // Builds the per-cycle getProvider({ agentId }) callback the agent factory uses to
 // honor runtime config in legion.agent_config. Resolution per cycle means a change
@@ -20,10 +20,7 @@ export function buildGetProvider({ repo, cfg = {}, factory, options = null }) {
   const build =
     factory ??
     (({ type, model }) =>
-      createProvider(type, {
-        ...cfg,
-        ollama: { ...cfg.ollama, model: model ?? cfg.ollama?.model, ...(options && { options }) },
-      }));
+      createProvider(type, withModel(withAgentOptions(cfg, options), type, model)));
 
   return async ({ agentId }) => {
     const c = await repo.getAgentConfig(agentId);
