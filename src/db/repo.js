@@ -147,11 +147,30 @@ export function createRepo(db) {
       return map;
     },
 
+    // Long-window learned prior (ADR 0027) — measured, not yet applied.
+    async upsertLearnedPrior(agentId, learnedPrior) {
+      await db.query(
+        `INSERT INTO legion.agent_reliability (agent_id, learned_prior, updated_at)
+         VALUES ($1, $2, now())
+         ON CONFLICT (agent_id) DO UPDATE
+           SET learned_prior = EXCLUDED.learned_prior, updated_at = now()`,
+        [agentId, learnedPrior],
+      );
+    },
+
     async getReliabilityLeaderboard() {
       const rows = await db.query(
-        `SELECT agent_id, rho, sample_size FROM legion.agent_reliability ORDER BY rho DESC`,
+        `SELECT agent_id, rho, sample_size, calibration, info_factor, learned_prior
+           FROM legion.agent_reliability ORDER BY rho DESC`,
       );
-      return rows.map((r) => ({ agentId: r.agent_id, rho: r.rho, sampleSize: r.sample_size }));
+      return rows.map((r) => ({
+        agentId: r.agent_id,
+        rho: r.rho,
+        sampleSize: r.sample_size,
+        calibration: r.calibration,
+        infoFactor: r.info_factor,
+        learnedPrior: r.learned_prior,
+      }));
     },
 
     async listUnresolvedSignals(now) {

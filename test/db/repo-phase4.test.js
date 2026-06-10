@@ -285,3 +285,39 @@ describe('agent lessons (ADR 0026)', () => {
     expect(await repo.getAgentLesson('news')).toBeNull();
   });
 });
+
+describe('learned prior (ADR 0027)', () => {
+  it('upsertLearnedPrior writes the long-window prior', async () => {
+    const pool = poolReturning([[]]);
+    const repo = createRepo(createDb(pool));
+    await repo.upsertLearnedPrior('news', 1.15);
+    expect(pool.calls[0].text.toLowerCase()).toContain('learned_prior');
+    expect(pool.calls[0].params).toEqual(['news', 1.15]);
+  });
+
+  it('leaderboard surfaces every learned dial', async () => {
+    const pool = poolReturning([
+      [
+        {
+          agent_id: 'technical',
+          rho: 1.2,
+          sample_size: 30,
+          calibration: 1.1,
+          info_factor: 1.0,
+          learned_prior: 1.15,
+        },
+      ],
+    ]);
+    const repo = createRepo(createDb(pool));
+    expect(await repo.getReliabilityLeaderboard()).toEqual([
+      {
+        agentId: 'technical',
+        rho: 1.2,
+        sampleSize: 30,
+        calibration: 1.1,
+        infoFactor: 1.0,
+        learnedPrior: 1.15,
+      },
+    ]);
+  });
+});

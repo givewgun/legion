@@ -106,6 +106,28 @@ describe('recomputeReliability', () => {
     expect(map.news.calibration).toBe(1.0);
   });
 
+  it('learned prior ignores recency: same lifetime record, same prior (ADR 0027)', async () => {
+    const good = (id) => ({ agent_id: id, stance: 1, conviction: 0.5, outcome: 1 });
+    const bad = (id) => ({ agent_id: id, stance: 1, conviction: 0.5, outcome: 0 });
+    const five = (fn, id) => Array.from({ length: 5 }, () => fn(id));
+    const priors = [];
+    const repo = {
+      getResolvedForecasts: async () => [
+        ...five(good, 'a'),
+        ...five(bad, 'a'),
+        ...five(bad, 'b'),
+        ...five(good, 'b'),
+      ],
+      upsertReliability: async () => {},
+      upsertLearnedPrior: async (id, prior) => priors.push({ id, prior }),
+    };
+    const map = await recomputeReliability(repo);
+    // recency-weighted rho disagrees, but the uniform lifetime prior is identical
+    expect(map.a.rho).not.toBeCloseTo(map.b.rho, 3);
+    expect(map.a.learnedPrior).toBeCloseTo(map.b.learnedPrior, 10);
+    expect(priors).toHaveLength(2);
+  });
+
   it('weights recent forecasts more, so ordering of the same outcomes changes rho', async () => {
     // Moderate briers (won't saturate the clamp): stance 1, conviction 0.5 -> prob 0.625.
     const good = (id) => ({ agent_id: id, stance: 1, conviction: 0.5, outcome: 1 }); // brier 0.14

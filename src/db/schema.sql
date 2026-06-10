@@ -208,3 +208,7 @@ CREATE TABLE IF NOT EXISTS legion.agent_lessons (
   sample_size  INTEGER NOT NULL DEFAULT 0,
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Learned domain prior (ADR 0027): long-uniform-window skill score — the number
+-- the hand-set w_i is guessing at. Measured and surfaced; not yet applied.
+ALTER TABLE legion.agent_reliability ADD COLUMN IF NOT EXISTS learned_prior DOUBLE PRECISION NOT NULL DEFAULT 1.0;

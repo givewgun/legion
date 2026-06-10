@@ -25,8 +25,7 @@ import { REGIMES } from './regime.js';
 // Calibration keeps the BINARY hit/miss: its discriminator needs two classes.
 // The combined ρ·cal influence is capped so one streaky agent cannot compound
 // the dials into panel dominance (ADR 0019).
-function computeDials(agentRows) {
-  const weights = decayWeights(agentRows.length);
+function computeDials(agentRows, weights = decayWeights(agentRows.length)) {
   const outcomes = agentRows.map((r) => gradedOutcome(r.forward_return, r.spy_return) ?? r.outcome);
   const briers = agentRows.map((r, i) => brier(forecastProb(r.stance, r.conviction), outcomes[i]));
   const baselines = outcomes.map((g) => brier(0.5, g));
@@ -48,15 +47,20 @@ function computeDials(agentRows) {
   return { rho: bounded.rho, calibration: bounded.calibration, weights };
 }
 
-// Groups rows per agent, newest-first, capped at WINDOW each. `pick` filters
+// Lifetime-ish horizon backing the learned domain prior (ADR 0027) — far wider
+// than the recency WINDOW so it estimates the agent's standing skill, not its
+// current form.
+const LONG_WINDOW = 400;
+
+// Groups rows per agent, newest-first, capped at `cap` each. `pick` filters
 // which rows enter the bucket (e.g. a regime).
-function bucketByAgent(rows, pick = () => true) {
+function bucketByAgent(rows, pick = () => true, cap = WINDOW) {
   const byAgent = new Map();
   for (const r of rows) {
     if (!pick(r)) continue;
     if (!byAgent.has(r.agent_id)) byAgent.set(r.agent_id, []);
     const bucket = byAgent.get(r.agent_id);
-    if (bucket.length < WINDOW) bucket.push(r);
+    if (bucket.length < cap) bucket.push(r);
   }
   return byAgent;
 }
@@ -88,6 +92,17 @@ export async function recomputeReliability(repo) {
 
     map[agentId] = { rho, calibration, info };
     await repo.upsertReliability(agentId, rho, agentRows.length, calibration, info);
+  }
+
+  // Learned domain prior (ADR 0027): the same skill score over a long, UNIFORM
+  // window — the number the hand-set w_i is guessing at. Measure-first: it is
+  // persisted and surfaced on the leaderboard but NOT yet folded into weights;
+  // the question "should w_i drift toward it" waits on this data.
+  for (const [agentId, longRows] of bucketByAgent(rows, () => true, LONG_WINDOW)) {
+    const uniform = longRows.map(() => 1);
+    const { rho: learnedPrior } = computeDials(longRows, uniform);
+    if (map[agentId]) map[agentId].learnedPrior = learnedPrior;
+    await repo.upsertLearnedPrior?.(agentId, learnedPrior);
   }
 
   // Per-regime dials (ADR 0023): same machinery over each regime's slice.
