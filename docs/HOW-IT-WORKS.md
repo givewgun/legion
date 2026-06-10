@@ -487,13 +487,21 @@ Both live in [`src/consensus/reliability.js`](../src/consensus/reliability.js) a
 [`recomputeReliability`](../src/reliability/update.js).
 
 **ρ — reliability, from the Brier score.** Each resolved forecast is turned into a probability
-`p = clamp(0.5 + s·c/4, 0, 1)` and scored against the binary outcome with the **Brier score**
-`(p − outcome)²` (lower is better; `0.25` is a coin flip). The agent's mean Brier maps to ρ:
+`p = clamp(0.5 + s·c/4, 0, 1)` and scored with the **Brier score** `(p − outcome)²` against a
+**graded outcome** (ADR 0018): `g = 0.5 + 0.5·tanh(alpha / 0.05)` where `alpha` is the excess
+return vs SPY. Beating SPY by 20% and by 1bp are no longer the same outcome — a big confident
+win scores better than a thin one, and a large confident miss costs more than a rounding-error
+miss. (Rows resolved before returns were captured fall back to the binary outcome.)
+
+The agent's decay-weighted mean Brier maps to ρ via the **skill score** against an
+uninformative `p = 0.5` forecaster scored over the *same* outcomes (so neutrality is exact by
+construction; with binary outcomes this reduces to the old `0.25 − meanBrier` formula):
 
 ```
-ρ = clamp( 1 + gain · (0.25 − meanBrier),  0.5, 1.5 )
-        gain = 2  if better than chance (edge ≥ 0)     ← trust earned slowly
-        gain = 4  if worse than chance (edge < 0)      ← trust lost twice as fast
+edge = 0.25 · (1 − meanBrier / baselineBrier)
+ρ    = clamp( 1 + gain · edge,  0.5, 1.5 )
+        gain = 2  if better than the baseline (edge ≥ 0)   ← trust earned slowly
+        gain = 4  if worse than the baseline (edge < 0)    ← trust lost twice as fast
 ```
 
 The **asymmetry** (lose twice as fast as you gain) is deliberate: acting on a bad call costs real

@@ -50,9 +50,34 @@ export function brier(prob, outcome) {
   return d * d;
 }
 
-export function reliabilityFromBrier(meanBrier, sampleSize) {
+// Alpha (excess return vs SPY) at which a graded outcome saturates: tanh(1) ≈ 0.76,
+// so a ±5% alpha lands near 0.88/0.12 and larger moves flatten toward 1/0. Chosen
+// to make a "clear" 5-day alpha decisive while basis-point noise stays near 0.5.
+export const ALPHA_SCALE = 0.05;
+
+// Magnitude-aware outcome on [0,1]: 0.5 = matched SPY, → 1 the more the call beat
+// it, → 0 the more it lagged. Beating SPY by 1bp and by 20% are no longer the same
+// outcome, so confident-and-big beats score better than confident-and-barely, and
+// large confident misses cost more (the loss-aversion ADR 0017 wants, with
+// magnitude). Returns null when either leg is missing (legacy rows fall back to
+// the binary outcome).
+export function gradedOutcome(forwardReturn, spyReturn, scale = ALPHA_SCALE) {
+  if (forwardReturn == null || spyReturn == null) return null;
+  return 0.5 + 0.5 * Math.tanh((forwardReturn - spyReturn) / scale);
+}
+
+// Maps an agent's mean Brier to ρ via the Brier *skill score* against the
+// uninformative p = 0.5 forecaster scored over the SAME outcomes:
+//   BSS = 1 − meanBrier / baselineBrier,  edge = 0.25 · BSS
+// With binary outcomes baselineBrier is exactly 0.25, so edge reduces to the
+// original (0.25 − meanBrier) — boundary behaviour (perfect → 1.5, random → 1.0,
+// floor at 0.5) is unchanged. With graded outcomes the baseline shrinks with the
+// outcome spread, so an uninformative forecaster still lands exactly at ρ = 1
+// instead of looking skilled just because outcomes cluster near 0.5.
+export function reliabilityFromBrier(meanBrier, sampleSize, baselineBrier = RANDOM_BRIER) {
   if (sampleSize < MIN_RESOLVED) return 1.0;
-  const edge = RANDOM_BRIER - meanBrier; // > 0 better than chance, < 0 worse
+  if (baselineBrier <= 0) return 1.0; // zero outcome spread: nothing to discriminate
+  const edge = RANDOM_BRIER * (1 - meanBrier / baselineBrier);
   const delta = edge >= 0 ? RHO_GAIN_UP * edge : RHO_GAIN_DOWN * edge;
   return clamp(1 + delta, RHO_FLOOR, RHO_CAP);
 }

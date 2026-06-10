@@ -128,4 +128,74 @@ describe('recomputeReliability', () => {
     expect(map.a.rho).toBeCloseTo(1.5);
     expect(map.b.rho).toBeCloseTo(0.5);
   });
+
+  describe('graded outcomes (ADR 0018)', () => {
+    const repoFor = (forecasts) => ({
+      getResolvedForecasts: async () => forecasts,
+      upsertReliability: async () => {},
+    });
+
+    it('rewards a confident call that won big more than one that scraped by', async () => {
+      const mk = (id, alpha) =>
+        Array.from({ length: 6 }, () => ({
+          agent_id: id,
+          stance: 2,
+          conviction: 1,
+          outcome: 1,
+          forward_return: alpha,
+          spy_return: 0,
+        }));
+      const map = await recomputeReliability(repoFor([...mk('big', 0.08), ...mk('thin', 0.001)]));
+      expect(map.big.rho).toBeGreaterThan(map.thin.rho);
+    });
+
+    it('keeps a HOLD-everything forecaster neutral even when alphas are tiny', async () => {
+      // p = 0.5 forecasts against outcomes hugging 0.5: under a fixed 0.25 baseline
+      // this would inflate rho; the skill-score baseline keeps it at 1.0.
+      const forecasts = Array.from({ length: 8 }, () => ({
+        agent_id: 'flat',
+        stance: 0,
+        conviction: 0.9,
+        outcome: 1,
+        forward_return: 0.0005,
+        spy_return: 0,
+      }));
+      const map = await recomputeReliability(repoFor(forecasts));
+      expect(map.flat.rho).toBeCloseTo(1.0);
+    });
+
+    it('falls back to the binary outcome for legacy rows without returns', async () => {
+      const forecasts = Array.from({ length: 6 }, () => ({
+        agent_id: 'legacy',
+        stance: 2,
+        conviction: 1,
+        outcome: 1,
+        forward_return: null,
+        spy_return: null,
+      }));
+      const map = await recomputeReliability(repoFor(forecasts));
+      expect(map.legacy.rho).toBeCloseTo(1.5); // identical to the pre-graded behaviour
+    });
+
+    it('punishes large misses harder than near-misses on the same hit record', async () => {
+      // Both agents: 3 wins at +5% alpha; the misses differ only in magnitude.
+      const row = (id, alpha, outcome) => ({
+        agent_id: id,
+        stance: 2,
+        conviction: 0.5,
+        outcome,
+        forward_return: alpha,
+        spy_return: 0,
+      });
+      const record = (id, missAlpha) => [
+        ...Array.from({ length: 3 }, () => row(id, 0.05, 1)),
+        ...Array.from({ length: 3 }, () => row(id, missAlpha, 0)),
+      ];
+      const map = await recomputeReliability(
+        repoFor([...record('disaster', -0.1), ...record('near', -0.002)]),
+      );
+      expect(map.disaster.rho).toBeLessThan(map.near.rho);
+      expect(map.near.rho).toBeGreaterThan(1); // wins big, misses small -> net positive skill
+    });
+  });
 });

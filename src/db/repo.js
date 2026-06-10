@@ -172,8 +172,12 @@ export function createRepo(db) {
     },
 
     async getResolvedForecasts(limit) {
+      // forward_return/spy_return feed the magnitude-aware graded outcome
+      // (ADR 0018); rows resolved before those columns existed fall back to
+      // the binary outcome in the learner.
       return db.query(
-        `SELECT sv.agent_id, sv.stance, sv.conviction, s.outcome
+        `SELECT sv.agent_id, sv.stance, sv.conviction, s.outcome,
+                s.forward_return, s.spy_return
            FROM legion.signal_votes sv
            JOIN legion.signals s ON s.id = sv.signal_id
           WHERE s.resolved = true AND s.outcome IS NOT NULL

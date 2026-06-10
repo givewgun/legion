@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   forecastProb,
   brier,
+  gradedOutcome,
   reliabilityFromBrier,
   scaleWeights,
   scaleConviction,
@@ -9,6 +10,7 @@ import {
   directionalHit,
   decayWeights,
   weightedMean,
+  ALPHA_SCALE,
   MIN_RESOLVED,
 } from '../../src/consensus/reliability.js';
 
@@ -58,6 +60,54 @@ describe('reliabilityFromBrier', () => {
     expect(better).toBeCloseTo(1.1);
     expect(worse).toBeCloseTo(0.8);
     expect(1 - worse).toBeGreaterThan(better - 1); // asymmetric: drops faster than it climbs
+  });
+
+  describe('graded baseline (ADR 0018)', () => {
+    it('keeps an uninformative forecaster at exactly 1.0 when outcomes cluster near 0.5', () => {
+      // graded outcomes near 0.5 give a tiny baseline; a p=0.5 forecaster scores the
+      // SAME tiny Brier -> skill score 0 -> neutral, never inflated.
+      expect(reliabilityFromBrier(0.01, 50, 0.01)).toBeCloseTo(1.0);
+    });
+    it('rewards beating the baseline proportionally to relative skill', () => {
+      // meanBrier half the baseline -> BSS 0.5 -> edge 0.125 -> rho 1.25
+      expect(reliabilityFromBrier(0.05, 50, 0.1)).toBeCloseTo(1.25);
+    });
+    it('punishes losing to the baseline on the steeper slope', () => {
+      // meanBrier 1.5x baseline -> BSS -0.5 -> edge -0.125 -> rho 1 - 4*0.125 = 0.5
+      expect(reliabilityFromBrier(0.15, 50, 0.1)).toBeCloseTo(0.5);
+    });
+    it('is neutral when the baseline is degenerate (zero outcome spread)', () => {
+      expect(reliabilityFromBrier(0.0, 50, 0)).toBe(1.0);
+    });
+    it('reduces exactly to the binary formula when the baseline is 0.25', () => {
+      expect(reliabilityFromBrier(0.2, 50, 0.25)).toBeCloseTo(reliabilityFromBrier(0.2, 50));
+    });
+  });
+});
+
+describe('gradedOutcome', () => {
+  it('is 0.5 when the call exactly matched SPY', () => {
+    expect(gradedOutcome(0.03, 0.03)).toBeCloseTo(0.5);
+  });
+  it('grows toward 1 with positive alpha and shrinks toward 0 with negative', () => {
+    expect(gradedOutcome(0.05, 0)).toBeGreaterThan(0.85);
+    expect(gradedOutcome(-0.05, 0)).toBeLessThan(0.15);
+  });
+  it('treats a basis-point alpha as near coin-flip, unlike the binary outcome', () => {
+    const g = gradedOutcome(0.0001, 0);
+    expect(g).toBeGreaterThan(0.5);
+    expect(g).toBeLessThan(0.51);
+  });
+  it('saturates instead of growing without bound', () => {
+    expect(gradedOutcome(10, 0)).toBeLessThanOrEqual(1);
+    expect(gradedOutcome(-10, 0)).toBeGreaterThanOrEqual(0);
+  });
+  it('returns null when either leg is missing (legacy rows)', () => {
+    expect(gradedOutcome(null, 0.01)).toBeNull();
+    expect(gradedOutcome(0.01, null)).toBeNull();
+  });
+  it('honors a custom alpha scale', () => {
+    expect(gradedOutcome(ALPHA_SCALE, 0)).toBeCloseTo(gradedOutcome(0.1, 0, 0.1), 10);
   });
 });
 
