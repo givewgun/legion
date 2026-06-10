@@ -5,6 +5,7 @@ import { createRepo } from '../db/repo.js';
 import { connectBus } from '../bus/nats.js';
 import { createOrchestrator } from '../orchestrator.js';
 import { createApp } from '../api/app.js';
+import { createGunvestFromConfig } from '../data/gunvest.js';
 
 const cfg = loadConfig();
 const repo = createRepo(connectDb(cfg.databaseUrl));
@@ -20,5 +21,6 @@ try {
   console.warn(`[api] bus unavailable — trigger endpoint disabled: ${err.message}`);
 }
 
-const app = createApp({ repo, orchestrator });
+const gunvest = createGunvestFromConfig(cfg);
+const app = createApp({ repo, orchestrator, gunvest, horizonDays: cfg.horizonDays });
 app.listen(cfg.apiPort, () => console.log(`[api] listening on :${cfg.apiPort}`));

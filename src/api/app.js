@@ -6,11 +6,12 @@ import { reliabilityRoutes } from './routes/reliability.js';
 import { backtestRoutes } from './routes/backtest.js';
 import { triggerRoutes } from './routes/trigger.js';
 import { agentRoutes } from './routes/agents.js';
+import { portfolioRoutes } from './routes/portfolio.js';
 
 // Builds the Express app without listening (so tests can drive it in-process).
 // Routes are mounted from the supplied repo. An optional orchestrator enables
 // the on-demand trigger endpoint; without it those routes return 503.
-export function createApp({ repo, orchestrator = null }) {
+export function createApp({ repo, orchestrator = null, gunvest = null, horizonDays = 5 }) {
   const app = express();
   app.use(express.json());
 
@@ -22,6 +23,7 @@ export function createApp({ repo, orchestrator = null }) {
   app.use('/api/backtest', backtestRoutes(repo));
   app.use('/api/trigger', triggerRoutes(orchestrator, repo));
   app.use('/api/agents', agentRoutes(repo));
+  app.use('/api/portfolio', portfolioRoutes(repo, gunvest, { horizonDays }));
 
   // JSON error handler — never leak a stack to the client.
   app.use((err, req, res, _next) => {
