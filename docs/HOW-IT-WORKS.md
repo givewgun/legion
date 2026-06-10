@@ -544,6 +544,12 @@ always shouting (ADR 0014).
   or flatlined feed) is invisible to Brier and correlation alike, yet votes at full weight. Its
   recent stance variance maps to an `info` factor ∈ [0.25, 1] that multiplies its conviction
   alongside calibration, until its stances move again.
+- **Regime conditioning (ADR 0023):** each signal is stamped with the market regime it fired in
+  (`calm`/`stressed`, from VIX), and the learner grades each agent **per regime** alongside the
+  unconditional dials. At cycle time the emitter overlays the current regime's dials where a
+  deep-enough bucket exists — so the Contrarian can be trusted more at crowded extremes and less
+  mid-range, instead of carrying one averaged number everywhere. Unknown regime ⇒ unconditional
+  dials, bit-for-bit.
 
 ### Where the discounts plug back in
 

@@ -40,8 +40,8 @@ export function createRepo(db) {
       const row = await db.queryOne(
         `INSERT INTO legion.signals
            (cycle_id, symbol, band, conviction, plan, entry_price, spy_entry_price,
-            qqq_entry_price, horizon_days, resolve_after)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            qqq_entry_price, horizon_days, resolve_after, regime)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING id`,
         [
           cycleId,
@@ -54,6 +54,7 @@ export function createRepo(db) {
           signal.qqqEntryPrice ?? null,
           signal.horizonDays ?? 5,
           signal.resolveAfter ?? null,
+          signal.regime ?? null,
         ],
       );
       return row.id;
@@ -180,17 +181,47 @@ export function createRepo(db) {
 
     async getResolvedForecasts(limit) {
       // forward_return/spy_return feed the magnitude-aware graded outcome
-      // (ADR 0018); rows resolved before those columns existed fall back to
-      // the binary outcome in the learner.
+      // (ADR 0018); regime feeds the per-regime buckets (ADR 0023). Rows
+      // resolved before those columns existed fall back to the binary outcome
+      // and the unconditional dials.
       return db.query(
         `SELECT sv.agent_id, sv.stance, sv.conviction, s.outcome,
-                s.forward_return, s.spy_return
+                s.forward_return, s.spy_return, s.regime
            FROM legion.signal_votes sv
            JOIN legion.signals s ON s.id = sv.signal_id
           WHERE s.resolved = true AND s.outcome IS NOT NULL
           ORDER BY s.id DESC
           LIMIT $1`,
         [limit],
+      );
+    },
+
+    // Per-(agent, regime) dials (ADR 0023). Rows exist only for buckets deep
+    // enough to learn from, so these maps overlay the unconditional ones.
+    async getRegimeReliability(regime) {
+      const rows = await db.query(
+        `SELECT agent_id, rho FROM legion.agent_regime_reliability WHERE regime = $1`,
+        [regime],
+      );
+      return Object.fromEntries(rows.map((r) => [r.agent_id, r.rho]));
+    },
+
+    async getRegimeCalibration(regime) {
+      const rows = await db.query(
+        `SELECT agent_id, calibration FROM legion.agent_regime_reliability WHERE regime = $1`,
+        [regime],
+      );
+      return Object.fromEntries(rows.map((r) => [r.agent_id, r.calibration]));
+    },
+
+    async upsertRegimeReliability(agentId, regime, rho, sampleSize, calibration = 1.0) {
+      await db.query(
+        `INSERT INTO legion.agent_regime_reliability (agent_id, regime, rho, calibration, sample_size, updated_at)
+         VALUES ($1, $2, $3, $4, $5, now())
+         ON CONFLICT (agent_id, regime) DO UPDATE
+           SET rho = EXCLUDED.rho, calibration = EXCLUDED.calibration,
+               sample_size = EXCLUDED.sample_size, updated_at = now()`,
+        [agentId, regime, rho, calibration, sampleSize],
       );
     },
 

@@ -47,6 +47,21 @@ describe('repo phase4', () => {
     expect(pool.calls[0].params).toEqual(['technical', 1.25, 12, 1.0, 1.0]);
   });
 
+  it('regime reliability round-trips per-(agent, regime) dials', async () => {
+    const pool = poolReturning([
+      [],
+      [{ agent_id: 'technical', rho: 1.4 }],
+      [{ agent_id: 'technical', calibration: 1.2 }],
+    ]);
+    const repo = createRepo(createDb(pool));
+    await repo.upsertRegimeReliability('technical', 'stressed', 1.4, 12, 1.2);
+    expect(pool.calls[0].text.toLowerCase()).toContain('legion.agent_regime_reliability');
+    expect(pool.calls[0].params).toEqual(['technical', 'stressed', 1.4, 1.2, 12]);
+    expect(await repo.getRegimeReliability('stressed')).toEqual({ technical: 1.4 });
+    expect(pool.calls[1].params).toEqual(['stressed']);
+    expect(await repo.getRegimeCalibration('stressed')).toEqual({ technical: 1.2 });
+  });
+
   it('getAgentInfoFactors returns an agentId->info map', async () => {
     const pool = poolReturning([
       [
@@ -101,7 +116,9 @@ describe('repo phase4', () => {
     const pool = poolReturning([[{ id: 78 }]]);
     const repo = createRepo(createDb(pool));
     await repo.addSignal(5, { symbol: 'NVDA', band: 'BUY', conviction: 0.7, plan: {} });
-    expect(pool.calls[0].params).toEqual([5, 'NVDA', 'BUY', 0.7, '{}', null, null, null, 5, null]);
+    expect(pool.calls[0].params).toEqual([
+      5, 'NVDA', 'BUY', 0.7, '{}', null, null, null, 5, null, null,
+    ]);
   });
 
   it('addSignalVotes bulk-inserts a snapshot row per vote', async () => {

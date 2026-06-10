@@ -6,6 +6,7 @@ import {
 } from '../bus/subjects.js';
 import { evaluateRound, independentBacking } from '../consensus/aggregate.js';
 import { scaleWeights, scaleConviction } from '../consensus/reliability.js';
+import { classifyRegime } from '../reliability/regime.js';
 import { buildSignal } from './plan.js';
 import { applyRiskConstraint } from '../risk/apply.js';
 import { formatSignal } from './telegram.js';
@@ -99,24 +100,46 @@ export function createEmitter({
     return entry.votes.length >= expectedAgents && (!riskEnabled || entry.constraint !== null);
   }
 
+  // Current market regime (calm | stressed | unknown, from VIX), per cycle.
+  // 'unknown' (no macro source, or a fetch failure) means the regime overlay
+  // is skipped and the unconditional dials apply (ADR 0023).
+  async function detectRegime() {
+    if (!gunvest?.getMacro) return 'unknown';
+    try {
+      return classifyRegime((await gunvest.getMacro())?.vix);
+    } catch {
+      return 'unknown';
+    }
+  }
+
   async function learnedForCycle(cycleId) {
     if (!learnedByCycle.has(cycleId)) {
-      const [rho, calibration, info, corrMap] = await Promise.all([
+      const regime = await detectRegime();
+      const conditioned = regime !== 'unknown';
+      const [rho, calibration, info, corrMap, regimeRho, regimeCal] = await Promise.all([
         repo.getAllReliability?.() ?? {},
         repo.getAgentCalibration?.() ?? {},
         repo.getAgentInfoFactors?.() ?? {},
         repo.getAgentCorrelations?.() ?? {},
+        (conditioned ? repo.getRegimeReliability?.(regime) : null) ?? {},
+        (conditioned ? repo.getRegimeCalibration?.(regime) : null) ?? {},
       ]);
+      // Regime overlay (ADR 0023): per-(agent, regime) dials override the
+      // unconditional ones where a deep-enough bucket exists (the learner only
+      // persists such buckets), so "News is 1.4x in stressed tape, 0.8x in calm"
+      // beats one averaged number.
+      const rhoEff = { ...rho, ...regimeRho };
+      const calEff = { ...calibration, ...regimeCal };
       // The conviction term is scaled by calibration × information factor: cal
       // asks "is its confidence meaningful", info asks "is anyone home" (a
       // near-constant voter is discounted until its stances move — ADR 0021).
       const calib = {};
-      for (const agentId of new Set([...Object.keys(calibration), ...Object.keys(info)])) {
-        calib[agentId] = (calibration[agentId] ?? 1.0) * (info[agentId] ?? 1.0);
+      for (const agentId of new Set([...Object.keys(calEff), ...Object.keys(info)])) {
+        calib[agentId] = (calEff[agentId] ?? 1.0) * (info[agentId] ?? 1.0);
       }
       // Symmetric lookup; defaults to 0 (independent) for unseen pairs.
       const corr = (a, b) => corrMap[a]?.[b] ?? 0;
-      learnedByCycle.set(cycleId, { rho, calib, corr });
+      learnedByCycle.set(cycleId, { rho: rhoEff, calib, corr, regime });
     }
     return learnedByCycle.get(cycleId);
   }
@@ -129,7 +152,7 @@ export function createEmitter({
     // these effective inputs so any node recomputes the same S/V/κ (ADR 0001), while the
     // forecast snapshot below keeps RAW conviction to avoid a calibration feedback loop.
     // `corr` discounts redundant agreement in the quorum (ADR 0015).
-    const { rho, calib, corr } = await learnedForCycle(cycleId);
+    const { rho, calib, corr, regime } = await learnedForCycle(cycleId);
     const scaled = scaleWeights(entry.votes, rho);
     const calibrated = scaleConviction(scaled, calib);
 
@@ -203,6 +226,9 @@ export function createEmitter({
       qqqEntryPrice,
       horizonDays,
       resolveAfter,
+      // The regime the panel decided in — lets the learner grade each forecast
+      // in its own regime bucket (ADR 0023).
+      regime,
     });
     // Snapshot RAW self-reported conviction (from `scaled`, which leaves conviction
     // untouched) so the calibration learner scores what the agent actually claimed.

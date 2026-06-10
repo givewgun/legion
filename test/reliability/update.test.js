@@ -134,6 +134,50 @@ describe('recomputeReliability', () => {
     expect(map.b.rho).toBeCloseTo(0.5); // anti-skill still saturates the floor
   });
 
+  describe('regime buckets (ADR 0023)', () => {
+    const row = (id, regime, outcome, stance = 2) => ({
+      agent_id: id,
+      stance,
+      conviction: 1,
+      outcome,
+      regime,
+    });
+
+    it('persists per-regime dials for deep-enough buckets', async () => {
+      const regimeWrites = [];
+      const forecasts = [
+        ...Array.from({ length: 6 }, () => row('tech', 'stressed', 1)),
+        ...Array.from({ length: 6 }, () => row('tech', 'calm', 0)),
+      ];
+      await recomputeReliability({
+        getResolvedForecasts: async () => forecasts,
+        upsertReliability: async () => {},
+        upsertRegimeReliability: async (id, regime, rho, n, calibration) =>
+          regimeWrites.push({ id, regime, rho, n, calibration }),
+      });
+      const stressed = regimeWrites.find((w) => w.regime === 'stressed');
+      const calm = regimeWrites.find((w) => w.regime === 'calm');
+      // sharp in stressed tape, anti-skill in calm: the buckets disagree where
+      // the unconditional average would blur them
+      expect(stressed.rho).toBeGreaterThan(1);
+      expect(calm.rho).toBeCloseTo(0.5);
+    });
+
+    it('skips thin buckets so the overlay falls back to unconditional dials', async () => {
+      const regimeWrites = [];
+      const forecasts = [
+        ...Array.from({ length: 3 }, () => row('tech', 'stressed', 1)), // below MIN_RESOLVED
+        ...Array.from({ length: 6 }, () => row('tech', null, 1)), // legacy rows, no regime
+      ];
+      await recomputeReliability({
+        getResolvedForecasts: async () => forecasts,
+        upsertReliability: async () => {},
+        upsertRegimeReliability: async (...args) => regimeWrites.push(args),
+      });
+      expect(regimeWrites).toHaveLength(0);
+    });
+  });
+
   describe('information check (ADR 0021)', () => {
     const repoFor = (forecasts) => ({
       getResolvedForecasts: async () => forecasts,

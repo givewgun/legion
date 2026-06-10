@@ -156,3 +156,23 @@ ALTER TABLE legion.rounds ADD COLUMN IF NOT EXISTS agreement DOUBLE PRECISION;
 -- Information factor (ADR 0021): conviction discount for near-constant voters
 -- whose stance variance carries no signal. Neutral 1.0; floors at 0.25.
 ALTER TABLE legion.agent_reliability ADD COLUMN IF NOT EXISTS info_factor DOUBLE PRECISION NOT NULL DEFAULT 1.0;
+
+-- ── Phase 8: regime-conditional reliability (ADR 0023) ───────────────────────
+-- The market regime captured when the signal fired (calm | stressed | unknown,
+-- from VIX). Lets the learner grade each agent per regime instead of averaging
+-- its edge away.
+ALTER TABLE legion.signals ADD COLUMN IF NOT EXISTS regime TEXT;
+
+-- Per-(agent, regime) dials, recomputed by the reliability cron alongside the
+-- unconditional ones. Rows exist only for buckets with >= MIN_RESOLVED resolved
+-- forecasts, so the emitter's overlay falls back to the unconditional dials for
+-- thin buckets.
+CREATE TABLE IF NOT EXISTS legion.agent_regime_reliability (
+  agent_id     TEXT NOT NULL,
+  regime       TEXT NOT NULL,
+  rho          DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+  calibration  DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+  sample_size  INTEGER NOT NULL DEFAULT 0,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (agent_id, regime)
+);
