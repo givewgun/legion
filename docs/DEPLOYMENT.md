@@ -81,7 +81,7 @@ inference** on a 4-core CPU box:
 | Server env var | Value | Effect |
 |---|---|---|
 | `OLLAMA_NUM_PARALLEL` | `1` | one inference at a time — every request gets all cores |
-| `OLLAMA_KEEP_ALIVE` | `-1` | model stays resident; no ~5 GB reload between calls |
+| `OLLAMA_KEEP_ALIVE` | `30m` | model stays resident for a whole sweep (timer resets per call); unloads between cycles so runner memory is reclaimed (ADR 0005 amendment) |
 
 These are set directly on the `ollama` container in the compose file (not in the app
 `.env`). The app-side timeout and concurrency (`OLLAMA_TIMEOUT_MS=300000`,

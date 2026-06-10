@@ -107,8 +107,9 @@ is written to `legion.rounds` / `legion.votes`.
 
 A cycle is **4 agents × up to 3 rounds**, serialized through one Ollama → expect minutes,
 not seconds, on CPU. Inference is serial by server config (`OLLAMA_NUM_PARALLEL=1`) so
-each request gets all CPU cores; the model stays resident (`OLLAMA_KEEP_ALIVE=-1`) to
-avoid a ~5 GB reload between calls.
+each request gets all CPU cores; the model stays resident for the whole sweep
+(`OLLAMA_KEEP_ALIVE=30m`, refreshed on every call) to avoid a ~5 GB reload between calls,
+then unloads between cycles so runner memory can't accumulate.
 
 ---
 

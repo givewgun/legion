@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted (2026-06-06).
+Accepted (2026-06-06). Amended (2026-06-10): `OLLAMA_KEEP_ALIVE` changed from `-1` to `30m` —
+see Amendment below.
 
 ## Context
 
@@ -46,3 +47,23 @@ Make inference strictly serial across the box and bound submission per process.
 - A genuinely saturated request abstains cleanly with a diagnosable cause (`err.cause` surfaced).
 - Throughput is capped at one inference at a time — the explicit trade-off; scaling needs
   Approach B or a second model server.
+
+## Amendment (2026-06-10): `OLLAMA_KEEP_ALIVE=30m`, not `-1`
+
+In production, `KEEP_ALIVE=-1` caused unbounded container memory growth: ~1 GB per sweep,
+stepping from 5.5 GiB to 10.3 GiB over a day and never released. Evidence isolated the leak
+to the single long-lived runner process (constant PID count, no new block I/O — so not a
+second model or runner; the growth is heap/cache accumulated inside the resident runner
+across repeated `/api/generate` calls).
+
+Since the runner's internals are not ours to fix, we bound its lifetime instead:
+
+- `OLLAMA_KEEP_ALIVE=30m` — each request resets the timer, so the model stays warm for an
+  entire serialized sweep (calls are back-to-back, minutes apart). 30 minutes after the
+  last call the runner exits and *all* its memory is reclaimed. The cost is one ~5 GB model
+  load at the start of each 4 h cycle (usually served from page cache, not disk).
+- `mem_limit: 12g` on the container (prod compose) as a backstop: page cache is reclaimed
+  under pressure, and a runaway runner is OOM-killed and restarted (`restart:
+  unless-stopped`) instead of starving the gunvest stack on the shared VM.
+
+The original goal of `-1` — never reload *between calls within a sweep* — is preserved.

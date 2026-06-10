@@ -214,7 +214,8 @@ does in the algorithm are detailed in
 | `FINNHUB_API_KEY` | enables the Contrarian short-interest feed only; the other feeds are live without it (short interest returns `null` when unset) |
 
 **Ollama** (app side — `OLLAMA_TIMEOUT_MS`=`300000`, `OLLAMA_MAX_CONCURRENT`=`1`; container
-side — `OLLAMA_NUM_PARALLEL`=`1`, `OLLAMA_KEEP_ALIVE`=`-1` to keep the model resident).
+side — `OLLAMA_NUM_PARALLEL`=`1`, `OLLAMA_KEEP_ALIVE`=`30m` to keep the model resident for a
+whole sweep while still unloading between cycles).
 
 LLM provider is pluggable (`local` Ollama by default; `gemini` / `openai` selectable per agent)
 via [`src/llm/provider.js`](src/llm/provider.js). Only `local` is implemented today — selecting
