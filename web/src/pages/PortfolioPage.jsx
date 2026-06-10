@@ -31,8 +31,7 @@ export function PortfolioPage() {
 
   if (error) return <p className="text-red-600">{error}</p>;
   if (!data) return <p className="text-slate-400">Simulating portfolio…</p>;
-  if (data.curve.length === 0)
-    return <p className="text-slate-400">No signals to simulate yet.</p>;
+  if (data.curve.length === 0) return <p className="text-slate-400">No signals to simulate yet.</p>;
 
   const { curve, trades, stats } = data;
 
@@ -76,7 +75,14 @@ export function PortfolioPage() {
               />
               <Tooltip formatter={(v) => money(v)} />
               <Legend />
-              <Line type="monotone" dataKey="equity" name="Portfolio" stroke="#4f46e5" dot={false} strokeWidth={2} />
+              <Line
+                type="monotone"
+                dataKey="equity"
+                name="Portfolio"
+                stroke="#4f46e5"
+                dot={false}
+                strokeWidth={2}
+              />
               <Line type="monotone" dataKey="spy" name="SPY" stroke="#94a3b8" dot={false} />
               <Line type="monotone" dataKey="qqq" name="QQQ" stroke="#cbd5e1" dot={false} />
             </LineChart>
@@ -98,7 +104,10 @@ export function PortfolioPage() {
           </thead>
           <tbody>
             {trades.map((t, i) => (
-              <tr key={`${t.symbol}-${t.entryDate}-${i}`} className="border-b border-slate-100 last:border-0">
+              <tr
+                key={`${t.symbol}-${t.entryDate}-${i}`}
+                className="border-b border-slate-100 last:border-0"
+              >
                 <td className="px-4 py-2 font-medium">{t.symbol}</td>
                 <td className={`px-4 py-2 ${bandColor(t.band)}`}>{t.band}</td>
                 <td className="px-4 py-2">{pct(t.conviction)}</td>
