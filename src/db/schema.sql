@@ -152,3 +152,7 @@ CREATE TABLE IF NOT EXISTS legion.agent_correlation (
 -- resolver data can answer whether low-A converged signals underperform before
 -- any gate is added.
 ALTER TABLE legion.rounds ADD COLUMN IF NOT EXISTS agreement DOUBLE PRECISION;
+
+-- Information factor (ADR 0021): conviction discount for near-constant voters
+-- whose stance variance carries no signal. Neutral 1.0; floors at 0.25.
+ALTER TABLE legion.agent_reliability ADD COLUMN IF NOT EXISTS info_factor DOUBLE PRECISION NOT NULL DEFAULT 1.0;

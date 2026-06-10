@@ -9,6 +9,8 @@ import {
   decayWeights,
   weightedMean,
   effectiveSampleSize,
+  stanceVariance,
+  informationFactor,
   WINDOW,
 } from '../consensus/reliability.js';
 
@@ -61,8 +63,18 @@ export async function recomputeReliability(repo) {
     // two dials into panel dominance (ADR 0019).
     const bounded = boundCombined(rho, calibration);
 
-    map[agentId] = { rho: bounded.rho, calibration: bounded.calibration };
-    await repo.upsertReliability(agentId, bounded.rho, briers.length, bounded.calibration);
+    // Information check (ADR 0021): a near-constant voter is invisible to Brier
+    // and correlation alike; discount its conviction until its stances move.
+    const info = informationFactor(
+      stanceVariance(
+        agentRows.map((r) => r.stance),
+        weights,
+      ),
+      agentRows.length,
+    );
+
+    map[agentId] = { rho: bounded.rho, calibration: bounded.calibration, info };
+    await repo.upsertReliability(agentId, bounded.rho, briers.length, bounded.calibration, info);
   }
   return map;
 }

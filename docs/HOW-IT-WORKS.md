@@ -534,6 +534,10 @@ always shouting (ADR 0014).
   lands near 1.19, not the 1.5 cap; the extremes are earned by a *consistent* record, not a week.
 - **Combined cap (ADR 0019):** the product `ρ·cal` is bounded to `[0.4, 2.0]` (by trimming
   calibration, never ρ) so the two dials can't compound one streaky agent into panel dominance.
+- **Information check (ADR 0021):** a near-constant voter (zero stance variance — a stuck model
+  or flatlined feed) is invisible to Brier and correlation alike, yet votes at full weight. Its
+  recent stance variance maps to an `info` factor ∈ [0.25, 1] that multiplies its conviction
+  alongside calibration, until its stances move again.
 
 ### Where the discounts plug back in
 

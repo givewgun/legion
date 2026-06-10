@@ -38,6 +38,16 @@ export const SHRINK_K = 10;
 const COMBINED_FLOOR = 0.4;
 const COMBINED_CAP = 2.0;
 
+// Information check (ADR 0021): a near-constant voter carries no information but
+// is almost invisible to the other dials — zero stance variance makes its Pearson
+// correlation undefined (so it reads independent in the quorum), and Brier only
+// dents it if its one stuck call is reliably wrong. Stance variance at or above
+// INFO_REF_VARIANCE (an agent that at least occasionally moves a notch) earns the
+// full factor 1.0; below it the factor falls linearly to INFO_FLOOR, discounting
+// the agent's conviction until it demonstrates it is actually reading the data.
+const INFO_REF_VARIANCE = 0.25;
+const INFO_FLOOR = 0.25;
+
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 
 // Recency weights for rows ordered most-recent-first: 1, DECAY, DECAY², …
@@ -110,6 +120,22 @@ export function reliabilityFromBrier(meanBrier, sampleSize, baselineBrier = RAND
   const shrunk = edge * (ess / (ess + SHRINK_K));
   const delta = shrunk >= 0 ? RHO_GAIN_UP * shrunk : RHO_GAIN_DOWN * shrunk;
   return clamp(1 + delta, RHO_FLOOR, RHO_CAP);
+}
+
+// Weighted variance of an agent's recent stances — its "is anyone home" signal.
+export function stanceVariance(stances, weights) {
+  const mean = weightedMean(stances, weights);
+  return weightedMean(
+    stances.map((s) => (s - mean) ** 2),
+    weights,
+  );
+}
+
+// Maps recent stance variance to a conviction discount ∈ [INFO_FLOOR, 1].
+// Neutral (1.0) below MIN_RESOLVED — cold start must not punish a young agent.
+export function informationFactor(variance, sampleSize) {
+  if (sampleSize < MIN_RESOLVED) return 1.0;
+  return clamp(variance / INFO_REF_VARIANCE, INFO_FLOOR, 1);
 }
 
 // Bounds the combined ρ·cal influence multiplier into [COMBINED_FLOOR, COMBINED_CAP]

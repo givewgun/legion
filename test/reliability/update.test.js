@@ -134,6 +134,58 @@ describe('recomputeReliability', () => {
     expect(map.b.rho).toBeCloseTo(0.5); // anti-skill still saturates the floor
   });
 
+  describe('information check (ADR 0021)', () => {
+    const repoFor = (forecasts) => ({
+      getResolvedForecasts: async () => forecasts,
+      upsertReliability: async () => {},
+    });
+
+    it('discounts a constant voter and leaves a moving voter at full info', async () => {
+      const stuck = Array.from({ length: 8 }, () => ({
+        agent_id: 'stuck',
+        stance: 1,
+        conviction: 0.7,
+        outcome: 1,
+      }));
+      const moving = [1, -1, 2, 0, 1, -2, 0, 1].map((stance) => ({
+        agent_id: 'moving',
+        stance,
+        conviction: 0.7,
+        outcome: 1,
+      }));
+      const map = await recomputeReliability(repoFor([...stuck, ...moving]));
+      expect(map.stuck.info).toBe(0.25);
+      expect(map.moving.info).toBe(1);
+    });
+
+    it('persists the info factor alongside rho and calibration', async () => {
+      const writes = [];
+      const forecasts = Array.from({ length: 6 }, () => ({
+        agent_id: 'stuck',
+        stance: 2,
+        conviction: 1,
+        outcome: 1,
+      }));
+      await recomputeReliability({
+        getResolvedForecasts: async () => forecasts,
+        upsertReliability: async (id, rho, n, calibration, info) =>
+          writes.push({ id, calibration, info }),
+      });
+      expect(writes[0].info).toBe(0.25);
+    });
+
+    it('stays neutral below MIN_RESOLVED', async () => {
+      const forecasts = Array.from({ length: 3 }, () => ({
+        agent_id: 'young',
+        stance: 1,
+        conviction: 0.5,
+        outcome: 1,
+      }));
+      const map = await recomputeReliability(repoFor(forecasts));
+      expect(map.young.info).toBe(1.0);
+    });
+  });
+
   describe('graded outcomes (ADR 0018)', () => {
     const repoFor = (forecasts) => ({
       getResolvedForecasts: async () => forecasts,

@@ -101,11 +101,19 @@ export function createEmitter({
 
   async function learnedForCycle(cycleId) {
     if (!learnedByCycle.has(cycleId)) {
-      const [rho, calib, corrMap] = await Promise.all([
+      const [rho, calibration, info, corrMap] = await Promise.all([
         repo.getAllReliability?.() ?? {},
         repo.getAgentCalibration?.() ?? {},
+        repo.getAgentInfoFactors?.() ?? {},
         repo.getAgentCorrelations?.() ?? {},
       ]);
+      // The conviction term is scaled by calibration × information factor: cal
+      // asks "is its confidence meaningful", info asks "is anyone home" (a
+      // near-constant voter is discounted until its stances move — ADR 0021).
+      const calib = {};
+      for (const agentId of new Set([...Object.keys(calibration), ...Object.keys(info)])) {
+        calib[agentId] = (calibration[agentId] ?? 1.0) * (info[agentId] ?? 1.0);
+      }
       // Symmetric lookup; defaults to 0 (independent) for unseen pairs.
       const corr = (a, b) => corrMap[a]?.[b] ?? 0;
       learnedByCycle.set(cycleId, { rho, calib, corr });

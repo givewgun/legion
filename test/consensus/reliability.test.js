@@ -12,6 +12,8 @@ import {
   decayWeights,
   weightedMean,
   effectiveSampleSize,
+  stanceVariance,
+  informationFactor,
   ALPHA_SCALE,
   MIN_RESOLVED,
   SHRINK_K,
@@ -218,6 +220,28 @@ describe('effectiveSampleSize', () => {
   });
   it('is 0 for an empty sample', () => {
     expect(effectiveSampleSize([])).toBe(0);
+  });
+});
+
+describe('stanceVariance / informationFactor', () => {
+  it('a constant voter has zero variance', () => {
+    expect(stanceVariance([1, 1, 1, 1], [1, 1, 1, 1])).toBe(0);
+  });
+  it('an occasionally-moving voter has positive variance', () => {
+    expect(stanceVariance([1, 0, 1, 2], [1, 1, 1, 1])).toBeGreaterThan(0);
+  });
+  it('floors a zero-variance voter at the info floor', () => {
+    expect(informationFactor(0, 10)).toBe(0.25);
+  });
+  it('grants the full factor at or above the reference variance', () => {
+    expect(informationFactor(0.25, 10)).toBe(1);
+    expect(informationFactor(2, 10)).toBe(1);
+  });
+  it('interpolates linearly below the reference', () => {
+    expect(informationFactor(0.125, 10)).toBeCloseTo(0.5);
+  });
+  it('stays neutral below MIN_RESOLVED (cold start)', () => {
+    expect(informationFactor(0, MIN_RESOLVED - 1)).toBe(1.0);
   });
 });
 

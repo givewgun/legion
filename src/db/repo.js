@@ -85,14 +85,21 @@ export function createRepo(db) {
       return Object.fromEntries(rows.map((r) => [r.agent_id, r.calibration]));
     },
 
-    async upsertReliability(agentId, rho, sampleSize, calibration = 1.0) {
+    // Information factor (ADR 0021): conviction discount for near-constant voters.
+    async getAgentInfoFactors() {
+      const rows = await db.query(`SELECT agent_id, info_factor FROM legion.agent_reliability`);
+      return Object.fromEntries(rows.map((r) => [r.agent_id, r.info_factor]));
+    },
+
+    async upsertReliability(agentId, rho, sampleSize, calibration = 1.0, infoFactor = 1.0) {
       await db.query(
-        `INSERT INTO legion.agent_reliability (agent_id, rho, sample_size, calibration, updated_at)
-         VALUES ($1, $2, $3, $4, now())
+        `INSERT INTO legion.agent_reliability (agent_id, rho, sample_size, calibration, info_factor, updated_at)
+         VALUES ($1, $2, $3, $4, $5, now())
          ON CONFLICT (agent_id) DO UPDATE
            SET rho = EXCLUDED.rho, sample_size = EXCLUDED.sample_size,
-               calibration = EXCLUDED.calibration, updated_at = now()`,
-        [agentId, rho, sampleSize, calibration],
+               calibration = EXCLUDED.calibration, info_factor = EXCLUDED.info_factor,
+               updated_at = now()`,
+        [agentId, rho, sampleSize, calibration, infoFactor],
       );
     },
 
