@@ -137,4 +137,13 @@ describe('repo read + config methods', () => {
     expect(pool.calls[0].text).not.toMatch(/WHERE symbol/);
     expect(pool.calls[0].params).toEqual([50]);
   });
+
+  it('lists all signals oldest-first for the portfolio simulation', async () => {
+    const pool = poolReturning([[{ id: 1, symbol: 'NVDA', band: 'BUY' }]]);
+    const repo = createRepo(createDb(pool));
+    const rows = await repo.listAllSignals();
+    expect(rows).toEqual([{ id: 1, symbol: 'NVDA', band: 'BUY' }]);
+    expect(pool.calls[0].text).toMatch(/FROM legion\.signals/);
+    expect(pool.calls[0].text).toMatch(/ORDER BY created_at ASC/);
+  });
 });
