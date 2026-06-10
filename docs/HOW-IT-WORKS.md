@@ -120,6 +120,11 @@ Every box is a **separate process** that talks only over a message bus ([NATS](h
 No shared memory, no coordinator — any agent can crash and restart without anyone else caring.
 That's what "leaderless" buys you in practice.
 
+The emitter itself is crash-recoverable too (ADR 0024): every vote and risk constraint it
+buffers is mirrored to a pending table, and on restart it replays anything still in flight —
+rebuilding round buffers, restoring the herding guard's round-1 memory, and finishing any round
+that completed while it was down. A restart mid-debate no longer silently drops the cycle.
+
 > **Key idea — state-machine replication.** Because every node sees the same votes and runs the
 > *same* `aggregate.js`, the consensus is reproducible: you can hand the votes to any machine and
 > get the identical answer. There is no privileged "decider" whose word you have to trust.

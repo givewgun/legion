@@ -176,3 +176,25 @@ CREATE TABLE IF NOT EXISTS legion.agent_regime_reliability (
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (agent_id, regime)
 );
+
+-- ── Phase 9: emitter crash recovery (ADR 0024) ───────────────────────────────
+-- Mirror of the emitter's in-memory round buffers. Rows live only while a cycle
+-- is in flight: deleted on finalize, aged out past the stale-entry horizon.
+CREATE TABLE IF NOT EXISTS legion.pending_votes (
+  cycle_id    BIGINT NOT NULL,
+  round       INT NOT NULL,
+  symbol      TEXT NOT NULL,
+  agent_id    TEXT NOT NULL,
+  vote        JSONB NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (cycle_id, round, agent_id)
+);
+
+CREATE TABLE IF NOT EXISTS legion.pending_constraints (
+  cycle_id    BIGINT NOT NULL,
+  round       INT NOT NULL,
+  symbol      TEXT NOT NULL,
+  payload     JSONB NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (cycle_id, round)
+);

@@ -246,6 +246,69 @@ export function createRepo(db) {
       ]);
     },
 
+    // ── Crash-recovery pending state (ADR 0024) ─────────────────────────────
+    // Every vote/constraint the emitter buffers in memory is mirrored here so a
+    // restart can rebuild in-flight rounds instead of silently dropping them.
+
+    async savePendingVote(cycleId, round, symbol, vote) {
+      await db.query(
+        `INSERT INTO legion.pending_votes (cycle_id, round, symbol, agent_id, vote)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (cycle_id, round, agent_id)
+           DO UPDATE SET vote = EXCLUDED.vote, created_at = now()`,
+        [cycleId, round, symbol, vote.agentId, JSON.stringify(vote)],
+      );
+    },
+
+    async savePendingConstraint(cycleId, round, symbol, constraint) {
+      await db.query(
+        `INSERT INTO legion.pending_constraints (cycle_id, round, symbol, payload)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (cycle_id, round)
+           DO UPDATE SET payload = EXCLUDED.payload, created_at = now()`,
+        [cycleId, round, symbol, JSON.stringify(constraint)],
+      );
+    },
+
+    async loadPendingVotes(since) {
+      return db.query(
+        `SELECT cycle_id, round, symbol, vote
+           FROM legion.pending_votes
+          WHERE created_at >= $1
+          ORDER BY cycle_id, round`,
+        [since],
+      );
+    },
+
+    async loadPendingConstraints(since) {
+      return db.query(
+        `SELECT cycle_id, round, symbol, payload
+           FROM legion.pending_constraints
+          WHERE created_at >= $1
+          ORDER BY cycle_id, round`,
+        [since],
+      );
+    },
+
+    async deletePendingCycle(cycleId) {
+      await db.query(`DELETE FROM legion.pending_votes WHERE cycle_id = $1`, [cycleId]);
+      await db.query(`DELETE FROM legion.pending_constraints WHERE cycle_id = $1`, [cycleId]);
+    },
+
+    async deletePendingBefore(cutoff) {
+      await db.query(`DELETE FROM legion.pending_votes WHERE created_at < $1`, [cutoff]);
+      await db.query(`DELETE FROM legion.pending_constraints WHERE created_at < $1`, [cutoff]);
+    },
+
+    // Whether a round was already aggregated — recovery must not re-run it.
+    async roundExists(cycleId, roundNo) {
+      const row = await db.queryOne(
+        `SELECT 1 AS one FROM legion.rounds WHERE cycle_id = $1 AND round_no = $2`,
+        [cycleId, roundNo],
+      );
+      return row != null;
+    },
+
     async finishCycle(cycleId, status) {
       await db.query(`UPDATE legion.cycles SET status = $1, ended_at = now() WHERE id = $2`, [
         status,

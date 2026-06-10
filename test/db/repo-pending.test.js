@@ -1,0 +1,71 @@
+import { describe, it, expect } from 'vitest';
+import { createDb } from '../../src/db/client.js';
+import { createRepo } from '../../src/db/repo.js';
+
+function poolReturning(results) {
+  const calls = [];
+  let i = 0;
+  return {
+    calls,
+    query: async (text, params) => {
+      calls.push({ text, params });
+      return { rows: results[i++] ?? [] };
+    },
+  };
+}
+
+describe('repo pending state (ADR 0024)', () => {
+  it('savePendingVote upserts the serialized vote keyed by (cycle, round, agent)', async () => {
+    const pool = poolReturning([[]]);
+    const repo = createRepo(createDb(pool));
+    const vote = { agentId: 'technical', stance: 1, conviction: 0.8, weight: 1, rationale: 'r' };
+    await repo.savePendingVote(7, 1, 'NVDA', vote);
+    const { text, params } = pool.calls[0];
+    expect(text.toLowerCase()).toContain('insert into legion.pending_votes');
+    expect(text.toLowerCase()).toContain('on conflict');
+    expect(params).toEqual([7, 1, 'NVDA', 'technical', JSON.stringify(vote)]);
+  });
+
+  it('savePendingConstraint upserts keyed by (cycle, round)', async () => {
+    const pool = poolReturning([[]]);
+    const repo = createRepo(createDb(pool));
+    await repo.savePendingConstraint(7, 1, 'NVDA', { capConviction: 0.5 });
+    const { text, params } = pool.calls[0];
+    expect(text.toLowerCase()).toContain('insert into legion.pending_constraints');
+    expect(params).toEqual([7, 1, 'NVDA', '{"capConviction":0.5}']);
+  });
+
+  it('loadPendingVotes filters by age', async () => {
+    const rows = [{ cycle_id: 7, round: 1, symbol: 'NVDA', vote: { agentId: 'technical' } }];
+    const pool = poolReturning([rows]);
+    const repo = createRepo(createDb(pool));
+    const out = await repo.loadPendingVotes('2026-06-04T00:00:00Z');
+    expect(out).toEqual(rows);
+    expect(pool.calls[0].text.toLowerCase()).toContain('created_at >=');
+    expect(pool.calls[0].params).toEqual(['2026-06-04T00:00:00Z']);
+  });
+
+  it('deletePendingCycle clears both tables for the cycle', async () => {
+    const pool = poolReturning([[], []]);
+    const repo = createRepo(createDb(pool));
+    await repo.deletePendingCycle(7);
+    expect(pool.calls[0].text.toLowerCase()).toContain('delete from legion.pending_votes');
+    expect(pool.calls[1].text.toLowerCase()).toContain('delete from legion.pending_constraints');
+    expect(pool.calls[0].params).toEqual([7]);
+  });
+
+  it('deletePendingBefore ages both tables out', async () => {
+    const pool = poolReturning([[], []]);
+    const repo = createRepo(createDb(pool));
+    await repo.deletePendingBefore('2026-06-04T00:00:00Z');
+    expect(pool.calls).toHaveLength(2);
+    expect(pool.calls[0].text.toLowerCase()).toContain('created_at <');
+  });
+
+  it('roundExists reports whether a round was already aggregated', async () => {
+    const pool = poolReturning([[{ one: 1 }], []]);
+    const repo = createRepo(createDb(pool));
+    expect(await repo.roundExists(7, 1)).toBe(true);
+    expect(await repo.roundExists(7, 2)).toBe(false);
+  });
+});

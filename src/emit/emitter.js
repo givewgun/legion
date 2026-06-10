@@ -55,7 +55,7 @@ export function createEmitter({
   function touch(cycleId, round, symbol, nowMs) {
     const k = key(cycleId, round);
     if (!rounds.has(k)) {
-      rounds.set(k, { symbol, round, votes: [], constraint: null, createdAt: nowMs });
+      rounds.set(k, { cycleId, symbol, round, votes: [], constraint: null, createdAt: nowMs });
     }
     // Refresh on every message so the cycle's age tracks *last activity*, not
     // first-seen — otherwise a slow multi-round cycle whose total span exceeds
@@ -64,9 +64,59 @@ export function createEmitter({
     return { k, entry: rounds.get(k) };
   }
 
+  // Crash recovery (ADR 0024): every arriving vote/constraint is also persisted
+  // to a pending table (fire-and-forget — the hot path never blocks on it). On
+  // start, anything younger than staleEntryMs is reloaded: in-flight buffers are
+  // rebuilt (deduped by agentId against any votes that raced in live), round-1
+  // priors are restored for the herding guard, rounds already aggregated before
+  // the crash are skipped, and any round that is now complete is processed.
+  async function recover() {
+    if (!repo.loadPendingVotes) return;
+    const nowMs = clock().getTime();
+    const cutoff = new Date(nowMs - staleEntryMs).toISOString();
+    const [pendingVotes, pendingConstraints] = await Promise.all([
+      repo.loadPendingVotes(cutoff),
+      repo.loadPendingConstraints?.(cutoff) ?? [],
+    ]);
+    const firstVotes = new Map(); // cycleId -> round-1 votes
+    for (const row of pendingVotes) {
+      const { entry } = touch(row.cycle_id, row.round, row.symbol, nowMs);
+      if (!entry.votes.some((v) => v.agentId === row.vote.agentId)) entry.votes.push(row.vote);
+      if (row.round === 1) {
+        if (!firstVotes.has(row.cycle_id)) firstVotes.set(row.cycle_id, []);
+        firstVotes.get(row.cycle_id).push(row.vote);
+      }
+    }
+    for (const [cycleId, votes] of firstVotes) {
+      if (!firstVotesByCycle.has(cycleId)) firstVotesByCycle.set(cycleId, votes);
+    }
+    for (const row of pendingConstraints) {
+      const { entry } = touch(row.cycle_id, row.round, row.symbol, nowMs);
+      entry.constraint = row.payload;
+    }
+    let resumed = 0;
+    for (const [k, entry] of [...rounds]) {
+      if (!ready(entry)) continue; // still waiting on votes; live subscription fills in
+      if (await repo.roundExists?.(entry.cycleId, entry.round)) {
+        // Aggregated before the crash — only its (already republished or
+        // finalized) successors matter; drop the buffer, keep the priors.
+        rounds.delete(k);
+        continue;
+      }
+      resumed += 1;
+      await process(entry.cycleId, k, entry);
+    }
+    if (pendingVotes.length > 0) {
+      logger.info?.(
+        `[emitter] recovered ${pendingVotes.length} pending vote(s), resumed ${resumed} round(s)`,
+      );
+    }
+  }
+
   // Drop buffers that have lingered past staleEntryMs — a round that never reached
   // quorum and the per-cycle state of a cycle that never finalized. Bounds memory
-  // regardless of which agent or constraint went missing.
+  // regardless of which agent or constraint went missing. Pending rows age out on
+  // the same horizon so an abandoned cycle cannot resurrect on the next restart.
   function sweepStale(nowMs) {
     let evicted = 0;
     for (const [k, entry] of rounds) {
@@ -82,6 +132,9 @@ export function createEmitter({
         firstVotesByCycle.delete(cycleId);
       }
     }
+    repo
+      .deletePendingBefore?.(new Date(nowMs - staleEntryMs).toISOString())
+      .catch((err) => logger.error(`[emitter] pending sweep failed: ${err.message}`));
     if (evicted > 0) {
       logger.warn?.(
         `[emitter] evicted ${evicted} stale round buffer(s) older than ${staleEntryMs}ms — ` +
@@ -162,9 +215,13 @@ export function createEmitter({
     // it. A later round may only "converge" because agents flipped to match the loudest
     // peer; require that the converged side still carries enough independent round-1
     // backing, or treat it as social pressure, not agreement, and keep deliberating.
-    if (!firstVotesByCycle.has(cycleId)) firstVotesByCycle.set(cycleId, calibrated);
+    // RAW votes are stored (not the calibrated copies): "independent backing" means the
+    // agents' own pre-dissent claims, and raw votes are what the pending table can
+    // restore after a crash (ADR 0024).
+    if (!firstVotesByCycle.has(cycleId)) firstVotesByCycle.set(cycleId, entry.votes);
     if (result.converged && entry.round > 1) {
-      const backing = independentBacking(firstVotesByCycle.get(cycleId), Math.sign(result.S));
+      const priors = firstVotesByCycle.get(cycleId);
+      const backing = independentBacking(priors, Math.sign(result.S));
       const priorQuorum = consensus.priorQuorum ?? 0;
       if (backing < priorQuorum) {
         result.converged = false;
@@ -245,6 +302,10 @@ export function createEmitter({
     learnedByCycle.delete(cycleId);
     firstVotesByCycle.delete(cycleId);
     cycleSeenAt.delete(cycleId);
+    // The cycle is finalized — its pending rows have served their purpose.
+    await repo.deletePendingCycle?.(cycleId).catch((err) => {
+      logger.error(`[emitter] pending cleanup failed for cycle ${cycleId}: ${err.message}`);
+    });
 
     try {
       await telegram(formatSignal(signal));
@@ -255,6 +316,9 @@ export function createEmitter({
   }
 
   return {
+    // Subscribes immediately (no live message is missed), then replays pending
+    // state from before a crash. Returns the recovery promise so callers and
+    // tests can await a fully-restored emitter; live traffic needs no await.
     start() {
       bus.subscribeJSON(voteWildcard(), (msg) => {
         const nowMs = clock().getTime();
@@ -262,6 +326,10 @@ export function createEmitter({
         const { cycleId, symbol, round, vote } = msg;
         const { k, entry } = touch(cycleId, round, symbol, nowMs);
         entry.votes.push(vote);
+        // Fire-and-forget: crash recovery is best-effort, the hot path is not.
+        repo.savePendingVote?.(cycleId, round, symbol, vote).catch((err) => {
+          logger.error(`[emitter] pending vote persist failed: ${err.message}`);
+        });
         if (ready(entry)) process(cycleId, k, entry);
       });
       bus.subscribeJSON(constraintWildcard(), (msg) => {
@@ -270,7 +338,13 @@ export function createEmitter({
         const { cycleId, symbol, round, constraint } = msg;
         const { k, entry } = touch(cycleId, round, symbol, nowMs);
         entry.constraint = constraint;
+        repo.savePendingConstraint?.(cycleId, round, symbol, constraint).catch((err) => {
+          logger.error(`[emitter] pending constraint persist failed: ${err.message}`);
+        });
         if (ready(entry)) process(cycleId, k, entry);
+      });
+      return recover().catch((err) => {
+        logger.error(`[emitter] crash recovery failed: ${err.message}`);
       });
     },
     // Read-only buffer sizes for observability / leak detection (e.g. a health
