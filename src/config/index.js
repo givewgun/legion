@@ -45,6 +45,9 @@ export function loadConfig(env = process.env) {
       // Min independent (round-1) backing a revision-round consensus must retain,
       // or it is treated as herding rather than agreement (ADR 0016).
       priorQuorum: num(env, 'CONSENSUS_PRIOR_QUORUM', 0.3333),
+      // Effective-panel floor: rounds with fewer weight-carrying votes are tagged
+      // degraded — the single-outlier tolerance of ADR 0001 no longer holds.
+      minPanel: num(env, 'CONSENSUS_MIN_PANEL', 3),
     },
   };
 }

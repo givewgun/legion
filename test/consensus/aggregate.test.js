@@ -4,6 +4,7 @@ import {
   weightedDispersion,
   directionalQuorum,
   independentBacking,
+  effectivePanel,
   evaluateRound,
 } from '../../src/consensus/aggregate.js';
 
@@ -143,5 +144,38 @@ describe('evaluateRound', () => {
     expect(res.converged).toBe(false); // dispersion from the outlier may exceed θ_v
     // but quorum (3 of 4 agree on bull side) is met:
     expect(res.kappa).toBeGreaterThanOrEqual(0.75);
+  });
+
+  it('reports a full panel as not degraded', () => {
+    const votes = [v('a', 1, 0.9, 1), v('b', 1, 0.8, 1), v('c', 2, 0.9, 1), v('d', 0, 0.3, 1)];
+    const res = evaluateRound(votes, { thetaV: 0.5, quorum: 2 / 3, holdBand: 0.5 });
+    expect(res.nEff).toBe(4);
+    expect(res.degraded).toBe(false);
+  });
+
+  it('flags a round degraded when abstentions shrink the panel below the floor', () => {
+    // two abstains (conviction 0) leave only two weight-carrying votes
+    const votes = [v('a', 1, 0.9, 1), v('b', 1, 0.8, 1), v('c', 0, 0, 1), v('d', 0, 0, 0.9)];
+    const res = evaluateRound(votes, { thetaV: 0.5, quorum: 2 / 3, holdBand: 0.5 });
+    expect(res.nEff).toBe(2);
+    expect(res.degraded).toBe(true);
+    // degraded is a tag, not a gate — convergence is still evaluated normally
+    expect(res.converged).toBe(true);
+  });
+
+  it('honors a custom minPanel floor', () => {
+    const votes = [v('a', 1, 0.9, 1), v('b', 1, 0.8, 1), v('c', 0, 0, 1)];
+    expect(evaluateRound(votes, { thetaV: 0.5, quorum: 2 / 3, minPanel: 2 }).degraded).toBe(false);
+    expect(evaluateRound(votes, { thetaV: 0.5, quorum: 2 / 3, minPanel: 4 }).degraded).toBe(true);
+  });
+});
+
+describe('effectivePanel', () => {
+  it('counts only votes carrying weight (W·c > 0)', () => {
+    const votes = [v('a', 1, 0.9, 1), v('b', 0, 0, 1), v('c', -1, 0.5, 0.8)];
+    expect(effectivePanel(votes)).toBe(2);
+  });
+  it('is zero for an all-abstain round', () => {
+    expect(effectivePanel([v('a', 0, 0, 1), v('b', 0, 0, 1)])).toBe(0);
   });
 });

@@ -70,11 +70,29 @@ export function independentBacking(votes, targetSide) {
   return backing / den;
 }
 
-// Evaluates one round. Converged iff κ ≥ quorum AND V ≤ θ_v.
-export function evaluateRound(votes, { thetaV, quorum, holdBand = 0.5, corr } = {}) {
+// Minimum carrying votes for the BFT-style "one outlier can neither force nor
+// block" guarantee to hold. With N = 4 and f = ⌊(N−1)/3⌋ = 1, an abstention
+// (conviction 0 ⇒ W·c = 0) shrinks the effective panel to 3 where f = 0 — the
+// guarantee is gone even though the fraction-based κ still computes. Rounds below
+// this floor are tagged `degraded` so consumers can see the weakened guarantee.
+const MIN_PANEL = 3;
+
+// Effective panel size: votes that actually carry weight (W·c > 0). Abstentions
+// and zero-conviction votes drop out of every aggregate sum, so they must not
+// count toward the panel the robustness guarantee is stated for.
+export function effectivePanel(votes) {
+  return votes.filter((vote) => vote.weight * vote.conviction > 0).length;
+}
+
+// Evaluates one round. Converged iff κ ≥ quorum AND V ≤ θ_v. `degraded` flags a
+// round whose effective panel fell below minPanel — the signal still emits, but
+// the single-outlier tolerance documented in ADR 0001 no longer holds for it.
+export function evaluateRound(votes, { thetaV, quorum, holdBand = 0.5, corr, minPanel = MIN_PANEL } = {}) {
   const S = weightedStance(votes);
   const V = weightedDispersion(votes, S);
   const kappa = directionalQuorum(votes, S, holdBand, corr);
   const converged = kappa >= quorum && V <= thetaV;
-  return { S, V, kappa, converged, band: stanceBand(S, holdBand) };
+  const nEff = effectivePanel(votes);
+  const degraded = nEff < minPanel;
+  return { S, V, kappa, converged, nEff, degraded, band: stanceBand(S, holdBand) };
 }

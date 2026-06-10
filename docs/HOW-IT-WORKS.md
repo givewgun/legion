@@ -259,6 +259,12 @@ With `N` voting agents, the fault tolerance is `f = ⌊(N−1)/3⌋`. For the la
 defending against lying machines (the agents are cooperative and co-located) — it just borrows
 BFT's robustness shape: no leader, supermajority, single-outlier tolerance. (ADR 0001.)
 
+One honest caveat: an **abstaining** agent (conviction 0) carries zero weight, so it drops out of
+every sum — with one abstention the effective panel is `N = 3`, where `f = 0` and a single
+dissenter *can* block. Rounds whose effective panel falls below `CONSENSUS_MIN_PANEL` (default 3)
+are therefore tagged **`degraded`** on the signal plan and flagged in the Telegram message: the
+call still emits, but the single-outlier guarantee no longer backs it.
+
 ### Does convergence require unanimity? No.
 
 A common misread: that everyone must end up on the same side. They don't. A round can converge
@@ -641,6 +647,7 @@ The knobs you're most likely to touch. Consensus thresholds are env vars
 | `CONSENSUS_THETA_V` | `0.75` | max dispersion `V` to converge | env |
 | `CONSENSUS_HOLD_BAND` | `0.5` | `|S| < this` ⇒ HOLD (and HOLD voters count in κ) | env |
 | `CONSENSUS_MAX_ROUNDS` | `3` | round cap before `NO_CONSENSUS` | env |
+| `CONSENSUS_MIN_PANEL` | `3` | effective-panel floor; below it the round is tagged `degraded` | env |
 | `LEGION_EXPECTED_AGENTS` | `4` | votes the emitter waits for per round | env |
 | `LEGION_RISK_ENABLED` | `true` | require the risk constraint before finalizing | env |
 | `MIN_RESOLVED` | `5` | resolved forecasts before ρ/cal leave neutral | code |
