@@ -242,12 +242,13 @@ A round converges **iff both** hold:
 
 ```
 κ ≥ quorum     (default 2/3 — a Byzantine-style supermajority is on the same side)
-V ≤ θ_v        (default 0.5 — dispersion is low enough)
+V ≤ θ_v        (default 0.75 — dispersion is low enough)
 ```
 
-([`evaluateRound`](../src/consensus/aggregate.js) → `converged = kappa >= quorum && V <= thetaV`.)
+([`evaluateRound`](../src/consensus/aggregate.js) → `converged = kappa >= quorum && V <= thetaV`.
+θ_v was originally 0.5 (ADR 0001) and later tuned to 0.75 after live analysis.)
 
-**Back to the example:** `κ = 0.84 ≥ 0.67` ✅ **but** `V = 1.19 > 0.5` ❌ → **not converged.** The
+**Back to the example:** `κ = 0.84 ≥ 0.67` ✅ **but** `V = 1.19 > 0.75` ❌ → **not converged.** The
 contrarian's confident dissent keeps the spread too high. The supermajority alone isn't enough;
 the round does *not* emit. It goes another round.
 
@@ -280,7 +281,7 @@ V = (0.80·0.21² + 1.08·0.21² + 0.48·0.21² + 0.27·1.79²) / 2.63 ≈ 0.37
 κ = (0.80 + 1.08 + 0.48) / 2.63 ≈ 0.90        # the three bulls
 ```
 
-`κ = 0.90 ≥ 0.67` ✅ **and** `V = 0.37 ≤ 0.5` ✅ → **converged as BUY**, *while the contrarian is
+`κ = 0.90 ≥ 0.67` ✅ **and** `V = 0.37 ≤ 0.75` ✅ → **converged as BUY**, *while the contrarian is
 still voting SELL.* At conviction 0.3 the dissenter is only ~10% of the weight: heard, but not
 enough to break quorum or blow up dispersion.
 
@@ -346,7 +347,7 @@ V = (0.90·0.31² + 0.96·0.31² + 0.48·0.69² + 0.36·0.69²) / 2.70 ≈ 0.21
 κ = 2.70 / 2.70 = 1.00        # all four are now on the + side
 ```
 
-`κ = 1.00 ≥ 0.67` ✅ **and** `V = 0.21 ≤ 0.5` ✅ → **converged.** With the lone dissenter gone the
+`κ = 1.00 ≥ 0.67` ✅ **and** `V = 0.21 ≤ 0.75` ✅ → **converged.** With the lone dissenter gone the
 spread collapses, and the call emits as **STRONG_BUY**, conviction `min(1.69/2, 1) ≈ 0.84`.
 
 **Why this isn't herding (§7b):** the convergence appears only in round 2, so the anti-herding
@@ -637,7 +638,7 @@ The knobs you're most likely to touch. Consensus thresholds are env vars
 | Dial | Default | What it does | Where |
 |---|---|---|---|
 | `CONSENSUS_QUORUM` | `0.6667` | min `κ` to converge (2/3 supermajority) | env |
-| `CONSENSUS_THETA_V` | `0.5` | max dispersion `V` to converge | env |
+| `CONSENSUS_THETA_V` | `0.75` | max dispersion `V` to converge | env |
 | `CONSENSUS_HOLD_BAND` | `0.5` | `|S| < this` ⇒ HOLD (and HOLD voters count in κ) | env |
 | `CONSENSUS_MAX_ROUNDS` | `3` | round cap before `NO_CONSENSUS` | env |
 | `LEGION_EXPECTED_AGENTS` | `4` | votes the emitter waits for per round | env |
