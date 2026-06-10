@@ -44,4 +44,25 @@ describe('formatSignal', () => {
     expect(text).toContain('break\\_out \\(x\\) \\*now\\*');
     expect(text).not.toContain('break_out (x) *now*');
   });
+
+  it('warns when the signal came from a degraded panel', () => {
+    const text = formatSignal({
+      symbol: 'NVDA',
+      band: 'BUY',
+      conviction: 0.5,
+      plan: { degradedQuorum: true, nEff: 2, rationales: [] },
+    });
+    expect(text).toContain('degraded panel');
+    expect(text).toContain('2 agents');
+  });
+
+  it('omits the degraded warning on a full panel', () => {
+    const text = formatSignal({
+      symbol: 'NVDA',
+      band: 'BUY',
+      conviction: 0.5,
+      plan: { rationales: [] },
+    });
+    expect(text).not.toContain('degraded');
+  });
 });

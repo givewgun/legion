@@ -28,7 +28,8 @@ stance `s_i ∈ [-2,2]`, conviction `c_i ∈ [0,1]`, and a rationale. Effective 
 - `κ_r` — weighted fraction of votes whose side agrees with `sign(S_r)`; when `|S_r|` is below
   the hold band, HOLD voters also count as agreeing
 
-A round **converges** iff `κ_r ≥ quorum` (default `2/3`) **and** `V_r ≤ θ_v` (default `0.5`).
+A round **converges** iff `κ_r ≥ quorum` (default `2/3`) **and** `V_r ≤ θ_v` (default `0.5`;
+later tuned to `0.75` after live analysis — see `CONSENSUS_THETA_V` in `src/config/index.js`).
 Up to `R_max = 3` rounds run; between rounds each agent is shown peer dissent and may revise.
 If no round converges, the result is `NO_CONSENSUS`/HOLD. Fault tolerance is `f = ⌊(N−1)/3⌋`.
 

@@ -16,7 +16,9 @@ describe('recomputeReliability', () => {
         writes.push({ id, rho, n, calibration }),
     };
     const map = await recomputeReliability(repo);
-    expect(map.technical.rho).toBeCloseTo(1.5);
+    // perfect record, but only 6 resolved -> shrinkage keeps it well off the 1.5 cap
+    expect(map.technical.rho).toBeGreaterThan(1.15);
+    expect(map.technical.rho).toBeLessThan(1.5);
     // All hits, no misses -> conviction discrimination undefined -> neutral calibration.
     expect(map.technical.calibration).toBe(1.0);
     expect(writes[0]).toMatchObject({ id: 'technical', n: 6, calibration: 1.0 });
@@ -34,6 +36,7 @@ describe('recomputeReliability', () => {
       upsertReliability: async () => {},
     };
     const map = await recomputeReliability(repo);
+    // anti-skill saturates the floor even after shrinkage (down-slope is 4x)
     expect(map.social.rho).toBeCloseTo(0.5);
     expect(map.social.calibration).toBe(1.0);
   });
@@ -59,8 +62,9 @@ describe('recomputeReliability', () => {
       upsertReliability: async () => {},
     };
     const map = await recomputeReliability(repo);
-    // d = 0.9 - 0.2 = 0.7 -> calibration = 1 + 0.7 = 1.7, clamped to 1.5 cap.
-    expect(map.tech.calibration).toBeCloseTo(1.5);
+    // d = 0.9 - 0.2 = 0.7, shrunk by the 6-sample evidence (ADR 0019) -> ~1.26
+    expect(map.tech.calibration).toBeGreaterThan(1.2);
+    expect(map.tech.calibration).toBeLessThan(1.5);
   });
 
   it('cuts calibration when conviction is anti-informative (confidently wrong)', async () => {
@@ -83,8 +87,9 @@ describe('recomputeReliability', () => {
       upsertReliability: async () => {},
     };
     const map = await recomputeReliability(repo);
-    // d = 0.3 - 0.9 = -0.6 -> calibration = 1 - 0.6 = 0.4, clamped to 0.5 floor.
-    expect(map.social.calibration).toBeCloseTo(0.5);
+    // d = 0.3 - 0.9 = -0.6, shrunk by the 6-sample evidence -> ~0.78, below neutral
+    expect(map.social.calibration).toBeLessThan(0.85);
+    expect(map.social.calibration).toBeGreaterThanOrEqual(0.5);
   });
 
   it('keeps neutral 1.0 below MIN_RESOLVED sample', async () => {
@@ -99,6 +104,28 @@ describe('recomputeReliability', () => {
     const map = await recomputeReliability(repo);
     expect(map.news.rho).toBe(1.0);
     expect(map.news.calibration).toBe(1.0);
+  });
+
+  it('learned prior ignores recency: same lifetime record, same prior (ADR 0027)', async () => {
+    const good = (id) => ({ agent_id: id, stance: 1, conviction: 0.5, outcome: 1 });
+    const bad = (id) => ({ agent_id: id, stance: 1, conviction: 0.5, outcome: 0 });
+    const five = (fn, id) => Array.from({ length: 5 }, () => fn(id));
+    const priors = [];
+    const repo = {
+      getResolvedForecasts: async () => [
+        ...five(good, 'a'),
+        ...five(bad, 'a'),
+        ...five(bad, 'b'),
+        ...five(good, 'b'),
+      ],
+      upsertReliability: async () => {},
+      upsertLearnedPrior: async (id, prior) => priors.push({ id, prior }),
+    };
+    const map = await recomputeReliability(repo);
+    // recency-weighted rho disagrees, but the uniform lifetime prior is identical
+    expect(map.a.rho).not.toBeCloseTo(map.b.rho, 3);
+    expect(map.a.learnedPrior).toBeCloseTo(map.b.learnedPrior, 10);
+    expect(priors).toHaveLength(2);
   });
 
   it('weights recent forecasts more, so ordering of the same outcomes changes rho', async () => {
@@ -125,7 +152,216 @@ describe('recomputeReliability', () => {
       upsertReliability: async () => {},
     };
     const map = await recomputeReliability(repo);
-    expect(map.a.rho).toBeCloseTo(1.5);
-    expect(map.b.rho).toBeCloseTo(0.5);
+    expect(map.a.rho).toBeGreaterThan(1.1); // shrunk, but clearly above neutral
+    expect(map.b.rho).toBeCloseTo(0.5); // anti-skill still saturates the floor
+  });
+
+  describe('roster watch (ADR 0028)', () => {
+    const flooredForecasts = (id) =>
+      Array.from({ length: 6 }, () => ({ agent_id: id, stance: 2, conviction: 1, outcome: 0 }));
+
+    it('increments the floored streak and flags after the threshold', async () => {
+      const flags = [];
+      const map = await recomputeReliability(
+        {
+          getResolvedForecasts: async () => flooredForecasts('social'),
+          upsertReliability: async () => {},
+          getFlooredStreaks: async () => ({ social: 5 }), // one shy of the threshold
+          updateRosterFlag: async (id, streak, flagged) => flags.push({ id, streak, flagged }),
+        },
+        { warn() {} },
+      );
+      expect(map.social.flooredStreak).toBe(6);
+      expect(map.social.flagged).toBe(true);
+      expect(flags).toEqual([{ id: 'social', streak: 6, flagged: true }]);
+    });
+
+    it('resets the streak and clears the flag when rho recovers', async () => {
+      const flags = [];
+      const healthy = Array.from({ length: 6 }, () => ({
+        agent_id: 'social',
+        stance: 2,
+        conviction: 1,
+        outcome: 1,
+      }));
+      await recomputeReliability(
+        {
+          getResolvedForecasts: async () => healthy,
+          upsertReliability: async () => {},
+          getFlooredStreaks: async () => ({ social: 7 }),
+          updateRosterFlag: async (id, streak, flagged) => flags.push({ id, streak, flagged }),
+        },
+        { warn() {} },
+      );
+      expect(flags).toEqual([{ id: 'social', streak: 0, flagged: false }]);
+    });
+  });
+
+  describe('regime buckets (ADR 0023)', () => {
+    const row = (id, regime, outcome, stance = 2) => ({
+      agent_id: id,
+      stance,
+      conviction: 1,
+      outcome,
+      regime,
+    });
+
+    it('persists per-regime dials for deep-enough buckets', async () => {
+      const regimeWrites = [];
+      const forecasts = [
+        ...Array.from({ length: 6 }, () => row('tech', 'stressed', 1)),
+        ...Array.from({ length: 6 }, () => row('tech', 'calm', 0)),
+      ];
+      await recomputeReliability({
+        getResolvedForecasts: async () => forecasts,
+        upsertReliability: async () => {},
+        upsertRegimeReliability: async (id, regime, rho, n, calibration) =>
+          regimeWrites.push({ id, regime, rho, n, calibration }),
+      });
+      const stressed = regimeWrites.find((w) => w.regime === 'stressed');
+      const calm = regimeWrites.find((w) => w.regime === 'calm');
+      // sharp in stressed tape, anti-skill in calm: the buckets disagree where
+      // the unconditional average would blur them
+      expect(stressed.rho).toBeGreaterThan(1);
+      expect(calm.rho).toBeCloseTo(0.5);
+    });
+
+    it('skips thin buckets so the overlay falls back to unconditional dials', async () => {
+      const regimeWrites = [];
+      const forecasts = [
+        ...Array.from({ length: 3 }, () => row('tech', 'stressed', 1)), // below MIN_RESOLVED
+        ...Array.from({ length: 6 }, () => row('tech', null, 1)), // legacy rows, no regime
+      ];
+      await recomputeReliability({
+        getResolvedForecasts: async () => forecasts,
+        upsertReliability: async () => {},
+        upsertRegimeReliability: async (...args) => regimeWrites.push(args),
+      });
+      expect(regimeWrites).toHaveLength(0);
+    });
+  });
+
+  describe('information check (ADR 0021)', () => {
+    const repoFor = (forecasts) => ({
+      getResolvedForecasts: async () => forecasts,
+      upsertReliability: async () => {},
+    });
+
+    it('discounts a constant voter and leaves a moving voter at full info', async () => {
+      const stuck = Array.from({ length: 8 }, () => ({
+        agent_id: 'stuck',
+        stance: 1,
+        conviction: 0.7,
+        outcome: 1,
+      }));
+      const moving = [1, -1, 2, 0, 1, -2, 0, 1].map((stance) => ({
+        agent_id: 'moving',
+        stance,
+        conviction: 0.7,
+        outcome: 1,
+      }));
+      const map = await recomputeReliability(repoFor([...stuck, ...moving]));
+      expect(map.stuck.info).toBe(0.25);
+      expect(map.moving.info).toBe(1);
+    });
+
+    it('persists the info factor alongside rho and calibration', async () => {
+      const writes = [];
+      const forecasts = Array.from({ length: 6 }, () => ({
+        agent_id: 'stuck',
+        stance: 2,
+        conviction: 1,
+        outcome: 1,
+      }));
+      await recomputeReliability({
+        getResolvedForecasts: async () => forecasts,
+        upsertReliability: async (id, rho, n, calibration, info) =>
+          writes.push({ id, calibration, info }),
+      });
+      expect(writes[0].info).toBe(0.25);
+    });
+
+    it('stays neutral below MIN_RESOLVED', async () => {
+      const forecasts = Array.from({ length: 3 }, () => ({
+        agent_id: 'young',
+        stance: 1,
+        conviction: 0.5,
+        outcome: 1,
+      }));
+      const map = await recomputeReliability(repoFor(forecasts));
+      expect(map.young.info).toBe(1.0);
+    });
+  });
+
+  describe('graded outcomes (ADR 0018)', () => {
+    const repoFor = (forecasts) => ({
+      getResolvedForecasts: async () => forecasts,
+      upsertReliability: async () => {},
+    });
+
+    it('rewards a confident call that won big more than one that scraped by', async () => {
+      const mk = (id, alpha) =>
+        Array.from({ length: 6 }, () => ({
+          agent_id: id,
+          stance: 2,
+          conviction: 1,
+          outcome: 1,
+          forward_return: alpha,
+          spy_return: 0,
+        }));
+      const map = await recomputeReliability(repoFor([...mk('big', 0.08), ...mk('thin', 0.001)]));
+      expect(map.big.rho).toBeGreaterThan(map.thin.rho);
+    });
+
+    it('keeps a HOLD-everything forecaster neutral even when alphas are tiny', async () => {
+      // p = 0.5 forecasts against outcomes hugging 0.5: under a fixed 0.25 baseline
+      // this would inflate rho; the skill-score baseline keeps it at 1.0.
+      const forecasts = Array.from({ length: 8 }, () => ({
+        agent_id: 'flat',
+        stance: 0,
+        conviction: 0.9,
+        outcome: 1,
+        forward_return: 0.0005,
+        spy_return: 0,
+      }));
+      const map = await recomputeReliability(repoFor(forecasts));
+      expect(map.flat.rho).toBeCloseTo(1.0);
+    });
+
+    it('falls back to the binary outcome for legacy rows without returns', async () => {
+      const forecasts = Array.from({ length: 6 }, () => ({
+        agent_id: 'legacy',
+        stance: 2,
+        conviction: 1,
+        outcome: 1,
+        forward_return: null,
+        spy_return: null,
+      }));
+      const map = await recomputeReliability(repoFor(forecasts));
+      // scored exactly like the binary path (shrinkage applies either way)
+      expect(map.legacy.rho).toBeGreaterThan(1.15);
+      expect(map.legacy.rho).toBeLessThan(1.5);
+    });
+
+    it('punishes large misses harder than near-misses on the same hit record', async () => {
+      // Both agents: 3 wins at +5% alpha; the misses differ only in magnitude.
+      const row = (id, alpha, outcome) => ({
+        agent_id: id,
+        stance: 2,
+        conviction: 0.5,
+        outcome,
+        forward_return: alpha,
+        spy_return: 0,
+      });
+      const record = (id, missAlpha) => [
+        ...Array.from({ length: 3 }, () => row(id, 0.05, 1)),
+        ...Array.from({ length: 3 }, () => row(id, missAlpha, 0)),
+      ];
+      const map = await recomputeReliability(
+        repoFor([...record('disaster', -0.1), ...record('near', -0.002)]),
+      );
+      expect(map.disaster.rho).toBeLessThan(map.near.rho);
+      expect(map.near.rho).toBeGreaterThan(1); // wins big, misses small -> net positive skill
+    });
   });
 });

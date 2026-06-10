@@ -14,6 +14,9 @@ export function loadConfig(env = process.env) {
     databaseUrl: env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/gunvest',
     apiPort: num(env, 'LEGION_API_PORT', 8088),
     reliabilityCron: env.LEGION_RELIABILITY_CRON || '0 */12 * * *',
+    // Meta-reflection (ADR 0026): distill each agent's recent misses into a
+    // lesson on the reliability cron. Off by default — it puts an LLM in the cron.
+    reflectionEnabled: env.LEGION_REFLECTION === 'true',
     horizonDays: num(env, 'LEGION_HORIZON_DAYS', 5),
     summaryCron: env.LEGION_SUMMARY_CRON || '0 */6 * * *',
     summaryWindowHours: num(env, 'LEGION_SUMMARY_WINDOW_HOURS', 6),
@@ -22,6 +25,23 @@ export function loadConfig(env = process.env) {
       model: env.OLLAMA_MODEL || 'qwen2.5:7b-instruct',
       timeoutMs: num(env, 'OLLAMA_TIMEOUT_MS', 300000),
       maxConcurrent: num(env, 'OLLAMA_MAX_CONCURRENT', 1),
+    },
+    // OpenAI-compatible provider families. An empty apiKey means the provider is
+    // unconfigured: constructing it throws a clear error, and an agent assigned
+    // to it abstains for that cycle rather than crashing.
+    openai: {
+      url: env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+      apiKey: env.OPENAI_API_KEY || '',
+      model: env.OPENAI_MODEL || 'gpt-4o-mini',
+      timeoutMs: num(env, 'OPENAI_TIMEOUT_MS', 120000),
+      maxConcurrent: num(env, 'OPENAI_MAX_CONCURRENT', 2),
+    },
+    gemini: {
+      url: env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai',
+      apiKey: env.GEMINI_API_KEY || '',
+      model: env.GEMINI_MODEL || 'gemini-2.5-flash',
+      timeoutMs: num(env, 'GEMINI_TIMEOUT_MS', 120000),
+      maxConcurrent: num(env, 'GEMINI_MAX_CONCURRENT', 2),
     },
     // Resilience knobs for the GunVest read client. Defaults live in
     // src/data/gunvest.js; these env overrides let operators raise the timeout or
@@ -45,6 +65,9 @@ export function loadConfig(env = process.env) {
       // Min independent (round-1) backing a revision-round consensus must retain,
       // or it is treated as herding rather than agreement (ADR 0016).
       priorQuorum: num(env, 'CONSENSUS_PRIOR_QUORUM', 0.3333),
+      // Effective-panel floor: rounds with fewer weight-carrying votes are tagged
+      // degraded — the single-outlier tolerance of ADR 0001 no longer holds.
+      minPanel: num(env, 'CONSENSUS_MIN_PANEL', 3),
     },
   };
 }

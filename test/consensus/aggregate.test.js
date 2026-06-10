@@ -4,6 +4,9 @@ import {
   weightedDispersion,
   directionalQuorum,
   independentBacking,
+  effectivePanel,
+  effectiveVoices,
+  agreementStrength,
   evaluateRound,
 } from '../../src/consensus/aggregate.js';
 
@@ -64,7 +67,7 @@ describe('directionalQuorum', () => {
     expect(directionalQuorum(votes, s, 0.5)).toBeCloseTo(1 / 3, 6);
   });
 
-  describe('redundancy discount (ADR 0015)', () => {
+  describe('redundancy discount (ADR 0015/0020)', () => {
     // 3 bulls + 1 bear; without correlation κ = 3/4.
     const votes = [v('a', 1, 1, 1), v('b', 1, 1, 1), v('c', 1, 1, 1), v('d', -1, 1, 1)];
     const s = weightedStance(votes); // 0.5
@@ -72,16 +75,16 @@ describe('directionalQuorum', () => {
     const lookup = (table) => (x, y) => table[`${x}|${y}`] ?? table[`${y}|${x}`] ?? 0;
 
     it('collapses perfectly co-moving agreement toward one confirmation', () => {
-      // a,b,c are perfect echoes -> the trio counts as ~1 independent confirmation.
+      // a,b,c are perfect echoes -> N_eff = 9/9 = 1 -> coalition counts once; den = 4.
       const corr = lookup({ 'a|b': 1, 'a|c': 1, 'b|c': 1 });
-      // each mass = 1 + 1 + 1 = 3 -> effectiveAgree = 3*(1/3) = 1; den = 4.
       expect(directionalQuorum(votes, s, 0.5, corr)).toBeCloseTo(0.25, 6);
     });
 
     it('partially discounts partially-correlated agreement', () => {
+      // all pairs at 0.5: Frobenius² = 3 + 6·0.25 = 4.5 -> N_eff = 9/4.5 = 2 of 3
+      // voices -> effectiveAgree = 3·(2/3) = 2; den = 4.
       const corr = lookup({ 'a|b': 0.5, 'a|c': 0.5, 'b|c': 0.5 });
-      // each mass = 1 + 0.5 + 0.5 = 2 -> effectiveAgree = 3*0.5 = 1.5; den = 4.
-      expect(directionalQuorum(votes, s, 0.5, corr)).toBeCloseTo(0.375, 6);
+      expect(directionalQuorum(votes, s, 0.5, corr)).toBeCloseTo(0.5, 6);
     });
 
     it('does not discount independent (or negatively correlated) agreement', () => {
@@ -90,12 +93,77 @@ describe('directionalQuorum', () => {
       expect(directionalQuorum(votes, s, 0.5, corr)).toBeCloseTo(0.75, 6);
     });
 
+    it('discounts one correlated pair less than a fully correlated trio', () => {
+      // only a,b echo each other: Frobenius² = 3 + 2 = 5 -> N_eff = 1.8 of 3.
+      const pairOnly = lookup({ 'a|b': 1 });
+      const trio = lookup({ 'a|b': 1, 'a|c': 1, 'b|c': 1 });
+      const kPair = directionalQuorum(votes, s, 0.5, pairOnly);
+      expect(kPair).toBeCloseTo((3 * (1.8 / 3)) / 4, 6);
+      expect(kPair).toBeGreaterThan(directionalQuorum(votes, s, 0.5, trio));
+    });
+
     it('can drop a redundant supermajority below quorum so it fails to converge', () => {
       const corr = lookup({ 'a|b': 1, 'a|c': 1, 'b|c': 1 });
       const res = evaluateRound(votes, { thetaV: 5, quorum: 2 / 3, holdBand: 0.5, corr });
       expect(res.kappa).toBeLessThan(2 / 3);
       expect(res.converged).toBe(false);
     });
+  });
+});
+
+describe('agreementStrength', () => {
+  it('is the prior-weighted mean conviction of the agreeing side', () => {
+    // bulls a (c=0.9, w=1) and b (c=0.3, w=1); bear c excluded
+    const votes = [v('a', 1, 0.9, 1), v('b', 1, 0.3, 1), v('c', -1, 0.9, 1)];
+    const s = weightedStance(votes);
+    expect(agreementStrength(votes, s)).toBeCloseTo(0.6, 6);
+  });
+
+  it('distinguishes a timid consensus from a confident one (same kappa)', () => {
+    const timid = [v('a', 1, 0.3, 1), v('b', 1, 0.3, 1), v('c', 1, 0.3, 1)];
+    const confident = [v('a', 1, 0.95, 1), v('b', 1, 0.95, 1), v('c', 1, 0.95, 1)];
+    const sTimid = weightedStance(timid);
+    const sConf = weightedStance(confident);
+    expect(directionalQuorum(timid, sTimid)).toBeCloseTo(directionalQuorum(confident, sConf), 6);
+    expect(agreementStrength(timid, sTimid)).toBeLessThan(agreementStrength(confident, sConf));
+  });
+
+  it('counts HOLD voters inside the hold band', () => {
+    const votes = [v('a', 1, 0.4, 1), v('b', -1, 0.4, 1), v('c', 0, 0.8, 1)];
+    const s = weightedStance(votes); // 0 -> in band, HOLD agrees
+    expect(agreementStrength(votes, s, 0.5)).toBeCloseTo(0.8, 6);
+  });
+
+  it('is 0 when nothing agrees', () => {
+    expect(agreementStrength([], 0)).toBe(0);
+  });
+
+  it('is reported by evaluateRound without affecting convergence', () => {
+    const votes = [v('a', 1, 0.3, 1), v('b', 1, 0.3, 1), v('c', 1, 0.3, 1), v('d', 1, 0.3, 1)];
+    const res = evaluateRound(votes, { thetaV: 0.75, quorum: 2 / 3, holdBand: 0.5 });
+    expect(res.A).toBeCloseTo(0.3, 6);
+    expect(res.converged).toBe(true); // timid but unanimous still converges — A is a diagnostic
+  });
+});
+
+describe('effectiveVoices', () => {
+  const lookup = (table) => (x, y) => table[`${x}|${y}`] ?? table[`${y}|${x}`] ?? 0;
+
+  it('equals n for an independent coalition', () => {
+    expect(effectiveVoices(['a', 'b', 'c'], () => 0)).toBeCloseTo(3, 10);
+  });
+  it('collapses perfect echoes to one voice', () => {
+    expect(effectiveVoices(['a', 'b'], () => 1)).toBeCloseTo(1, 10);
+  });
+  it('interpolates for partial correlation', () => {
+    // pair at 0.5: Frobenius² = 2 + 0.5 = 2.5 -> N_eff = 4/2.5 = 1.6
+    expect(effectiveVoices(['a', 'b'], lookup({ 'a|b': 0.5 }))).toBeCloseTo(1.6, 10);
+  });
+  it('ignores negative correlation (hedging is not redundancy)', () => {
+    expect(effectiveVoices(['a', 'b'], () => -0.9)).toBeCloseTo(2, 10);
+  });
+  it('returns 0 for an empty coalition', () => {
+    expect(effectiveVoices([], () => 0)).toBe(0);
   });
 });
 
@@ -143,5 +211,38 @@ describe('evaluateRound', () => {
     expect(res.converged).toBe(false); // dispersion from the outlier may exceed θ_v
     // but quorum (3 of 4 agree on bull side) is met:
     expect(res.kappa).toBeGreaterThanOrEqual(0.75);
+  });
+
+  it('reports a full panel as not degraded', () => {
+    const votes = [v('a', 1, 0.9, 1), v('b', 1, 0.8, 1), v('c', 2, 0.9, 1), v('d', 0, 0.3, 1)];
+    const res = evaluateRound(votes, { thetaV: 0.5, quorum: 2 / 3, holdBand: 0.5 });
+    expect(res.nEff).toBe(4);
+    expect(res.degraded).toBe(false);
+  });
+
+  it('flags a round degraded when abstentions shrink the panel below the floor', () => {
+    // two abstains (conviction 0) leave only two weight-carrying votes
+    const votes = [v('a', 1, 0.9, 1), v('b', 1, 0.8, 1), v('c', 0, 0, 1), v('d', 0, 0, 0.9)];
+    const res = evaluateRound(votes, { thetaV: 0.5, quorum: 2 / 3, holdBand: 0.5 });
+    expect(res.nEff).toBe(2);
+    expect(res.degraded).toBe(true);
+    // degraded is a tag, not a gate — convergence is still evaluated normally
+    expect(res.converged).toBe(true);
+  });
+
+  it('honors a custom minPanel floor', () => {
+    const votes = [v('a', 1, 0.9, 1), v('b', 1, 0.8, 1), v('c', 0, 0, 1)];
+    expect(evaluateRound(votes, { thetaV: 0.5, quorum: 2 / 3, minPanel: 2 }).degraded).toBe(false);
+    expect(evaluateRound(votes, { thetaV: 0.5, quorum: 2 / 3, minPanel: 4 }).degraded).toBe(true);
+  });
+});
+
+describe('effectivePanel', () => {
+  it('counts only votes carrying weight (W·c > 0)', () => {
+    const votes = [v('a', 1, 0.9, 1), v('b', 0, 0, 1), v('c', -1, 0.5, 0.8)];
+    expect(effectivePanel(votes)).toBe(2);
+  });
+  it('is zero for an all-abstain round', () => {
+    expect(effectivePanel([v('a', 0, 0, 1), v('b', 0, 0, 1)])).toBe(0);
   });
 });

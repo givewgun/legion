@@ -8,6 +8,7 @@ export function createSocialAgent({
   provider,
   config,
   getProvider = null,
+  getMemory = null,
   logger = console,
 }) {
   return createAgent({
@@ -19,6 +20,7 @@ export function createSocialAgent({
     gunvest,
     provider,
     getProvider,
+    getMemory,
     logger,
   });
 }

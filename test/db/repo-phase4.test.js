@@ -30,21 +30,48 @@ describe('repo phase4', () => {
     expect(pool.calls[0].text.toLowerCase()).toContain('from legion.agent_reliability');
   });
 
-  it('upsertReliability upserts rho + sample_size + calibration', async () => {
+  it('upsertReliability upserts rho + sample_size + calibration + info', async () => {
     const pool = poolReturning([[]]);
     const repo = createRepo(createDb(pool));
-    await repo.upsertReliability('technical', 1.25, 12, 1.3);
+    await repo.upsertReliability('technical', 1.25, 12, 1.3, 0.6);
     const { text, params } = pool.calls[0];
     expect(text.toLowerCase()).toContain('insert into legion.agent_reliability');
     expect(text.toLowerCase()).toContain('on conflict');
-    expect(params).toEqual(['technical', 1.25, 12, 1.3]);
+    expect(params).toEqual(['technical', 1.25, 12, 1.3, 0.6]);
   });
 
-  it('upsertReliability defaults calibration to neutral 1.0', async () => {
+  it('upsertReliability defaults calibration and info to neutral 1.0', async () => {
     const pool = poolReturning([[]]);
     const repo = createRepo(createDb(pool));
     await repo.upsertReliability('technical', 1.25, 12);
-    expect(pool.calls[0].params).toEqual(['technical', 1.25, 12, 1.0]);
+    expect(pool.calls[0].params).toEqual(['technical', 1.25, 12, 1.0, 1.0]);
+  });
+
+  it('regime reliability round-trips per-(agent, regime) dials', async () => {
+    const pool = poolReturning([
+      [],
+      [{ agent_id: 'technical', rho: 1.4 }],
+      [{ agent_id: 'technical', calibration: 1.2 }],
+    ]);
+    const repo = createRepo(createDb(pool));
+    await repo.upsertRegimeReliability('technical', 'stressed', 1.4, 12, 1.2);
+    expect(pool.calls[0].text.toLowerCase()).toContain('legion.agent_regime_reliability');
+    expect(pool.calls[0].params).toEqual(['technical', 'stressed', 1.4, 1.2, 12]);
+    expect(await repo.getRegimeReliability('stressed')).toEqual({ technical: 1.4 });
+    expect(pool.calls[1].params).toEqual(['stressed']);
+    expect(await repo.getRegimeCalibration('stressed')).toEqual({ technical: 1.2 });
+  });
+
+  it('getAgentInfoFactors returns an agentId->info map', async () => {
+    const pool = poolReturning([
+      [
+        { agent_id: 'technical', info_factor: 1.0 },
+        { agent_id: 'social', info_factor: 0.25 },
+      ],
+    ]);
+    const repo = createRepo(createDb(pool));
+    const map = await repo.getAgentInfoFactors();
+    expect(map).toEqual({ technical: 1.0, social: 0.25 });
   });
 
   it('getAgentCalibration returns an agentId->calibration map', async () => {
@@ -89,7 +116,19 @@ describe('repo phase4', () => {
     const pool = poolReturning([[{ id: 78 }]]);
     const repo = createRepo(createDb(pool));
     await repo.addSignal(5, { symbol: 'NVDA', band: 'BUY', conviction: 0.7, plan: {} });
-    expect(pool.calls[0].params).toEqual([5, 'NVDA', 'BUY', 0.7, '{}', null, null, null, 5, null]);
+    expect(pool.calls[0].params).toEqual([
+      5,
+      'NVDA',
+      'BUY',
+      0.7,
+      '{}',
+      null,
+      null,
+      null,
+      5,
+      null,
+      null,
+    ]);
   });
 
   it('addSignalVotes bulk-inserts a snapshot row per vote', async () => {
@@ -196,5 +235,114 @@ describe('repo phase4', () => {
     const repo = createRepo(createDb(pool));
     expect(await repo.getSignalStance(1)).toBe(2);
     expect(await repo.getSignalStance(2)).toBe(0);
+  });
+});
+
+describe('getAgentTrackRecord (ADR 0025)', () => {
+  it('returns the overall directional hit count and recent same-symbol calls', async () => {
+    const pool = poolReturning([
+      [{ total: 6, hits: 4 }],
+      [
+        {
+          symbol: 'NVDA',
+          stance: 1,
+          conviction: 0.8,
+          outcome: 1,
+          forward_return: 0.04,
+          spy_return: 0.01,
+        },
+      ],
+    ]);
+    const repo = createRepo(createDb(pool));
+    const record = await repo.getAgentTrackRecord('technical', 'NVDA');
+    expect(record.overall).toEqual({ hits: 4, total: 6 });
+    expect(record.recent).toHaveLength(1);
+    const texts = pool.calls.map((c) => c.text.toLowerCase());
+    expect(texts[0]).toContain('stance <> 0');
+    expect(texts[1]).toContain('s.symbol = $2');
+    expect(pool.calls[1].params).toEqual(['technical', 'NVDA', 3]);
+  });
+
+  it('reports a zero record when nothing has resolved', async () => {
+    const pool = poolReturning([[], []]);
+    const repo = createRepo(createDb(pool));
+    const record = await repo.getAgentTrackRecord('news', 'MU');
+    expect(record.overall).toEqual({ hits: 0, total: 0 });
+    expect(record.recent).toEqual([]);
+  });
+});
+
+describe('agent lessons (ADR 0026)', () => {
+  it('getAgentMisses selects only directional misses, newest first', async () => {
+    const rows = [{ symbol: 'NVDA', stance: 2, conviction: 0.9, outcome: 0 }];
+    const pool = poolReturning([rows]);
+    const repo = createRepo(createDb(pool));
+    const out = await repo.getAgentMisses('technical', 10);
+    expect(out).toEqual(rows);
+    const text = pool.calls[0].text.toLowerCase();
+    expect(text).toContain('stance <> 0');
+    expect(text).toContain('sv.stance > 0 and s.outcome = 0');
+    expect(pool.calls[0].params).toEqual(['technical', 10]);
+  });
+
+  it('upsertAgentLesson and getAgentLesson round-trip', async () => {
+    const pool = poolReturning([[], [{ lesson: 'Avoid chasing momentum.' }], []]);
+    const repo = createRepo(createDb(pool));
+    await repo.upsertAgentLesson('technical', 'Avoid chasing momentum.', 4);
+    expect(pool.calls[0].text.toLowerCase()).toContain('legion.agent_lessons');
+    expect(pool.calls[0].params).toEqual(['technical', 'Avoid chasing momentum.', 4]);
+    expect(await repo.getAgentLesson('technical')).toBe('Avoid chasing momentum.');
+    expect(await repo.getAgentLesson('news')).toBeNull();
+  });
+});
+
+describe('learned prior (ADR 0027)', () => {
+  it('upsertLearnedPrior writes the long-window prior', async () => {
+    const pool = poolReturning([[]]);
+    const repo = createRepo(createDb(pool));
+    await repo.upsertLearnedPrior('news', 1.15);
+    expect(pool.calls[0].text.toLowerCase()).toContain('learned_prior');
+    expect(pool.calls[0].params).toEqual(['news', 1.15]);
+  });
+
+  it('leaderboard surfaces every learned dial', async () => {
+    const pool = poolReturning([
+      [
+        {
+          agent_id: 'technical',
+          rho: 1.2,
+          sample_size: 30,
+          calibration: 1.1,
+          info_factor: 1.0,
+          learned_prior: 1.15,
+          floored_streak: 0,
+          flagged: false,
+        },
+      ],
+    ]);
+    const repo = createRepo(createDb(pool));
+    expect(await repo.getReliabilityLeaderboard()).toEqual([
+      {
+        agentId: 'technical',
+        rho: 1.2,
+        sampleSize: 30,
+        calibration: 1.1,
+        infoFactor: 1.0,
+        learnedPrior: 1.15,
+        flooredStreak: 0,
+        flagged: false,
+      },
+    ]);
+  });
+});
+
+describe('roster watch repo (ADR 0028)', () => {
+  it('reads floored streaks and writes the flag', async () => {
+    const pool = poolReturning([[{ agent_id: 'social', floored_streak: 5 }], []]);
+    const repo = createRepo(createDb(pool));
+    expect(await repo.getFlooredStreaks()).toEqual({ social: 5 });
+    await repo.updateRosterFlag('social', 6, true);
+    expect(pool.calls[1].text.toLowerCase()).toContain('floored_streak');
+    expect(pool.calls[1].params).toEqual(['social', 6, true]);
   });
 });

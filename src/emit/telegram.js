@@ -21,10 +21,15 @@ export function formatSignal(signal) {
   const lines = [
     `*Legion signal: ${escapeMarkdown(signal.symbol)}*`,
     `Call: *${escapeMarkdown(signal.band)}* \\(conviction ${pct}%\\)`,
+  ];
+  if (signal.plan.degradedQuorum) {
+    lines.push(escapeMarkdown(`⚠ degraded panel: only ${signal.plan.nEff} agents carried weight`));
+  }
+  lines.push(
     '',
     ...signal.plan.rationales.map(
       (r) => `• _${escapeMarkdown(r.agentId)}_: ${escapeMarkdown(r.rationale)}`,
     ),
-  ];
+  );
   return lines.join('\n');
 }

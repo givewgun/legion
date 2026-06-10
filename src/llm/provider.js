@@ -1,11 +1,19 @@
 import { createOllamaProvider } from './ollama.js';
+import { createOpenAICompatProvider } from './openai.js';
 
-// Factory selecting an LLM provider by name. Add 'gemini'/'openai' here later;
-// the interface (generate({ system, prompt }) → string) stays stable.
+// Which config block feeds each provider type.
+const CFG_BLOCK = { local: 'ollama', openai: 'openai', gemini: 'gemini' };
+
+// Factory selecting an LLM provider by name. The interface
+// (generate({ system, prompt }) → string) stays stable across families.
 export function createProvider(name, cfg, fetchImpl = fetch) {
   switch (name) {
     case 'local':
       return createOllamaProvider(cfg.ollama, fetchImpl);
+    case 'openai':
+      return createOpenAICompatProvider({ name: 'openai', ...cfg.openai }, fetchImpl);
+    case 'gemini':
+      return createOpenAICompatProvider({ name: 'gemini', ...cfg.gemini }, fetchImpl);
     default:
       throw new Error(`Unknown LLM provider: ${name}`);
   }
@@ -17,16 +25,35 @@ export const DEFAULT_MODELS = {
   openai: 'gpt-4o-mini',
 };
 
+// Overlays an agent's sampling options (temperature, seed) onto every provider
+// config block. Distinct per-agent sampling decorrelates agents that share one
+// base model — the cheapest form of panel diversity — and the persona survives
+// a dashboard switch to another provider family.
+export function withAgentOptions(cfg, options) {
+  if (!options) return cfg;
+  const out = { ...cfg };
+  for (const block of Object.values(CFG_BLOCK)) {
+    out[block] = { ...out[block], options };
+  }
+  return out;
+}
+
+// Overlays a chosen model onto the config block the given provider type reads.
+export function withModel(cfg, type, model) {
+  const block = CFG_BLOCK[type];
+  return { ...cfg, [block]: { ...cfg[block], model: model ?? cfg[block]?.model } };
+}
+
 // Maps a stored { provider, model } config to a concrete provider instance.
 // `factory({ type, model })` is injectable for tests; the default routes through
 // createProvider, overlaying the chosen model onto the provider's config block.
 // Live callers should pass a cfg-aware factory so the provider gets full config
-// (e.g. the Ollama URL). Unknown provider names fall back to 'local'.
+// (e.g. the Ollama URL or an API key). Unknown provider names fall back to 'local'.
 export function resolveProvider({ provider, model } = {}, factory = defaultFactory) {
   const type = DEFAULT_MODELS[provider] ? provider : 'local';
   return factory({ type, model: model ?? DEFAULT_MODELS[type] });
 }
 
 function defaultFactory({ type, model }) {
-  return createProvider(type, { ollama: { model } });
+  return createProvider(type, withModel({}, type, model));
 }

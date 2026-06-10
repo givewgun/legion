@@ -10,6 +10,7 @@ describe('loadConfig', () => {
       maxRounds: 3,
       holdBand: 0.5,
       priorQuorum: 0.3333,
+      minPanel: 3,
     });
     expect(cfg.gunvestApiUrl).toBe('http://localhost:3001');
     expect(cfg.natsUrl).toBe('nats://localhost:4222');
@@ -35,6 +36,7 @@ describe('loadConfig', () => {
       CONSENSUS_MAX_ROUNDS: '5',
       CONSENSUS_HOLD_BAND: '0.4',
       CONSENSUS_PRIOR_QUORUM: '0.25',
+      CONSENSUS_MIN_PANEL: '2',
       GUNVEST_API_URL: 'http://api:3001',
       NATS_URL: 'nats://bus:4222',
       OLLAMA_URL: 'http://ollama:11434',
@@ -54,6 +56,7 @@ describe('loadConfig', () => {
       maxRounds: 5,
       holdBand: 0.4,
       priorQuorum: 0.25,
+      minPanel: 2,
     });
     expect(cfg.gunvestApiUrl).toBe('http://api:3001');
     expect(cfg.natsUrl).toBe('nats://bus:4222');

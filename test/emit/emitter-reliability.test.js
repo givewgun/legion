@@ -7,8 +7,10 @@ function buildRepo({
   calibration = {},
   correlations = {},
   reliability = { technical: 1.5, news: 0.5 },
+  regimeReliability = null,
+  regimeCalibration = null,
 } = {}) {
-  const calls = { signals: [], signalVotes: [], roundVotes: [], rounds: [] };
+  const calls = { signals: [], signalVotes: [], roundVotes: [], rounds: [], regimeReads: [] };
   return {
     calls,
     createCycle: async () => 1,
@@ -26,6 +28,15 @@ function buildRepo({
     getAllReliability: async () => reliability,
     getAgentCalibration: async () => calibration,
     getAgentCorrelations: async () => correlations,
+    ...(regimeReliability && {
+      getRegimeReliability: async (regime) => {
+        calls.regimeReads.push(regime);
+        return regimeReliability[regime] ?? {};
+      },
+    }),
+    ...(regimeCalibration && {
+      getRegimeCalibration: async (regime) => regimeCalibration[regime] ?? {},
+    }),
   };
 }
 
@@ -143,6 +154,65 @@ describe('emitter reliability', () => {
     expect(repo.calls.rounds[0].kappa).toBeLessThan(2 / 3);
     expect(repo.calls.rounds[0].converged).toBe(false);
     expect(repo.calls.signals[0].band).toBe('NO_CONSENSUS');
+  });
+});
+
+describe('emitter regime conditioning (ADR 0023)', () => {
+  function start({ repo, gunvest }) {
+    const bus = createMemoryBus();
+    createEmitter({
+      bus,
+      repo,
+      telegram: async () => {},
+      consensus: { maxRounds: 3, thetaV: 5, quorum: 0.1, holdBand: 0.5 },
+      expectedAgents: 4,
+      riskEnabled: false,
+      gunvest,
+      horizonDays: 5,
+      clock: () => new Date('2026-06-04T00:00:00Z'),
+      logger: { info() {}, error() {} },
+    }).start();
+    return bus;
+  }
+
+  it('overlays regime dials over the unconditional ones and stamps the signal', async () => {
+    const repo = buildRepo({
+      reliability: { technical: 1.0 },
+      regimeReliability: { stressed: { technical: 1.5 } },
+    });
+    const gunvest = {
+      getPrice: async () => ({ price: 100 }),
+      getMacro: async () => ({ vix: 28 }), // stressed
+    };
+    const bus = start({ repo, gunvest });
+    for (const vote of votes) {
+      bus.publishJSON(voteSubject('NVDA', 1), { cycleId: 1, symbol: 'NVDA', round: 1, vote });
+    }
+    await vi.waitFor(() => expect(repo.calls.signals).toHaveLength(1));
+
+    expect(repo.calls.regimeReads).toContain('stressed');
+    // technical's snapshot weight reflects the stressed-regime rho, not the global 1.0
+    const tech = repo.calls.signalVotes[0].votes.find((v) => v.agentId === 'technical');
+    expect(tech.weight).toBeCloseTo(1.5);
+    expect(repo.calls.signals[0].regime).toBe('stressed');
+  });
+
+  it('falls back to unconditional dials when the regime is unknown', async () => {
+    const repo = buildRepo({
+      reliability: { technical: 1.2 },
+      regimeReliability: { stressed: { technical: 1.5 } },
+    });
+    const gunvest = { getPrice: async () => ({ price: 100 }) }; // no getMacro -> unknown
+    const bus = start({ repo, gunvest });
+    for (const vote of votes) {
+      bus.publishJSON(voteSubject('NVDA', 1), { cycleId: 1, symbol: 'NVDA', round: 1, vote });
+    }
+    await vi.waitFor(() => expect(repo.calls.signals).toHaveLength(1));
+
+    expect(repo.calls.regimeReads).toHaveLength(0);
+    const tech = repo.calls.signalVotes[0].votes.find((v) => v.agentId === 'technical');
+    expect(tech.weight).toBeCloseTo(1.2);
+    expect(repo.calls.signals[0].regime).toBe('unknown');
   });
 });
 

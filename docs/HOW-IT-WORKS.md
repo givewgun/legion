@@ -120,6 +120,11 @@ Every box is a **separate process** that talks only over a message bus ([NATS](h
 No shared memory, no coordinator — any agent can crash and restart without anyone else caring.
 That's what "leaderless" buys you in practice.
 
+The emitter itself is crash-recoverable too (ADR 0024): every vote and risk constraint it
+buffers is mirrored to a pending table, and on restart it replays anything still in flight —
+rebuilding round buffers, restoring the herding guard's round-1 memory, and finishing any round
+that completed while it was down. A restart mid-debate no longer silently drops the cycle.
+
 > **Key idea — state-machine replication.** Because every node sees the same votes and runs the
 > *same* `aggregate.js`, the consensus is reproducible: you can hand the votes to any machine and
 > get the identical answer. There is no privileged "decider" whose word you have to trust.
@@ -242,12 +247,13 @@ A round converges **iff both** hold:
 
 ```
 κ ≥ quorum     (default 2/3 — a Byzantine-style supermajority is on the same side)
-V ≤ θ_v        (default 0.5 — dispersion is low enough)
+V ≤ θ_v        (default 0.75 — dispersion is low enough)
 ```
 
-([`evaluateRound`](../src/consensus/aggregate.js) → `converged = kappa >= quorum && V <= thetaV`.)
+([`evaluateRound`](../src/consensus/aggregate.js) → `converged = kappa >= quorum && V <= thetaV`.
+θ_v was originally 0.5 (ADR 0001) and later tuned to 0.75 after live analysis.)
 
-**Back to the example:** `κ = 0.84 ≥ 0.67` ✅ **but** `V = 1.19 > 0.5` ❌ → **not converged.** The
+**Back to the example:** `κ = 0.84 ≥ 0.67` ✅ **but** `V = 1.19 > 0.75` ❌ → **not converged.** The
 contrarian's confident dissent keeps the spread too high. The supermajority alone isn't enough;
 the round does *not* emit. It goes another round.
 
@@ -257,6 +263,12 @@ With `N` voting agents, the fault tolerance is `f = ⌊(N−1)/3⌋`. For the la
 `f = 1`: a **single** outlier agent can neither *force* a decision nor *block* one. Legion isn't
 defending against lying machines (the agents are cooperative and co-located) — it just borrows
 BFT's robustness shape: no leader, supermajority, single-outlier tolerance. (ADR 0001.)
+
+One honest caveat: an **abstaining** agent (conviction 0) carries zero weight, so it drops out of
+every sum — with one abstention the effective panel is `N = 3`, where `f = 0` and a single
+dissenter *can* block. Rounds whose effective panel falls below `CONSENSUS_MIN_PANEL` (default 3)
+are therefore tagged **`degraded`** on the signal plan and flagged in the Telegram message: the
+call still emits, but the single-outlier guarantee no longer backs it.
 
 ### Does convergence require unanimity? No.
 
@@ -280,7 +292,7 @@ V = (0.80·0.21² + 1.08·0.21² + 0.48·0.21² + 0.27·1.79²) / 2.63 ≈ 0.37
 κ = (0.80 + 1.08 + 0.48) / 2.63 ≈ 0.90        # the three bulls
 ```
 
-`κ = 0.90 ≥ 0.67` ✅ **and** `V = 0.37 ≤ 0.5` ✅ → **converged as BUY**, *while the contrarian is
+`κ = 0.90 ≥ 0.67` ✅ **and** `V = 0.37 ≤ 0.75` ✅ → **converged as BUY**, *while the contrarian is
 still voting SELL.* At conviction 0.3 the dissenter is only ~10% of the weight: heard, but not
 enough to break quorum or blow up dispersion.
 
@@ -346,7 +358,7 @@ V = (0.90·0.31² + 0.96·0.31² + 0.48·0.69² + 0.36·0.69²) / 2.70 ≈ 0.21
 κ = 2.70 / 2.70 = 1.00        # all four are now on the + side
 ```
 
-`κ = 1.00 ≥ 0.67` ✅ **and** `V = 0.21 ≤ 0.5` ✅ → **converged.** With the lone dissenter gone the
+`κ = 1.00 ≥ 0.67` ✅ **and** `V = 0.21 ≤ 0.75` ✅ → **converged.** With the lone dissenter gone the
 spread collapses, and the call emits as **STRONG_BUY**, conviction `min(1.69/2, 1) ≈ 0.84`.
 
 **Why this isn't herding (§7b):** the convergence appears only in round 2, so the anti-herding
@@ -369,12 +381,13 @@ enough resolved history — so a fresh deploy behaves like the clean formulas in
 **🧒 ELI5:** If two specialists always parrot each other, their agreement isn't *two* opinions —
 it's one opinion said twice. We discount it.
 
-**🔢** In `κ`, each agreeing vote is divided by the **correlation mass** it shares with the rest of
-the agreeing coalition (`mass = 1 + Σ max(0, corr)`). So `k` historically co-moving agents collapse
-toward **one** independent confirmation instead of counting `k` times.
-([`directionalQuorum`](../src/consensus/aggregate.js); correlations from
-[`correlation.js`](../src/consensus/correlation.js) — Pearson over each pair's co-rated signals,
-defaulting to `0`/independent until ≥ 5 shared signals.)
+**🔢** In `κ`, the agreeing coalition's weight is scaled by **`N_eff / n`**, where `N_eff` is the
+**effective number of independent voices** — the participation ratio `n² / Σᵢⱼ corr²ᵢⱼ` of the
+coalition's correlation matrix (ADR 0020). All independent → no discount; `k` perfect echoes
+collapse to **one** confirmation; partial correlation interpolates (three agents at pairwise 0.5
+count as two voices). ([`effectiveVoices` / `directionalQuorum`](../src/consensus/aggregate.js);
+correlations from [`correlation.js`](../src/consensus/correlation.js) — Pearson over each pair's
+co-rated signals, defaulting to `0`/independent until ≥ 5 shared signals.)
 
 ### 7b. Anti-herding guard — caving ≠ agreeing (ADR 0016)
 
@@ -407,13 +420,19 @@ turn a SELL into a BUY. The panel decides *what*; risk only limits *how much*.
 
 ### The rules (deterministic, no LLM — ADR 0011)
 
-[`computeConstraint`](../src/risk/rules.js) reads VIX and the day's move and returns a cap:
+[`computeConstraint`](../src/risk/rules.js) reads VIX, the day's move, and the ticker's own
+realized daily volatility, and returns a cap:
 
 ```
 VIX ≥ 30  → cap conviction at 0.5     ("elevated VIX")
 VIX ≥ 40  → block new longs            ("extreme VIX")
-|daily move| ≥ 8%  → cap conviction at 0.4   ("outsized move")
+|daily move| ≥ 3σ of this name's daily vol → cap conviction at 0.4   ("outsized move", ADR 0022)
+           (falls back to a flat 8% when vol data is unavailable)
 ```
+
+The sigma normalization matters: a flat 8% is a five-sigma event in a utility (the brake
+should have fired long before) and routine noise in a meme stock (the brake fired on a
+normal day).
 
 [`applyRiskConstraint`](../src/risk/apply.js) then, **only on a converged signal**:
 
@@ -444,6 +463,12 @@ conviction = min(|S| / 2, 1)        # the [−2,2] magnitude normalized to [0,1]
 
 A non-converged final round emits **`NO_CONSENSUS`** (conviction 0). The signal carries the trade
 plan, every agent's rationale, and `S / V / κ` so the dashboard can replay the whole debate.
+
+Each round also records a fourth diagnostic, **agreement strength `A`** — the weighted mean
+conviction of the agreeing side. `κ` and `V` cannot tell a timid unanimous panel (everyone at
+conviction 0.3) from a confident one (everyone at 0.95); `A` can. It is **measured, not gated
+on** — once enough signals resolve, the data can answer whether low-`A` consensus underperforms
+before any gate is added (the same instrument-then-gate discipline as the other guards).
 
 ---
 
@@ -480,13 +505,21 @@ Both live in [`src/consensus/reliability.js`](../src/consensus/reliability.js) a
 [`recomputeReliability`](../src/reliability/update.js).
 
 **ρ — reliability, from the Brier score.** Each resolved forecast is turned into a probability
-`p = clamp(0.5 + s·c/4, 0, 1)` and scored against the binary outcome with the **Brier score**
-`(p − outcome)²` (lower is better; `0.25` is a coin flip). The agent's mean Brier maps to ρ:
+`p = clamp(0.5 + s·c/4, 0, 1)` and scored with the **Brier score** `(p − outcome)²` against a
+**graded outcome** (ADR 0018): `g = 0.5 + 0.5·tanh(alpha / 0.05)` where `alpha` is the excess
+return vs SPY. Beating SPY by 20% and by 1bp are no longer the same outcome — a big confident
+win scores better than a thin one, and a large confident miss costs more than a rounding-error
+miss. (Rows resolved before returns were captured fall back to the binary outcome.)
+
+The agent's decay-weighted mean Brier maps to ρ via the **skill score** against an
+uninformative `p = 0.5` forecaster scored over the *same* outcomes (so neutrality is exact by
+construction; with binary outcomes this reduces to the old `0.25 − meanBrier` formula):
 
 ```
-ρ = clamp( 1 + gain · (0.25 − meanBrier),  0.5, 1.5 )
-        gain = 2  if better than chance (edge ≥ 0)     ← trust earned slowly
-        gain = 4  if worse than chance (edge < 0)      ← trust lost twice as fast
+edge = 0.25 · (1 − meanBrier / baselineBrier)
+ρ    = clamp( 1 + gain · edge,  0.5, 1.5 )
+        gain = 2  if better than the baseline (edge ≥ 0)   ← trust earned slowly
+        gain = 4  if worse than the baseline (edge < 0)    ← trust lost twice as fast
 ```
 
 The **asymmetry** (lose twice as fast as you gain) is deliberate: acting on a bad call costs real
@@ -499,7 +532,7 @@ capital (ADR 0017). ρ is clamped to `[0.5, 1.5]` and scales the prior: `W_i = w
 `c'_i = c_i · cal_i` — separate from ρ, so a loud-but-uninformative voice can't buy influence by
 always shouting (ADR 0014).
 
-### Cold start & recency
+### Cold start, recency & shrinkage
 
 - **Cold start:** both dials sit at the neutral `1.0` until an agent has at least `MIN_RESOLVED = 5`
   resolved forecasts. So a fresh deploy behaves exactly like the unweighted formulas in §4.
@@ -507,6 +540,37 @@ always shouting (ADR 0014).
 - **Recency decay:** within that window, forecasts are weighted by a `HALF_LIFE = 20` exponential
   decay (a forecast 20 slots older counts half as much), so the panel can track a regime shift
   instead of being anchored to stale evidence (ADR 0017).
+- **Shrinkage (ADR 0019):** every learned edge is scaled by `ess/(ess + 10)` — `ess` being the
+  effective sample size of the decayed window — before it moves a dial. A 5-signal hot streak
+  lands near 1.19, not the 1.5 cap; the extremes are earned by a *consistent* record, not a week.
+- **Combined cap (ADR 0019):** the product `ρ·cal` is bounded to `[0.4, 2.0]` (by trimming
+  calibration, never ρ) so the two dials can't compound one streaky agent into panel dominance.
+- **Information check (ADR 0021):** a near-constant voter (zero stance variance — a stuck model
+  or flatlined feed) is invisible to Brier and correlation alike, yet votes at full weight. Its
+  recent stance variance maps to an `info` factor ∈ [0.25, 1] that multiplies its conviction
+  alongside calibration, until its stances move again.
+- **Regime conditioning (ADR 0023):** each signal is stamped with the market regime it fired in
+  (`calm`/`stressed`, from VIX), and the learner grades each agent **per regime** alongside the
+  unconditional dials. At cycle time the emitter overlays the current regime's dials where a
+  deep-enough bucket exists — so the Contrarian can be trusted more at crowded extremes and less
+  mid-range, instead of carrying one averaged number everywhere. Unknown regime ⇒ unconditional
+  dials, bit-for-bit.
+
+### The agents remember being wrong (ADR 0025)
+
+The dials above turn each agent's *volume*; memory changes its *reasoning*. Before voting,
+every agent is shown its own graded track record — overall directional hit rate over its last
+20 resolved calls, plus its last 3 resolved calls on this very ticker with the realized alpha
+("BUY at conviction 0.8 → missed, −3.1% vs SPY"). The record is built from the same verified
+outcomes the Brier loop grades, never self-assessment, and an agent with no resolved history
+gets an unchanged prompt. So an agent that has been confidently wrong in this exact spot
+*sees that* while forming today's conviction, instead of merely being played quieter.
+
+On top of the raw record, an optional **meta-reflection pass** (ADR 0026, `LEGION_REFLECTION=true`)
+runs on the reliability cron: each agent's recent misses are distilled — by the LLM — into **one
+short lesson** ("stop chasing extended momentum into elevated VIX"), persisted and prepended to
+its future prompts. Grounded only in graded misses, capped at two sentences, overwritten each
+pass, and off by default: the gestalt editing its own reasoning, on a leash.
 
 ### Where the discounts plug back in
 
@@ -547,6 +611,10 @@ Measuring all legs from a **shared "entered at signal time" base**, pinned to th
 (`resolve_after`, *not* the cron's fire time), keeps two signals with the same horizon comparable —
 so their Brier scores mean the same thing. Signals from before benchmark capture fall back to a
 consistent close-to-close window. That `outcome` is exactly what feeds the Brier loop in §10.
+
+> **QQQ is display-only.** The QQQ entry price and return are captured alongside SPY and stored,
+> but **only SPY scores `outcome`** — one benchmark keeps every Brier score comparable (ADR 0008).
+> QQQ exists for the dashboard's context, not for learning.
 
 ### The daily cron, in order
 
@@ -637,9 +705,10 @@ The knobs you're most likely to touch. Consensus thresholds are env vars
 | Dial | Default | What it does | Where |
 |---|---|---|---|
 | `CONSENSUS_QUORUM` | `0.6667` | min `κ` to converge (2/3 supermajority) | env |
-| `CONSENSUS_THETA_V` | `0.5` | max dispersion `V` to converge | env |
+| `CONSENSUS_THETA_V` | `0.75` | max dispersion `V` to converge | env |
 | `CONSENSUS_HOLD_BAND` | `0.5` | `|S| < this` ⇒ HOLD (and HOLD voters count in κ) | env |
 | `CONSENSUS_MAX_ROUNDS` | `3` | round cap before `NO_CONSENSUS` | env |
+| `CONSENSUS_MIN_PANEL` | `3` | effective-panel floor; below it the round is tagged `degraded` | env |
 | `LEGION_EXPECTED_AGENTS` | `4` | votes the emitter waits for per round | env |
 | `LEGION_RISK_ENABLED` | `true` | require the risk constraint before finalizing | env |
 | `MIN_RESOLVED` | `5` | resolved forecasts before ρ/cal leave neutral | code |
@@ -647,6 +716,13 @@ The knobs you're most likely to touch. Consensus thresholds are env vars
 | `HALF_LIFE` | `20` | recency half-life (in forecasts) | code |
 | ρ band / gains | `[0.5, 1.5]`, up `2` / down `4` | reliability clamp + asymmetric slopes | code |
 | `cal` band | `[0.5, 1.5]` | calibration clamp | code |
+| `ALPHA_SCALE` | `0.05` | alpha at which a graded outcome saturates (ADR 0018) | code |
+| `SHRINK_K` | `10` | evidence shrinkage pseudo-count (ADR 0019) | code |
+| combined cap | `[0.4, 2.0]` | bound on ρ·cal per agent (ADR 0019) | code |
+| info factor | ref var `0.25`, floor `0.25` | constant-voter conviction discount (ADR 0021) | code |
+| regime split | VIX `20` | calm/stressed boundary (ADR 0023) | code |
+| roster watch | eps `0.55`, streak `6` | floored-rho review flag (ADR 0028) | code |
+| `LEGION_REFLECTION` | `false` | per-agent lesson distillation on the cron (ADR 0026) | env |
 | `LEGION_CRON` | `0 */4 * * *` | how often a cycle kicks (every 4h) | env |
 
 ---

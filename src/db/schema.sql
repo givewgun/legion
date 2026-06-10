@@ -145,3 +145,76 @@ CREATE TABLE IF NOT EXISTS legion.agent_correlation (
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (agent_a, agent_b)
 );
+
+-- ── Phase 7: consensus diagnostics ───────────────────────────────────────────
+-- Agreement strength A — prior-weighted mean conviction of the agreeing side
+-- (IMPROVEMENT-PLAN §2.2). Measured per round, not gated on; collected so the
+-- resolver data can answer whether low-A converged signals underperform before
+-- any gate is added.
+ALTER TABLE legion.rounds ADD COLUMN IF NOT EXISTS agreement DOUBLE PRECISION;
+
+-- Information factor (ADR 0021): conviction discount for near-constant voters
+-- whose stance variance carries no signal. Neutral 1.0; floors at 0.25.
+ALTER TABLE legion.agent_reliability ADD COLUMN IF NOT EXISTS info_factor DOUBLE PRECISION NOT NULL DEFAULT 1.0;
+
+-- ── Phase 8: regime-conditional reliability (ADR 0023) ───────────────────────
+-- The market regime captured when the signal fired (calm | stressed | unknown,
+-- from VIX). Lets the learner grade each agent per regime instead of averaging
+-- its edge away.
+ALTER TABLE legion.signals ADD COLUMN IF NOT EXISTS regime TEXT;
+
+-- Per-(agent, regime) dials, recomputed by the reliability cron alongside the
+-- unconditional ones. Rows exist only for buckets with >= MIN_RESOLVED resolved
+-- forecasts, so the emitter's overlay falls back to the unconditional dials for
+-- thin buckets.
+CREATE TABLE IF NOT EXISTS legion.agent_regime_reliability (
+  agent_id     TEXT NOT NULL,
+  regime       TEXT NOT NULL,
+  rho          DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+  calibration  DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+  sample_size  INTEGER NOT NULL DEFAULT 0,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (agent_id, regime)
+);
+
+-- ── Phase 9: emitter crash recovery (ADR 0024) ───────────────────────────────
+-- Mirror of the emitter's in-memory round buffers. Rows live only while a cycle
+-- is in flight: deleted on finalize, aged out past the stale-entry horizon.
+CREATE TABLE IF NOT EXISTS legion.pending_votes (
+  cycle_id    BIGINT NOT NULL,
+  round       INT NOT NULL,
+  symbol      TEXT NOT NULL,
+  agent_id    TEXT NOT NULL,
+  vote        JSONB NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (cycle_id, round, agent_id)
+);
+
+CREATE TABLE IF NOT EXISTS legion.pending_constraints (
+  cycle_id    BIGINT NOT NULL,
+  round       INT NOT NULL,
+  symbol      TEXT NOT NULL,
+  payload     JSONB NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (cycle_id, round)
+);
+
+-- ── Phase 10: meta-reflection lessons (ADR 0026) ─────────────────────────────
+-- One distilled lesson per agent, written by the reflection pass from its
+-- recent missed calls and injected into the agent's future prompts.
+CREATE TABLE IF NOT EXISTS legion.agent_lessons (
+  agent_id     TEXT PRIMARY KEY,
+  lesson       TEXT NOT NULL,
+  sample_size  INTEGER NOT NULL DEFAULT 0,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Learned domain prior (ADR 0027): long-uniform-window skill score — the number
+-- the hand-set w_i is guessing at. Measured and surfaced; not yet applied.
+ALTER TABLE legion.agent_reliability ADD COLUMN IF NOT EXISTS learned_prior DOUBLE PRECISION NOT NULL DEFAULT 1.0;
+
+-- Roster watch (ADR 0028): consecutive recomputes an agent has spent pinned at
+-- the rho floor, and the review flag raised when the streak persists. The
+-- system never auto-retires — a human decides on the Agents tab.
+ALTER TABLE legion.agent_reliability ADD COLUMN IF NOT EXISTS floored_streak INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE legion.agent_reliability ADD COLUMN IF NOT EXISTS flagged BOOLEAN NOT NULL DEFAULT false;

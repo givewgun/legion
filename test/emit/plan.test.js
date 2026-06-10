@@ -21,4 +21,33 @@ describe('buildSignal', () => {
     expect(sig.band).toBe('NO_CONSENSUS');
     expect(sig.conviction).toBe(0);
   });
+
+  it('tags the plan when the effective panel was degraded', () => {
+    const evalResult = {
+      S: 1.0,
+      V: 0.1,
+      kappa: 1,
+      converged: true,
+      band: 'BUY',
+      nEff: 2,
+      degraded: true,
+    };
+    const sig = buildSignal(evalResult, { symbol: 'NVDA', votes });
+    expect(sig.plan.degradedQuorum).toBe(true);
+    expect(sig.plan.nEff).toBe(2);
+  });
+
+  it('omits the degraded tag on a full panel', () => {
+    const evalResult = {
+      S: 1.0,
+      V: 0.1,
+      kappa: 1,
+      converged: true,
+      band: 'BUY',
+      nEff: 4,
+      degraded: false,
+    };
+    const sig = buildSignal(evalResult, { symbol: 'NVDA', votes });
+    expect(sig.plan.degradedQuorum).toBeUndefined();
+  });
 });

@@ -21,8 +21,21 @@ describe('createOllamaProvider', () => {
     expect(body.system).toBe('You are a trader');
     expect(body.prompt).toBe('Rate NVDA');
     expect(body.stream).toBe(false);
+    // no sampling options configured -> none sent
+    expect(body.options).toBeUndefined();
     // new options: signal must be present; dispatcher optional
     expect(opts.signal).toBeDefined();
+  });
+
+  it('passes per-agent sampling options (temperature, seed) to the API', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ response: 'ok' }) }));
+    const provider = createOllamaProvider(
+      { url: 'http://o:11434', model: 'm', options: { temperature: 0.2, seed: 11 } },
+      fetchMock,
+    );
+    await provider.generate({ system: 's', prompt: 'p' });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.options).toEqual({ temperature: 0.2, seed: 11 });
   });
 
   it('throws on a non-ok response', async () => {
@@ -55,7 +68,9 @@ describe('createOllamaProvider', () => {
       { url: 'http://o:11434', model: 'm', maxConcurrent: 1, retries: 0 },
       fetchMock,
     );
-    await Promise.all(Array.from({ length: 8 }, () => provider.generate({ system: 's', prompt: 'p' })));
+    await Promise.all(
+      Array.from({ length: 8 }, () => provider.generate({ system: 's', prompt: 'p' })),
+    );
     expect(peak).toBeLessThanOrEqual(1);
   });
 
@@ -120,9 +135,7 @@ describe('createOllamaProvider', () => {
       { url: 'http://o:11434', model: 'm', timeoutMs: 10, retries: 3, maxConcurrent: 1 },
       fetchMock,
     );
-    await expect(provider.generate({ system: 's', prompt: 'p' })).rejects.toThrow(
-      /timed out/i,
-    );
+    await expect(provider.generate({ system: 's', prompt: 'p' })).rejects.toThrow(/timed out/i);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

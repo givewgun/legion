@@ -19,7 +19,8 @@ const telegram = (text) => sendTelegram(token, chatId, text);
 const expectedAgents = Number(process.env.LEGION_EXPECTED_AGENTS || '4');
 const riskEnabled = process.env.LEGION_RISK_ENABLED !== 'false';
 
-createEmitter({
+// start() resolves once pre-crash pending state has been replayed (ADR 0024).
+await createEmitter({
   bus,
   repo,
   telegram,

@@ -18,11 +18,11 @@ export function createRepo(db) {
       return row.id;
     },
 
-    async addRound(cycleId, roundNo, { S, V, kappa, converged }) {
+    async addRound(cycleId, roundNo, { S, V, kappa, A = null, converged }) {
       const row = await db.queryOne(
-        `INSERT INTO legion.rounds (cycle_id, round_no, s_score, dispersion, quorum, converged)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        [cycleId, roundNo, S, V, kappa, converged],
+        `INSERT INTO legion.rounds (cycle_id, round_no, s_score, dispersion, quorum, agreement, converged)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        [cycleId, roundNo, S, V, kappa, A, converged],
       );
       return row.id;
     },
@@ -40,8 +40,8 @@ export function createRepo(db) {
       const row = await db.queryOne(
         `INSERT INTO legion.signals
            (cycle_id, symbol, band, conviction, plan, entry_price, spy_entry_price,
-            qqq_entry_price, horizon_days, resolve_after)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            qqq_entry_price, horizon_days, resolve_after, regime)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING id`,
         [
           cycleId,
@@ -54,6 +54,7 @@ export function createRepo(db) {
           signal.qqqEntryPrice ?? null,
           signal.horizonDays ?? 5,
           signal.resolveAfter ?? null,
+          signal.regime ?? null,
         ],
       );
       return row.id;
@@ -85,14 +86,21 @@ export function createRepo(db) {
       return Object.fromEntries(rows.map((r) => [r.agent_id, r.calibration]));
     },
 
-    async upsertReliability(agentId, rho, sampleSize, calibration = 1.0) {
+    // Information factor (ADR 0021): conviction discount for near-constant voters.
+    async getAgentInfoFactors() {
+      const rows = await db.query(`SELECT agent_id, info_factor FROM legion.agent_reliability`);
+      return Object.fromEntries(rows.map((r) => [r.agent_id, r.info_factor]));
+    },
+
+    async upsertReliability(agentId, rho, sampleSize, calibration = 1.0, infoFactor = 1.0) {
       await db.query(
-        `INSERT INTO legion.agent_reliability (agent_id, rho, sample_size, calibration, updated_at)
-         VALUES ($1, $2, $3, $4, now())
+        `INSERT INTO legion.agent_reliability (agent_id, rho, sample_size, calibration, info_factor, updated_at)
+         VALUES ($1, $2, $3, $4, $5, now())
          ON CONFLICT (agent_id) DO UPDATE
            SET rho = EXCLUDED.rho, sample_size = EXCLUDED.sample_size,
-               calibration = EXCLUDED.calibration, updated_at = now()`,
-        [agentId, rho, sampleSize, calibration],
+               calibration = EXCLUDED.calibration, info_factor = EXCLUDED.info_factor,
+               updated_at = now()`,
+        [agentId, rho, sampleSize, calibration, infoFactor],
       );
     },
 
@@ -139,11 +147,48 @@ export function createRepo(db) {
       return map;
     },
 
+    // Long-window learned prior (ADR 0027) — measured, not yet applied.
+    async upsertLearnedPrior(agentId, learnedPrior) {
+      await db.query(
+        `INSERT INTO legion.agent_reliability (agent_id, learned_prior, updated_at)
+         VALUES ($1, $2, now())
+         ON CONFLICT (agent_id) DO UPDATE
+           SET learned_prior = EXCLUDED.learned_prior, updated_at = now()`,
+        [agentId, learnedPrior],
+      );
+    },
+
+    // Roster watch (ADR 0028): how long each agent has sat at the rho floor.
+    async getFlooredStreaks() {
+      const rows = await db.query(`SELECT agent_id, floored_streak FROM legion.agent_reliability`);
+      return Object.fromEntries(rows.map((r) => [r.agent_id, r.floored_streak]));
+    },
+
+    async updateRosterFlag(agentId, flooredStreak, flagged) {
+      await db.query(
+        `UPDATE legion.agent_reliability
+            SET floored_streak = $2, flagged = $3, updated_at = now()
+          WHERE agent_id = $1`,
+        [agentId, flooredStreak, flagged],
+      );
+    },
+
     async getReliabilityLeaderboard() {
       const rows = await db.query(
-        `SELECT agent_id, rho, sample_size FROM legion.agent_reliability ORDER BY rho DESC`,
+        `SELECT agent_id, rho, sample_size, calibration, info_factor, learned_prior,
+                floored_streak, flagged
+           FROM legion.agent_reliability ORDER BY rho DESC`,
       );
-      return rows.map((r) => ({ agentId: r.agent_id, rho: r.rho, sampleSize: r.sample_size }));
+      return rows.map((r) => ({
+        agentId: r.agent_id,
+        rho: r.rho,
+        sampleSize: r.sample_size,
+        calibration: r.calibration,
+        infoFactor: r.info_factor,
+        learnedPrior: r.learned_prior,
+        flooredStreak: r.floored_streak,
+        flagged: r.flagged,
+      }));
     },
 
     async listUnresolvedSignals(now) {
@@ -172,8 +217,13 @@ export function createRepo(db) {
     },
 
     async getResolvedForecasts(limit) {
+      // forward_return/spy_return feed the magnitude-aware graded outcome
+      // (ADR 0018); regime feeds the per-regime buckets (ADR 0023). Rows
+      // resolved before those columns existed fall back to the binary outcome
+      // and the unconditional dials.
       return db.query(
-        `SELECT sv.agent_id, sv.stance, sv.conviction, s.outcome
+        `SELECT sv.agent_id, sv.stance, sv.conviction, s.outcome,
+                s.forward_return, s.spy_return, s.regime
            FROM legion.signal_votes sv
            JOIN legion.signals s ON s.id = sv.signal_id
           WHERE s.resolved = true AND s.outcome IS NOT NULL
@@ -181,6 +231,105 @@ export function createRepo(db) {
           LIMIT $1`,
         [limit],
       );
+    },
+
+    // Per-(agent, regime) dials (ADR 0023). Rows exist only for buckets deep
+    // enough to learn from, so these maps overlay the unconditional ones.
+    async getRegimeReliability(regime) {
+      const rows = await db.query(
+        `SELECT agent_id, rho FROM legion.agent_regime_reliability WHERE regime = $1`,
+        [regime],
+      );
+      return Object.fromEntries(rows.map((r) => [r.agent_id, r.rho]));
+    },
+
+    async getRegimeCalibration(regime) {
+      const rows = await db.query(
+        `SELECT agent_id, calibration FROM legion.agent_regime_reliability WHERE regime = $1`,
+        [regime],
+      );
+      return Object.fromEntries(rows.map((r) => [r.agent_id, r.calibration]));
+    },
+
+    async upsertRegimeReliability(agentId, regime, rho, sampleSize, calibration = 1.0) {
+      await db.query(
+        `INSERT INTO legion.agent_regime_reliability (agent_id, regime, rho, calibration, sample_size, updated_at)
+         VALUES ($1, $2, $3, $4, $5, now())
+         ON CONFLICT (agent_id, regime) DO UPDATE
+           SET rho = EXCLUDED.rho, calibration = EXCLUDED.calibration,
+               sample_size = EXCLUDED.sample_size, updated_at = now()`,
+        [agentId, regime, rho, calibration, sampleSize],
+      );
+    },
+
+    // One agent's graded history for the memory block (ADR 0025): overall
+    // directional hit count over the recent window, plus its latest resolved
+    // calls on this symbol (most recent first).
+    async getAgentTrackRecord(agentId, symbol, { overallLimit = 20, recentLimit = 3 } = {}) {
+      const [overallRow, recent] = await Promise.all([
+        db.queryOne(
+          `SELECT COUNT(*)::int AS total,
+                  COALESCE(SUM(CASE WHEN sv.stance > 0 THEN s.outcome
+                                    ELSE 1 - s.outcome END), 0)::int AS hits
+             FROM (SELECT sv.stance, sv.signal_id
+                     FROM legion.signal_votes sv
+                     JOIN legion.signals s ON s.id = sv.signal_id
+                    WHERE sv.agent_id = $1 AND sv.stance <> 0
+                      AND s.resolved = true AND s.outcome IS NOT NULL
+                    ORDER BY s.id DESC
+                    LIMIT $2) sv
+             JOIN legion.signals s ON s.id = sv.signal_id`,
+          [agentId, overallLimit],
+        ),
+        db.query(
+          `SELECT s.symbol, sv.stance, sv.conviction, s.outcome,
+                  s.forward_return, s.spy_return
+             FROM legion.signal_votes sv
+             JOIN legion.signals s ON s.id = sv.signal_id
+            WHERE sv.agent_id = $1 AND s.symbol = $2
+              AND s.resolved = true AND s.outcome IS NOT NULL
+            ORDER BY s.id DESC
+            LIMIT $3`,
+          [agentId, symbol, recentLimit],
+        ),
+      ]);
+      return { overall: { hits: overallRow?.hits ?? 0, total: overallRow?.total ?? 0 }, recent };
+    },
+
+    // ── Meta-reflection lessons (ADR 0026) ──────────────────────────────────
+
+    // The agent's recent resolved calls graded *wrong* (directional misses),
+    // newest first — the raw material the reflection pass distills.
+    async getAgentMisses(agentId, limit = 10) {
+      return db.query(
+        `SELECT s.symbol, sv.stance, sv.conviction, s.outcome,
+                s.forward_return, s.spy_return, s.regime
+           FROM legion.signal_votes sv
+           JOIN legion.signals s ON s.id = sv.signal_id
+          WHERE sv.agent_id = $1 AND sv.stance <> 0
+            AND s.resolved = true AND s.outcome IS NOT NULL
+            AND ((sv.stance > 0 AND s.outcome = 0) OR (sv.stance < 0 AND s.outcome = 1))
+          ORDER BY s.id DESC
+          LIMIT $2`,
+        [agentId, limit],
+      );
+    },
+
+    async upsertAgentLesson(agentId, lesson, sampleSize) {
+      await db.query(
+        `INSERT INTO legion.agent_lessons (agent_id, lesson, sample_size, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (agent_id) DO UPDATE
+           SET lesson = EXCLUDED.lesson, sample_size = EXCLUDED.sample_size, updated_at = now()`,
+        [agentId, lesson, sampleSize],
+      );
+    },
+
+    async getAgentLesson(agentId) {
+      const row = await db.queryOne(`SELECT lesson FROM legion.agent_lessons WHERE agent_id = $1`, [
+        agentId,
+      ]);
+      return row?.lesson ?? null;
     },
 
     async recordBacktestResult({ symbol, horizon, trades, hits, hitRate, pnl, spyPnl, qqqPnl }) {
@@ -202,6 +351,78 @@ export function createRepo(db) {
       return db.query(`SELECT * FROM legion.backtest_results ORDER BY created_at DESC LIMIT $1`, [
         limit,
       ]);
+    },
+
+    // ── Crash-recovery pending state (ADR 0024) ─────────────────────────────
+    // Every vote/constraint the emitter buffers in memory is mirrored here so a
+    // restart can rebuild in-flight rounds instead of silently dropping them.
+
+    async savePendingVote(cycleId, round, symbol, vote) {
+      await db.query(
+        `INSERT INTO legion.pending_votes (cycle_id, round, symbol, agent_id, vote)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (cycle_id, round, agent_id)
+           DO UPDATE SET vote = EXCLUDED.vote, created_at = now()`,
+        [cycleId, round, symbol, vote.agentId, JSON.stringify(vote)],
+      );
+    },
+
+    async savePendingConstraint(cycleId, round, symbol, constraint) {
+      await db.query(
+        `INSERT INTO legion.pending_constraints (cycle_id, round, symbol, payload)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (cycle_id, round)
+           DO UPDATE SET payload = EXCLUDED.payload, created_at = now()`,
+        [cycleId, round, symbol, JSON.stringify(constraint)],
+      );
+    },
+
+    async loadPendingVotes(since) {
+      return db.query(
+        `SELECT cycle_id, round, symbol, vote
+           FROM legion.pending_votes
+          WHERE created_at >= $1
+          ORDER BY cycle_id, round`,
+        [since],
+      );
+    },
+
+    async loadPendingConstraints(since) {
+      return db.query(
+        `SELECT cycle_id, round, symbol, payload
+           FROM legion.pending_constraints
+          WHERE created_at >= $1
+          ORDER BY cycle_id, round`,
+        [since],
+      );
+    },
+
+    async deletePendingCycle(cycleId) {
+      await db.query(`DELETE FROM legion.pending_votes WHERE cycle_id = $1`, [cycleId]);
+      await db.query(`DELETE FROM legion.pending_constraints WHERE cycle_id = $1`, [cycleId]);
+    },
+
+    async deletePendingBefore(cutoff) {
+      await db.query(`DELETE FROM legion.pending_votes WHERE created_at < $1`, [cutoff]);
+      await db.query(`DELETE FROM legion.pending_constraints WHERE created_at < $1`, [cutoff]);
+    },
+
+    // Whether a round was already aggregated — recovery must not re-run it.
+    async roundExists(cycleId, roundNo) {
+      const row = await db.queryOne(
+        `SELECT 1 AS one FROM legion.rounds WHERE cycle_id = $1 AND round_no = $2`,
+        [cycleId, roundNo],
+      );
+      return row != null;
+    },
+
+    // Whether the cycle already emitted its signal — recovery completing a
+    // crashed final round must never emit twice.
+    async cycleHasSignal(cycleId) {
+      const row = await db.queryOne(`SELECT 1 AS one FROM legion.signals WHERE cycle_id = $1`, [
+        cycleId,
+      ]);
+      return row != null;
     },
 
     async finishCycle(cycleId, status) {

@@ -85,6 +85,9 @@ export async function resolveSignals(repo, gunvest, now) {
     }
     if (forwardReturn == null || spyReturn == null) continue;
 
+    // SPY is the single scoring benchmark (ADR 0008): only spyReturn drives
+    // `outcome` and the Brier loop. qqqReturn is captured and stored for the
+    // dashboard only — it never feeds the learning signal.
     const outcome = forwardReturn > spyReturn ? 1 : 0;
     const stance = await repo.getSignalStance(sig.id);
     const excess = forwardReturn - spyReturn;
