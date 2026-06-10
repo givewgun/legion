@@ -415,13 +415,19 @@ turn a SELL into a BUY. The panel decides *what*; risk only limits *how much*.
 
 ### The rules (deterministic, no LLM — ADR 0011)
 
-[`computeConstraint`](../src/risk/rules.js) reads VIX and the day's move and returns a cap:
+[`computeConstraint`](../src/risk/rules.js) reads VIX, the day's move, and the ticker's own
+realized daily volatility, and returns a cap:
 
 ```
 VIX ≥ 30  → cap conviction at 0.5     ("elevated VIX")
 VIX ≥ 40  → block new longs            ("extreme VIX")
-|daily move| ≥ 8%  → cap conviction at 0.4   ("outsized move")
+|daily move| ≥ 3σ of this name's daily vol → cap conviction at 0.4   ("outsized move", ADR 0022)
+           (falls back to a flat 8% when vol data is unavailable)
 ```
+
+The sigma normalization matters: a flat 8% is a five-sigma event in a utility (the brake
+should have fired long before) and routine noise in a meme stock (the brake fired on a
+normal day).
 
 [`applyRiskConstraint`](../src/risk/apply.js) then, **only on a converged signal**:
 
