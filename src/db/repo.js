@@ -158,9 +158,25 @@ export function createRepo(db) {
       );
     },
 
+    // Roster watch (ADR 0028): how long each agent has sat at the rho floor.
+    async getFlooredStreaks() {
+      const rows = await db.query(`SELECT agent_id, floored_streak FROM legion.agent_reliability`);
+      return Object.fromEntries(rows.map((r) => [r.agent_id, r.floored_streak]));
+    },
+
+    async updateRosterFlag(agentId, flooredStreak, flagged) {
+      await db.query(
+        `UPDATE legion.agent_reliability
+            SET floored_streak = $2, flagged = $3, updated_at = now()
+          WHERE agent_id = $1`,
+        [agentId, flooredStreak, flagged],
+      );
+    },
+
     async getReliabilityLeaderboard() {
       const rows = await db.query(
-        `SELECT agent_id, rho, sample_size, calibration, info_factor, learned_prior
+        `SELECT agent_id, rho, sample_size, calibration, info_factor, learned_prior,
+                floored_streak, flagged
            FROM legion.agent_reliability ORDER BY rho DESC`,
       );
       return rows.map((r) => ({
@@ -170,6 +186,8 @@ export function createRepo(db) {
         calibration: r.calibration,
         infoFactor: r.info_factor,
         learnedPrior: r.learned_prior,
+        flooredStreak: r.floored_streak,
+        flagged: r.flagged,
       }));
     },
 

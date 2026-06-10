@@ -52,6 +52,13 @@ function computeDials(agentRows, weights = decayWeights(agentRows.length)) {
 // current form.
 const LONG_WINDOW = 400;
 
+// Roster watch (ADR 0028): rho at or below this counts as "pinned at the floor"
+// (the floor is 0.5; a small epsilon tolerates float noise) …
+export const ROSTER_FLOOR_EPS = 0.55;
+// … and this many consecutive floored recomputes raises the review flag. At the
+// 12h cron cadence that is ~3 days of sustained anti-skill, not one bad batch.
+export const ROSTER_FLAG_AFTER = 6;
+
 // Groups rows per agent, newest-first, capped at `cap` each. `pick` filters
 // which rows enter the bucket (e.g. a regime).
 function bucketByAgent(rows, pick = () => true, cap = WINDOW) {
@@ -74,8 +81,9 @@ function bucketByAgent(rows, pick = () => true, cap = WINDOW) {
 // falls back to the unconditional dials elsewhere. getResolvedForecasts returns
 // rows newest-first, so decay weight index 0 is the most recent. Returns
 // { agentId: { rho, calibration, info } }.
-export async function recomputeReliability(repo) {
+export async function recomputeReliability(repo, logger = console) {
   const rows = await repo.getResolvedForecasts(WINDOW * 8); // headroom for many agents
+  const streaks = (await repo.getFlooredStreaks?.()) ?? {};
   const map = {};
   for (const [agentId, agentRows] of bucketByAgent(rows)) {
     const { rho, calibration, weights } = computeDials(agentRows);
@@ -92,6 +100,20 @@ export async function recomputeReliability(repo) {
 
     map[agentId] = { rho, calibration, info };
     await repo.upsertReliability(agentId, rho, agentRows.length, calibration, info);
+
+    // Roster watch (ADR 0028): an agent pinned at the rho floor recompute after
+    // recompute is flagged for human review — never auto-retired. Any recovery
+    // above the floor resets the streak and clears the flag.
+    const streak = rho <= ROSTER_FLOOR_EPS ? (streaks[agentId] ?? 0) + 1 : 0;
+    const flagged = streak >= ROSTER_FLAG_AFTER;
+    map[agentId].flooredStreak = streak;
+    map[agentId].flagged = flagged;
+    if (flagged) {
+      logger.warn?.(
+        `[reliability] ${agentId} has been at the rho floor for ${streak} recomputes — review it on the Agents tab`,
+      );
+    }
+    await repo.updateRosterFlag?.(agentId, streak, flagged);
   }
 
   // Learned domain prior (ADR 0027): the same skill score over a long, UNIFORM

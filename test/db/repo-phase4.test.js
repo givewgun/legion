@@ -305,6 +305,8 @@ describe('learned prior (ADR 0027)', () => {
           calibration: 1.1,
           info_factor: 1.0,
           learned_prior: 1.15,
+          floored_streak: 0,
+          flagged: false,
         },
       ],
     ]);
@@ -317,7 +319,20 @@ describe('learned prior (ADR 0027)', () => {
         calibration: 1.1,
         infoFactor: 1.0,
         learnedPrior: 1.15,
+        flooredStreak: 0,
+        flagged: false,
       },
     ]);
+  });
+});
+
+describe('roster watch repo (ADR 0028)', () => {
+  it('reads floored streaks and writes the flag', async () => {
+    const pool = poolReturning([[{ agent_id: 'social', floored_streak: 5 }], []]);
+    const repo = createRepo(createDb(pool));
+    expect(await repo.getFlooredStreaks()).toEqual({ social: 5 });
+    await repo.updateRosterFlag('social', 6, true);
+    expect(pool.calls[1].text.toLowerCase()).toContain('floored_streak');
+    expect(pool.calls[1].params).toEqual(['social', 6, true]);
   });
 });

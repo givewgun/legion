@@ -156,6 +156,47 @@ describe('recomputeReliability', () => {
     expect(map.b.rho).toBeCloseTo(0.5); // anti-skill still saturates the floor
   });
 
+  describe('roster watch (ADR 0028)', () => {
+    const flooredForecasts = (id) =>
+      Array.from({ length: 6 }, () => ({ agent_id: id, stance: 2, conviction: 1, outcome: 0 }));
+
+    it('increments the floored streak and flags after the threshold', async () => {
+      const flags = [];
+      const map = await recomputeReliability(
+        {
+          getResolvedForecasts: async () => flooredForecasts('social'),
+          upsertReliability: async () => {},
+          getFlooredStreaks: async () => ({ social: 5 }), // one shy of the threshold
+          updateRosterFlag: async (id, streak, flagged) => flags.push({ id, streak, flagged }),
+        },
+        { warn() {} },
+      );
+      expect(map.social.flooredStreak).toBe(6);
+      expect(map.social.flagged).toBe(true);
+      expect(flags).toEqual([{ id: 'social', streak: 6, flagged: true }]);
+    });
+
+    it('resets the streak and clears the flag when rho recovers', async () => {
+      const flags = [];
+      const healthy = Array.from({ length: 6 }, () => ({
+        agent_id: 'social',
+        stance: 2,
+        conviction: 1,
+        outcome: 1,
+      }));
+      await recomputeReliability(
+        {
+          getResolvedForecasts: async () => healthy,
+          upsertReliability: async () => {},
+          getFlooredStreaks: async () => ({ social: 7 }),
+          updateRosterFlag: async (id, streak, flagged) => flags.push({ id, streak, flagged }),
+        },
+        { warn() {} },
+      );
+      expect(flags).toEqual([{ id: 'social', streak: 0, flagged: false }]);
+    });
+  });
+
   describe('regime buckets (ADR 0023)', () => {
     const row = (id, regime, outcome, stance = 2) => ({
       agent_id: id,

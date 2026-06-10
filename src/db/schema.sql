@@ -212,3 +212,9 @@ CREATE TABLE IF NOT EXISTS legion.agent_lessons (
 -- Learned domain prior (ADR 0027): long-uniform-window skill score — the number
 -- the hand-set w_i is guessing at. Measured and surfaced; not yet applied.
 ALTER TABLE legion.agent_reliability ADD COLUMN IF NOT EXISTS learned_prior DOUBLE PRECISION NOT NULL DEFAULT 1.0;
+
+-- Roster watch (ADR 0028): consecutive recomputes an agent has spent pinned at
+-- the rho floor, and the review flag raised when the streak persists. The
+-- system never auto-retires — a human decides on the Agents tab.
+ALTER TABLE legion.agent_reliability ADD COLUMN IF NOT EXISTS floored_streak INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE legion.agent_reliability ADD COLUMN IF NOT EXISTS flagged BOOLEAN NOT NULL DEFAULT false;
