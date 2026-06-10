@@ -198,3 +198,13 @@ CREATE TABLE IF NOT EXISTS legion.pending_constraints (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (cycle_id, round)
 );
+
+-- ── Phase 10: meta-reflection lessons (ADR 0026) ─────────────────────────────
+-- One distilled lesson per agent, written by the reflection pass from its
+-- recent missed calls and injected into the agent's future prompts.
+CREATE TABLE IF NOT EXISTS legion.agent_lessons (
+  agent_id     TEXT PRIMARY KEY,
+  lesson       TEXT NOT NULL,
+  sample_size  INTEGER NOT NULL DEFAULT 0,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);

@@ -566,6 +566,12 @@ outcomes the Brier loop grades, never self-assessment, and an agent with no reso
 gets an unchanged prompt. So an agent that has been confidently wrong in this exact spot
 *sees that* while forming today's conviction, instead of merely being played quieter.
 
+On top of the raw record, an optional **meta-reflection pass** (ADR 0026, `LEGION_REFLECTION=true`)
+runs on the reliability cron: each agent's recent misses are distilled — by the LLM — into **one
+short lesson** ("stop chasing extended momentum into elevated VIX"), persisted and prepended to
+its future prompts. Grounded only in graded misses, capped at two sentences, overwritten each
+pass, and off by default: the gestalt editing its own reasoning, on a leash.
+
 ### Where the discounts plug back in
 
 The emitter loads ρ, cal, and the correlation map **once per cycle** and applies them before the

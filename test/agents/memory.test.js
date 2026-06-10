@@ -67,4 +67,29 @@ describe('buildGetMemory', () => {
     const getMemory = buildGetMemory({ repo: {}, agentId: 'technical' });
     expect(await getMemory({ symbol: 'NVDA' })).toBe('');
   });
+
+  it('appends the distilled lesson when the reflection pass wrote one (ADR 0026)', async () => {
+    const repo = {
+      getAgentTrackRecord: async () => ({
+        overall: { hits: 4, total: 6 },
+        recent: [],
+      }),
+      getAgentLesson: async () => 'Avoid chasing extended momentum.',
+    };
+    const getMemory = buildGetMemory({ repo, agentId: 'technical' });
+    const text = await getMemory({ symbol: 'NVDA' });
+    expect(text).toContain('4 of 6');
+    expect(text).toContain('Lesson you drew from your recent misses: Avoid chasing extended momentum.');
+  });
+
+  it('surfaces a lesson even before the track record has resolved entries', async () => {
+    const repo = {
+      getAgentTrackRecord: async () => ({ overall: { hits: 0, total: 0 }, recent: [] }),
+      getAgentLesson: async () => 'Lean on positioning data, not vibes.',
+    };
+    const getMemory = buildGetMemory({ repo, agentId: 'contrarian' });
+    expect(await getMemory({ symbol: 'MU' })).toBe(
+      'Lesson you drew from your recent misses: Lean on positioning data, not vibes.',
+    );
+  });
 });

@@ -259,6 +259,43 @@ export function createRepo(db) {
       return { overall: { hits: overallRow?.hits ?? 0, total: overallRow?.total ?? 0 }, recent };
     },
 
+    // ── Meta-reflection lessons (ADR 0026) ──────────────────────────────────
+
+    // The agent's recent resolved calls graded *wrong* (directional misses),
+    // newest first — the raw material the reflection pass distills.
+    async getAgentMisses(agentId, limit = 10) {
+      return db.query(
+        `SELECT s.symbol, sv.stance, sv.conviction, s.outcome,
+                s.forward_return, s.spy_return, s.regime
+           FROM legion.signal_votes sv
+           JOIN legion.signals s ON s.id = sv.signal_id
+          WHERE sv.agent_id = $1 AND sv.stance <> 0
+            AND s.resolved = true AND s.outcome IS NOT NULL
+            AND ((sv.stance > 0 AND s.outcome = 0) OR (sv.stance < 0 AND s.outcome = 1))
+          ORDER BY s.id DESC
+          LIMIT $2`,
+        [agentId, limit],
+      );
+    },
+
+    async upsertAgentLesson(agentId, lesson, sampleSize) {
+      await db.query(
+        `INSERT INTO legion.agent_lessons (agent_id, lesson, sample_size, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (agent_id) DO UPDATE
+           SET lesson = EXCLUDED.lesson, sample_size = EXCLUDED.sample_size, updated_at = now()`,
+        [agentId, lesson, sampleSize],
+      );
+    },
+
+    async getAgentLesson(agentId) {
+      const row = await db.queryOne(
+        `SELECT lesson FROM legion.agent_lessons WHERE agent_id = $1`,
+        [agentId],
+      );
+      return row?.lesson ?? null;
+    },
+
     async recordBacktestResult({ symbol, horizon, trades, hits, hitRate, pnl, spyPnl, qqqPnl }) {
       await db.query(
         `INSERT INTO legion.backtest_results

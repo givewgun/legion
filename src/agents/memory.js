@@ -35,11 +35,19 @@ export function formatTrackRecord({ overall, recent } = {}) {
   return lines.join('\n');
 }
 
-// Builds the per-cycle getMemory({ symbol }) callback for one agent. Failures
-// and missing repo support degrade to '' — memory must never block a vote.
+// Builds the per-cycle getMemory({ symbol }) callback for one agent: the graded
+// track record plus, when the reflection pass has written one (ADR 0026), the
+// agent's distilled lesson from its recent misses. Failures and missing repo
+// support degrade to '' — memory must never block a vote.
 export function buildGetMemory({ repo, agentId }) {
   return async ({ symbol }) => {
     if (!repo.getAgentTrackRecord) return '';
-    return formatTrackRecord(await repo.getAgentTrackRecord(agentId, symbol));
+    const [record, lesson] = await Promise.all([
+      repo.getAgentTrackRecord(agentId, symbol),
+      repo.getAgentLesson?.(agentId) ?? null,
+    ]);
+    const parts = [formatTrackRecord(record)];
+    if (lesson) parts.push(`Lesson you drew from your recent misses: ${lesson}`);
+    return parts.filter(Boolean).join('\n');
   };
 }

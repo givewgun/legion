@@ -261,3 +261,27 @@ describe('getAgentTrackRecord (ADR 0025)', () => {
     expect(record.recent).toEqual([]);
   });
 });
+
+describe('agent lessons (ADR 0026)', () => {
+  it('getAgentMisses selects only directional misses, newest first', async () => {
+    const rows = [{ symbol: 'NVDA', stance: 2, conviction: 0.9, outcome: 0 }];
+    const pool = poolReturning([rows]);
+    const repo = createRepo(createDb(pool));
+    const out = await repo.getAgentMisses('technical', 10);
+    expect(out).toEqual(rows);
+    const text = pool.calls[0].text.toLowerCase();
+    expect(text).toContain('stance <> 0');
+    expect(text).toContain('sv.stance > 0 and s.outcome = 0');
+    expect(pool.calls[0].params).toEqual(['technical', 10]);
+  });
+
+  it('upsertAgentLesson and getAgentLesson round-trip', async () => {
+    const pool = poolReturning([[], [{ lesson: 'Avoid chasing momentum.' }], []]);
+    const repo = createRepo(createDb(pool));
+    await repo.upsertAgentLesson('technical', 'Avoid chasing momentum.', 4);
+    expect(pool.calls[0].text.toLowerCase()).toContain('legion.agent_lessons');
+    expect(pool.calls[0].params).toEqual(['technical', 'Avoid chasing momentum.', 4]);
+    expect(await repo.getAgentLesson('technical')).toBe('Avoid chasing momentum.');
+    expect(await repo.getAgentLesson('news')).toBeNull();
+  });
+});

@@ -14,6 +14,9 @@ export function loadConfig(env = process.env) {
     databaseUrl: env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/gunvest',
     apiPort: num(env, 'LEGION_API_PORT', 8088),
     reliabilityCron: env.LEGION_RELIABILITY_CRON || '0 */12 * * *',
+    // Meta-reflection (ADR 0026): distill each agent's recent misses into a
+    // lesson on the reliability cron. Off by default — it puts an LLM in the cron.
+    reflectionEnabled: env.LEGION_REFLECTION === 'true',
     horizonDays: num(env, 'LEGION_HORIZON_DAYS', 5),
     summaryCron: env.LEGION_SUMMARY_CRON || '0 */6 * * *',
     summaryWindowHours: num(env, 'LEGION_SUMMARY_WINDOW_HOURS', 6),
