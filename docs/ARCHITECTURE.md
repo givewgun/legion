@@ -95,6 +95,36 @@ cap is not reached, it republishes the cycle for the next round **with the prior
 dissent**, so agents must confront disagreement before re-voting. A consensus reached only in a
 later round must still retain independent round-1 backing or it is rejected as herding (ADR 0016).
 
+### Data-aperture audit — who reads what
+
+The diverse-panel thesis assumes the lenses are *actually distinct*. Shared inputs drive
+correlated outputs regardless of model or prompt, so the overlap is tracked explicitly:
+
+| Input | technical | news | social | contrarian | risk (non-voting) |
+|---|---|---|---|---|---|
+| quote / price history | ✅ (quote + ~1y indicators) | — | — | — | ✅ (day move + 30d sigma) |
+| headlines | — | ✅ | — | — | — |
+| macro rates | — | ✅ | — | — | — |
+| **VIX** | — | ✅ (via macro) | — | ✅ (positioning panel) | ✅ (caps) |
+| **per-ticker sentiment** | — | — | ✅ | ✅ | — |
+| F&G / put-call / AAII / NAAIM / short interest | — | — | — | ✅ | — |
+
+Known overlaps and why they are (currently) accepted:
+
+- **VIX × 3** — the widest shared input, but it plays a different *role* in each consumer:
+  macro context for News, a crowding gauge for the Contrarian, a deterministic brake for Risk
+  (which does not vote, so it cannot correlate the panel). Still, News and Contrarian sharing
+  VIX is real coupling; the redundancy discount (ADR 0020) is the backstop if their votes
+  start co-moving.
+- **Sentiment × 2** — Social reads it as the *signal*; the Contrarian reads it as something
+  to *fade*. Opposite intended reactions to the same number — by design adversarial, and the
+  pair the correlation table should be watched most closely.
+- **Price** is technical-only among voters; Risk's use is non-voting.
+
+Rule of thumb when adding an agent (see `adding-an-agent.md`): a new lens should add a data
+source the panel doesn't already read, or read a shared source with an explicitly opposite
+role — never silently duplicate an existing aperture.
+
 ---
 
 ## 3. Consensus round lifecycle
