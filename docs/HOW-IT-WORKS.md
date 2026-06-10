@@ -376,12 +376,13 @@ enough resolved history — so a fresh deploy behaves like the clean formulas in
 **🧒 ELI5:** If two specialists always parrot each other, their agreement isn't *two* opinions —
 it's one opinion said twice. We discount it.
 
-**🔢** In `κ`, each agreeing vote is divided by the **correlation mass** it shares with the rest of
-the agreeing coalition (`mass = 1 + Σ max(0, corr)`). So `k` historically co-moving agents collapse
-toward **one** independent confirmation instead of counting `k` times.
-([`directionalQuorum`](../src/consensus/aggregate.js); correlations from
-[`correlation.js`](../src/consensus/correlation.js) — Pearson over each pair's co-rated signals,
-defaulting to `0`/independent until ≥ 5 shared signals.)
+**🔢** In `κ`, the agreeing coalition's weight is scaled by **`N_eff / n`**, where `N_eff` is the
+**effective number of independent voices** — the participation ratio `n² / Σᵢⱼ corr²ᵢⱼ` of the
+coalition's correlation matrix (ADR 0020). All independent → no discount; `k` perfect echoes
+collapse to **one** confirmation; partial correlation interpolates (three agents at pairwise 0.5
+count as two voices). ([`effectiveVoices` / `directionalQuorum`](../src/consensus/aggregate.js);
+correlations from [`correlation.js`](../src/consensus/correlation.js) — Pearson over each pair's
+co-rated signals, defaulting to `0`/independent until ≥ 5 shared signals.)
 
 ### 7b. Anti-herding guard — caving ≠ agreeing (ADR 0016)
 
