@@ -555,6 +555,10 @@ Measuring all legs from a **shared "entered at signal time" base**, pinned to th
 so their Brier scores mean the same thing. Signals from before benchmark capture fall back to a
 consistent close-to-close window. That `outcome` is exactly what feeds the Brier loop in §10.
 
+> **QQQ is display-only.** The QQQ entry price and return are captured alongside SPY and stored,
+> but **only SPY scores `outcome`** — one benchmark keeps every Brier score comparable (ADR 0008).
+> QQQ exists for the dashboard's context, not for learning.
+
 ### The daily cron, in order
 
 [`runReliabilityOnce`](../src/run/reliability.js) does, every run:
