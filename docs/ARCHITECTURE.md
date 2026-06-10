@@ -214,7 +214,7 @@ flowchart TB
     end
 
     q["Ollama queue<br/>(≤ 4 waiting)"]
-    exec["OLLAMA_NUM_PARALLEL=1<br/>one inference, all cores<br/>OLLAMA_KEEP_ALIVE=-1"]
+    exec["OLLAMA_NUM_PARALLEL=1<br/>one inference, all cores<br/>OLLAMA_KEEP_ALIVE=30m"]
 
     t --> q
     n --> q
