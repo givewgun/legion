@@ -6,8 +6,10 @@ const STANCE_LABELS = {
   2: 'STRONG_BUY',
 };
 
-export function pct(x) {
-  return `${Math.round((x ?? 0) * 100)}%`;
+export function pct(x, digits = 0) {
+  const v = ((x ?? 0) * 100).toFixed(digits);
+  // toFixed keeps the sign when a tiny negative rounds to zero ("-0.00") — drop it.
+  return `${Number(v) === 0 ? v.replace('-', '') : v}%`;
 }
 
 // Short local date for cycle/round timestamps. Returns '' for nullish input

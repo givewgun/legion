@@ -6,7 +6,8 @@ import { PageHeader } from '../ui/PageHeader.jsx';
 import { Card } from '../ui/Card.jsx';
 
 const money = (v) => `$${Math.round(v ?? 0).toLocaleString('en-US')}`;
-const signedPct = (v) => `${v > 0 ? '+' : ''}${pct(v)}`;
+// Returns are small (often < 1%) — show 2 decimals so they don't flatten to 0%.
+const signedPct = (v) => `${v > 0 ? '+' : ''}${pct(v, 2)}`;
 const gainColor = (v) => (v >= 0 ? 'text-green-600' : 'text-red-600');
 
 function Stat({ label, value, accent = '' }) {
@@ -57,7 +58,7 @@ export function PortfolioPage() {
           value={signedPct(stats.totalReturn - stats.qqqReturn)}
           accent={gainColor(stats.totalReturn - stats.qqqReturn)}
         />
-        <Stat label="Max drawdown" value={pct(stats.maxDrawdown)} />
+        <Stat label="Max drawdown" value={pct(stats.maxDrawdown, 2)} />
         <Stat label="Win rate" value={pct(stats.winRate)} />
         <Stat label="Trades" value={stats.trades} />
       </div>

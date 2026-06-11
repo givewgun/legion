@@ -14,6 +14,13 @@ describe('format helpers', () => {
     expect(pct(0)).toBe('0%');
   });
 
+  it('renders fractional percents at the requested precision', () => {
+    expect(pct(0.0043, 2)).toBe('0.43%');
+    expect(pct(-0.0567, 2)).toBe('-5.67%');
+    expect(pct(0, 2)).toBe('0.00%');
+    expect(pct(-0.0000001, 2)).toBe('0.00%');
+  });
+
   it('labels ordinal stances', () => {
     expect(stanceLabel(2)).toBe('STRONG_BUY');
     expect(stanceLabel(-1)).toBe('SELL');
