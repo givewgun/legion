@@ -18,8 +18,16 @@ export function loadConfig(env = process.env) {
     // lesson on the reliability cron. Off by default — it puts an LLM in the cron.
     reflectionEnabled: env.LEGION_REFLECTION === 'true',
     horizonDays: num(env, 'LEGION_HORIZON_DAYS', 5),
-    summaryCron: env.LEGION_SUMMARY_CRON || '0 */6 * * *',
-    summaryWindowHours: num(env, 'LEGION_SUMMARY_WINDOW_HOURS', 6),
+    // Market-aware cadence (ADR 0029): cron expressions are evaluated in this
+    // IANA timezone, NOT the container's TZ (prod runs Asia/Bangkok). Anchoring
+    // to the exchange's zone keeps "post-close" meaning post-close across DST
+    // and avoids the BKK day-of-week skew (Friday's US close is Saturday ICT).
+    cronTimezone: env.LEGION_CRON_TZ || 'America/New_York',
+    // One digest per US trading day, after the post-close sweep, covering the
+    // full 24h window — a digest cadence faster than the sweep cadence only
+    // produces "No signals this window" Telegram noise (ADR 0029).
+    summaryCron: env.LEGION_SUMMARY_CRON || '0 18 * * 1-5',
+    summaryWindowHours: num(env, 'LEGION_SUMMARY_WINDOW_HOURS', 24),
     ollama: {
       url: env.OLLAMA_URL || 'http://localhost:11434',
       model: env.OLLAMA_MODEL || 'qwen2.5:7b-instruct',

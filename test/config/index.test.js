@@ -27,10 +27,14 @@ describe('loadConfig', () => {
       macroTtlMs: 60000,
     });
     expect(cfg.emitter).toEqual({ staleEntryMs: 1800000 });
+    expect(cfg.cronTimezone).toBe('America/New_York');
+    expect(cfg.summaryCron).toBe('0 18 * * 1-5');
+    expect(cfg.summaryWindowHours).toBe(24);
   });
 
   it('reads overrides from env and coerces numbers', () => {
     const cfg = loadConfig({
+      LEGION_CRON_TZ: 'Asia/Bangkok',
       CONSENSUS_THETA_V: '0.3',
       CONSENSUS_QUORUM: '0.75',
       CONSENSUS_MAX_ROUNDS: '5',
@@ -74,6 +78,7 @@ describe('loadConfig', () => {
     });
     expect(cfg.emitter).toEqual({ staleEntryMs: 120000 });
     expect(cfg.databaseUrl).toBe('postgres://u:p@db:5432/gunvest');
+    expect(cfg.cronTimezone).toBe('Asia/Bangkok');
   });
 
   it('throws on a non-numeric threshold', () => {

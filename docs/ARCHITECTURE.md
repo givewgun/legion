@@ -54,7 +54,7 @@ Each box is a separate process (a Docker Compose service) communicating only ove
 
 ```mermaid
 flowchart TB
-    scheduler["scheduler<br/>(cron, every 4h)"]
+    scheduler["scheduler<br/>(cron, 2×/trading day)"]
     trigger["POST /api/trigger<br/>(on demand)"]
     orchestrator["orchestrator"]
 

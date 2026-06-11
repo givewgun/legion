@@ -40,8 +40,8 @@ function main() {
     runner();
     return;
   }
-  cron.schedule(cfg.summaryCron, runner);
-  console.log(`[summary] scheduled: ${cfg.summaryCron}`);
+  cron.schedule(cfg.summaryCron, runner, { timezone: cfg.cronTimezone });
+  console.log(`[summary] scheduled: ${cfg.summaryCron} ${cfg.cronTimezone}`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main();
