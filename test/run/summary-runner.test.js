@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runSummaryOnce } from '../../src/run/summary.js';
+import { effectiveWindowHours, runSummaryOnce } from '../../src/run/summary.js';
 
 describe('runSummaryOnce', () => {
   it('queries the window, builds a digest, and sends it', async () => {
@@ -40,5 +40,26 @@ describe('runSummaryOnce', () => {
     });
     expect(sent[0]).toMatch(/no signals/i);
     expect(out).toEqual({ sent: true, count: 0 });
+  });
+});
+
+describe('effectiveWindowHours', () => {
+  it('keeps the base window on a regular weekday', () => {
+    // Friday 18:00 EDT
+    const friday = new Date('2026-06-12T22:00:00Z');
+    expect(effectiveWindowHours(friday, 24, 'America/New_York')).toBe(24);
+  });
+
+  it('stretches Monday across the weekend back to the Friday digest', () => {
+    // Monday 18:00 EDT
+    const monday = new Date('2026-06-15T22:00:00Z');
+    expect(effectiveWindowHours(monday, 24, 'America/New_York')).toBe(72);
+  });
+
+  it('decides the weekday in the cron timezone, not UTC', () => {
+    // Tuesday 01:00 UTC is still Monday 21:00 EDT.
+    const lateMonday = new Date('2026-06-16T01:00:00Z');
+    expect(effectiveWindowHours(lateMonday, 24, 'America/New_York')).toBe(72);
+    expect(effectiveWindowHours(lateMonday, 24, 'Asia/Bangkok')).toBe(24);
   });
 });

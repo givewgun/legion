@@ -99,9 +99,12 @@ proportionally for free.
   will gradually wash out of the graded window.
 - Anything that breaks intra-day between 15:00 UTC and the close waits for the post-close
   sweep — `POST /api/trigger` and `npm run kick` remain the escape hatches.
-- A signal emitted at the 22:00 sweep lands in that same evening's 23:00 digest; one
-  emitted by a slow cycle after 23:00 appears in the next trading day's digest instead of
-  being dropped (the 24h window guarantees coverage).
+- A signal emitted at the 17:00 ET sweep lands in that same evening's 18:00 ET digest;
+  one emitted by a slow cycle after 18:00 appears in the next trading day's digest
+  instead of being dropped. Because the digest skips weekends, Monday's run stretches its
+  window to 72h (`effectiveWindowHours`) so anything landing after Friday's digest — a
+  post-close cycle still finishing, a weekend manual kick — is summarized rather than
+  falling between Friday 18:00 and Sunday 18:00.
 - Operators wanting the old behaviour set `LEGION_CRON=0 */4 * * *` back in `.env` — the
   knob is unchanged, only its default moved. Anyone scheduling in another zone sets
   `LEGION_CRON_TZ`; expressions no longer follow the container's `TZ`.

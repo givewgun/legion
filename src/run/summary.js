@@ -6,6 +6,18 @@ import { connectDb } from '../db/client.js';
 import { createRepo } from '../db/repo.js';
 import { sendTelegram } from '../emit/telegram.js';
 
+// The digest skips weekends (ADR 0029), so Monday's run must look back across
+// Saturday and Sunday to Friday's digest — otherwise a signal landing after
+// Friday 18:00 ET (a post-close cycle still finishing, a weekend manual kick)
+// is never summarized: Monday's plain 24h window starts Sunday 18:00.
+export function effectiveWindowHours(now, baseHours, timezone) {
+  const weekday = new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    timeZone: timezone,
+  }).format(now);
+  return weekday === 'Mon' ? baseHours + 48 : baseHours;
+}
+
 // One pass: pull the last `windowHours` of signals, build the digest, send it.
 // `telegram` is a function (text) => Promise, matching the emitter's wiring.
 export async function runSummaryOnce({
@@ -32,7 +44,11 @@ function main() {
   const chatId = process.env.TELEGRAM_CHAT_ID;
   const telegram = (text) => sendTelegram(token, chatId, text);
   const runner = () =>
-    runSummaryOnce({ repo, telegram, windowHours: cfg.summaryWindowHours })
+    runSummaryOnce({
+      repo,
+      telegram,
+      windowHours: effectiveWindowHours(new Date(), cfg.summaryWindowHours, cfg.cronTimezone),
+    })
       .then((s) => console.log(`[summary] sent: ${s.count} signals`))
       .catch((err) => console.error(`[summary] run failed: ${err.message}`));
 
