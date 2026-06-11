@@ -83,7 +83,7 @@ intelligence."
 
 ### 🧒 ELI5
 
-A clock ticks every 4 hours (or you press a button). For each stock being watched it shouts
+A clock ticks twice per trading day (or you press a button). For each stock being watched it shouts
 *"everybody look at NVDA!"* The four specialists each go gather their data, ask the local AI to
 reason, and drop a vote in a shared mailbox. A collector called the **emitter** waits for all the
 votes, does the agreement math, and either announces a result or sends everyone back for another
@@ -93,7 +93,7 @@ round. The clock is **not** a decider — it just says "go."
 
 ```mermaid
 flowchart TB
-    sched["scheduler (cron, every 4h)<br/>or POST /api/trigger"]
+    sched["scheduler (cron, 2×/trading day)<br/>or POST /api/trigger"]
     orch["orchestrator"]
     subgraph agents["Voting agents (×4) — each its own process"]
         t["technical"]
@@ -723,7 +723,7 @@ The knobs you're most likely to touch. Consensus thresholds are env vars
 | regime split | VIX `20` | calm/stressed boundary (ADR 0023) | code |
 | roster watch | eps `0.55`, streak `6` | floored-rho review flag (ADR 0028) | code |
 | `LEGION_REFLECTION` | `false` | per-agent lesson distillation on the cron (ADR 0026) | env |
-| `LEGION_CRON` | `0 */4 * * *` | how often a cycle kicks (every 4h) | env |
+| `LEGION_CRON` | `0 11,17 * * 1-5` (`America/New_York`) | how often a cycle kicks (mid-session + post-close, trading days; ADR 0029) | env |
 
 ---
 

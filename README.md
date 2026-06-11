@@ -168,7 +168,7 @@ debate for the dashboard.
 
 ```bash
 npm run reliability -- --now   # resolve due signals → recompute ρ, calibration, correlations
-npm run summary -- --now       # post the 6h Telegram digest for the recent window
+npm run summary -- --now       # post the daily Telegram digest for the recent window
 ```
 
 Both also run on a schedule (`LEGION_*_CRON`). The reliability cron is what makes the panel
@@ -209,8 +209,8 @@ does in the algorithm are detailed in
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | signal delivery (reuses GunVest's bot) |
 | `LEGION_EXPECTED_AGENTS` | votes the emitter waits for before evaluating (4) |
 | `LEGION_RISK_ENABLED` | require the risk constraint before finalizing (`true` by default) |
-| `LEGION_CRON` | scheduler cadence (default `0 */4 * * *`, every 4h) |
-| `LEGION_SUMMARY_CRON` / `LEGION_SUMMARY_WINDOW_HOURS` | digest schedule (`0 */6 * * *`) / look-back (`6`) |
+| `LEGION_CRON` / `LEGION_CRON_TZ` | scheduler cadence (default `0 11,17 * * 1-5` in `America/New_York` — twice per US trading day; see [ADR 0029](docs/adr/0029-market-aware-cron.md)) |
+| `LEGION_SUMMARY_CRON` / `LEGION_SUMMARY_WINDOW_HOURS` | digest schedule (`0 18 * * 1-5`, after the post-close sweep) / look-back (`24`) |
 | `FINNHUB_API_KEY` | enables the Contrarian short-interest feed only; the other feeds are live without it (short interest returns `null` when unset) |
 
 **Ollama** (app side — `OLLAMA_TIMEOUT_MS`=`300000`, `OLLAMA_MAX_CONCURRENT`=`1`; container

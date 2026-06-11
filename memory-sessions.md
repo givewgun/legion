@@ -20,3 +20,16 @@
   (scheduler runs 24/7) filled at that same day's already-printed close; such
   signals now roll to the next trading day's close (20:00 UTC EDT cutoff used
   year-round, conservative in winter).
+
+## 2026-06-11 — Market-aware cron cadence (ADR 0029)
+
+- Assessed cron granularity, concluded the 4h/24-7 sweep was noise-heavy, and
+  shipped ADR 0029: market-hours-anchored sweep + once-daily digest,
+  timezone-pinned to America/New_York via node-cron's `timezone` option (prod
+  containers run `TZ=Asia/Bangkok`, where Friday's US post-close falls on
+  Saturday ICT and a `1-5` weekday filter would drop it).
+- Updated scheduler/summary runners, config (+`cronTimezone`), deploy workflow,
+  `.env.example`, docs, and config tests. Full suite green (527 tests).
+- Note for the portfolio sim's after-close roll (above): the new 17:00 ET
+  post-close sweep makes after-close emission the norm — those signals correctly
+  fill at the NEXT trading day's close.

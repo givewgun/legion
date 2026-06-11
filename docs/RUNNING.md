@@ -95,7 +95,7 @@ npm run scheduler -- --now # runs the cron loop AND fires one sweep immediately
 
 Or trigger over HTTP without shell access on the box — the `api` service exposes it (needs
 the NATS bus connected; returns `503` otherwise). Useful to re-run after a fix instead of
-waiting for the 4h cron:
+waiting for the next scheduled sweep:
 
 ```bash
 curl -X POST localhost:8088/api/trigger/NVDA   # kick one ticker  -> 202 {symbol, cycleId}
@@ -133,7 +133,7 @@ docker compose run --rm emitter npm run db:migrate   # once
 docker compose logs -f emitter agent-technical
 ```
 
-The scheduler container fires on `LEGION_CRON` (default every 4h); for an immediate sweep use
+The scheduler container fires on `LEGION_CRON` (default twice per US trading day); for an immediate sweep use
 the host one-shot `npm run kick NVDA` against the same NATS.
 
 ---
@@ -155,7 +155,7 @@ the host one-shot `npm run kick NVDA` against the same NATS.
 | `LEGION_EXPECTED_AGENTS`                                       | `4`                                                   | votes the emitter waits for per round                                                                                                     |
 | `LEGION_EMITTER_STALE_MS`                                     | `1800000`                                             | age after which the emitter evicts an incomplete `(cycle, round)` vote buffer; bounds memory if an agent never votes or a constraint never arrives |
 | `LEGION_RISK_ENABLED`                                          | `true`                                                | also wait for the risk constraint before finalizing                                                                                       |
-| `LEGION_CRON`                                                  | `0 */4 * * *`                                         | scheduler cadence (every 4h)                                                                                                              |
+| `LEGION_CRON` / `LEGION_CRON_TZ`                               | `0 11,17 * * 1-5` / `America/New_York`                | scheduler cadence: mid-session + post-close in exchange time, US trading days only ([ADR 0029](adr/0029-market-aware-cron.md))            |
 | `CONSENSUS_THETA_V` / `_QUORUM` / `_MAX_ROUNDS` / `_HOLD_BAND` | `0.5` / `0.6667` / `3` / `0.5`                        | consensus tuning                                                                                                                          |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`                      | —                                                     | signal delivery (optional)                                                                                                                |
 | `FINNHUB_API_KEY`                                              | —                                                     | enables the Contrarian short-interest feed only; copy from GunVest. The other feeds (F&G, VIX, put/call, AAII, NAAIM) are live without it |
