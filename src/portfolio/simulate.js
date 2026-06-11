@@ -8,6 +8,9 @@
 //   capped at available cash. No pyramiding: a symbol already held is skipped.
 // - SELL/STRONG_SELL closes any open position in that symbol. No shorts.
 // - HOLD / NO_CONSENSUS / zero conviction are ignored.
+// - All fills happen at the daily close of the first trading day whose close
+//   comes after the signal fired (signals emitted after the US close roll to
+//   the next trading day — no intraday execution, no stale-close fills).
 // - Positions auto-close horizonDays *trading days* after entry — the same
 //   window the reliability resolver scores signals against.
 
@@ -19,10 +22,19 @@ const DefaultMaxPositionFraction = 0.1;
 const BuyBands = new Set(['BUY', 'STRONG_BUY']);
 const SellBands = new Set(['SELL', 'STRONG_SELL']);
 
-// Calendar day (yyyy-mm-dd, UTC) of a signal timestamp, for alignment with
-// daily candle dates.
-function dayOf(ts) {
-  return new Date(ts).toISOString().slice(0, 10);
+// US equities close at 20:00 UTC (EDT) or 21:00 UTC (EST). All fills happen at
+// the daily close, so a signal emitted at/after the close can only catch the
+// NEXT day's close. Using the earlier (EDT) cutoff guarantees we never fill at
+// a close that had already printed when the signal fired; in winter a signal in
+// the 20:00–21:00 UTC window conservatively rolls forward one day.
+const UsCloseUtcHour = 20;
+
+// First calendar day (yyyy-mm-dd, UTC) whose close the signal could have been
+// traded at: its own day, or the next if it fired after the close cutoff.
+function fillDayOf(ts) {
+  const d = new Date(ts);
+  if (d.getUTCHours() >= UsCloseUtcHour) d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
 }
 
 export function simulatePortfolio(signals, candlesBySymbol, spy, qqq, opts = {}) {
@@ -44,12 +56,12 @@ export function simulatePortfolio(signals, candlesBySymbol, spy, qqq, opts = {})
   const qqqCloses = new Map(qqq.map((c) => [c.date, c.close]));
   const priceOn = (symbol, date) => closesBySymbol.get(symbol)?.get(date);
 
-  // Group signals by the first trading day on/after their emission day.
+  // Group signals by the first trading day whose close they could catch.
   let skipped = 0;
   const signalsByDay = new Map();
   const ordered = [...signals].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   for (const sig of ordered) {
-    const day = calendar.find((d) => d >= dayOf(sig.created_at));
+    const day = calendar.find((d) => d >= fillDayOf(sig.created_at));
     if (!day) {
       skipped += 1; // emitted after the last candle — nothing to trade against
       continue;

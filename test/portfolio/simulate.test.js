@@ -35,6 +35,20 @@ describe('simulatePortfolio', () => {
     expect(r.stats.winRate).toBe(1);
   });
 
+  it('fills a signal emitted after the US close at the next trading day close', () => {
+    const nvda = series([100, 105, 105, 105, 105, 105, 105, 105, 105, 105]);
+    const afterClose = {
+      symbol: 'NVDA',
+      band: 'BUY',
+      conviction: '1',
+      created_at: `${day(1)}T22:00:00Z`, // day 1's close (20:00 UTC) already printed
+    };
+    const r = simulatePortfolio([afterClose], { NVDA: nvda }, flat(100, 10), flat(100, 10));
+    expect(r.trades).toHaveLength(1);
+    expect(r.trades[0].entryDate).toBe(day(2));
+    expect(r.trades[0].entryPrice).toBe(105);
+  });
+
   it('closes early on a SELL signal for the same symbol', () => {
     const nvda = series([100, 100, 105, 105, 105, 105, 105, 105, 105, 105]);
     const r = simulatePortfolio(
