@@ -15,3 +15,8 @@
 - `web/src/lib/format.js` `pct()` now takes a `digits` arg (default 0); the
   portfolio page renders returns/drawdown with 2 decimals so sub-1% values no
   longer flatten to 0%.
+- Portfolio sim execution semantics: all fills are at the daily close, never
+  intraday. Fixed a look-ahead bug where a signal emitted after the US close
+  (scheduler runs 24/7) filled at that same day's already-printed close; such
+  signals now roll to the next trading day's close (20:00 UTC EDT cutoff used
+  year-round, conservative in winter).
