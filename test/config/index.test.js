@@ -26,7 +26,7 @@ describe('loadConfig', () => {
       maxConcurrent: 6,
       macroTtlMs: 60000,
     });
-    expect(cfg.emitter).toEqual({ staleEntryMs: 1800000 });
+    expect(cfg.emitter).toEqual({ staleEntryMs: 5400000 });
     expect(cfg.cronTimezone).toBe('America/New_York');
     expect(cfg.summaryCron).toBe('0 18 * * 1-5');
     expect(cfg.summaryWindowHours).toBe(24);

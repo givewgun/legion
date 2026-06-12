@@ -22,7 +22,7 @@ const DAY_MS = 86400000;
 // ollama queue), and evicting mid-round discards the votes already collected and
 // the risk constraint — which is published once per round and never re-sent —
 // leaving the cycle unable to ever complete.
-const DefaultStaleEntryMs = 30 * 60 * 1000;
+const DefaultStaleEntryMs = 90 * 60 * 1000;
 // Upper bound on how often the lazy sweep scans; the actual cadence is the min of
 // this and staleEntryMs so a small staleEntryMs (tests) still sweeps promptly.
 const SweepThrottleMs = 60 * 1000;
