@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS legion.tickers (
 CREATE TABLE IF NOT EXISTS legion.cycles (
   id          BIGSERIAL PRIMARY KEY,
   symbol      TEXT NOT NULL REFERENCES legion.tickers(symbol),
-  status      TEXT NOT NULL DEFAULT 'running',  -- running | converged | no_consensus
+  status      TEXT NOT NULL DEFAULT 'running',  -- running | converged | no_consensus | timeout
   started_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   ended_at    TIMESTAMPTZ
 );

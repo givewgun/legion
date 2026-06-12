@@ -432,6 +432,22 @@ export function createRepo(db) {
       ]);
     },
 
+    // Closes cycles abandoned mid-debate: still 'running' but started before
+    // `cutoff` and not in `activeIds` (the cycles the emitter still tracks in
+    // memory — alive however long ago they started). Returns the closed rows so
+    // the caller can log what was given up on.
+    async timeoutStaleCycles(cutoff, activeIds = []) {
+      return db.query(
+        `UPDATE legion.cycles
+            SET status = 'timeout', ended_at = now()
+          WHERE status = 'running'
+            AND started_at < $1
+            AND NOT (id = ANY($2::bigint[]))
+         RETURNING id, symbol`,
+        [cutoff, activeIds],
+      );
+    },
+
     async listEnabledTickers() {
       // db.query returns the rows array directly (see src/db/client.js).
       const rows = await db.query(

@@ -16,8 +16,12 @@ const DAY_MS = 86400000;
 // collects all expected votes, or a cycle that finalizes. A round that never
 // completes (an agent process is down, a missing risk constraint, or a late
 // duplicate vote re-creating a finalized entry) would otherwise pin its buffers
-// forever, so we evict entries older than this. Generous vs. a real cycle
-// (seconds–minutes) to never drop one still in flight.
+// forever, so we evict entries this long after their LAST activity. Age since
+// last message, not since creation: a saturated LLM box legitimately spreads one
+// round's votes over more than this window (a 13-ticker batch through a serial
+// ollama queue), and evicting mid-round discards the votes already collected and
+// the risk constraint — which is published once per round and never re-sent —
+// leaving the cycle unable to ever complete.
 const DefaultStaleEntryMs = 30 * 60 * 1000;
 // Upper bound on how often the lazy sweep scans; the actual cadence is the min of
 // this and staleEntryMs so a small staleEntryMs (tests) still sweeps promptly.
@@ -41,7 +45,7 @@ export function createEmitter({
   clock = () => new Date(),
   logger = console,
 }) {
-  const rounds = new Map(); // `${cycleId}:${round}` -> { symbol, round, votes, constraint, createdAt }
+  const rounds = new Map(); // `${cycleId}:${round}` -> { symbol, round, votes, constraint, lastSeenAt }
   const learnedByCycle = new Map(); // cycleId -> { rho, calib, corr } loaded once per cycle
   const firstVotesByCycle = new Map(); // cycleId -> round-1 votes (independent priors)
   const cycleSeenAt = new Map(); // cycleId -> ms of last activity (drives stale-cycle eviction)
@@ -55,13 +59,15 @@ export function createEmitter({
   function touch(cycleId, round, symbol, nowMs) {
     const k = key(cycleId, round);
     if (!rounds.has(k)) {
-      rounds.set(k, { cycleId, symbol, round, votes: [], constraint: null, createdAt: nowMs });
+      rounds.set(k, { cycleId, symbol, round, votes: [], constraint: null, lastSeenAt: nowMs });
     }
-    // Refresh on every message so the cycle's age tracks *last activity*, not
-    // first-seen — otherwise a slow multi-round cycle whose total span exceeds
-    // staleEntryMs would have its independent round-1 priors swept mid-flight.
+    // Refresh on every message so staleness tracks *last activity*, not
+    // first-seen — otherwise a slow round (or a multi-round cycle) whose total
+    // span exceeds staleEntryMs would be swept mid-flight.
+    const entry = rounds.get(k);
+    entry.lastSeenAt = nowMs;
     cycleSeenAt.set(cycleId, nowMs);
-    return { k, entry: rounds.get(k) };
+    return { k, entry };
   }
 
   // Crash recovery (ADR 0024): every arriving vote/constraint is also persisted
@@ -114,6 +120,11 @@ export function createEmitter({
         `[emitter] recovered ${pendingVotes.length} pending vote(s), resumed ${resumed} round(s)`,
       );
     }
+    // Cycles too old to recover (their pending rows aged out) can never finish
+    // on their own — sweep now so they are closed as 'timeout' instead of
+    // sitting in 'running' until the next batch's traffic triggers a sweep.
+    lastSweepMs = nowMs;
+    sweepStale(nowMs);
   }
 
   // A round that was persisted before the crash had exactly one pending action:
@@ -200,14 +211,17 @@ export function createEmitter({
     });
   }
 
-  // Drop buffers that have lingered past staleEntryMs — a round that never reached
-  // quorum and the per-cycle state of a cycle that never finalized. Bounds memory
-  // regardless of which agent or constraint went missing. Pending rows age out on
-  // the same horizon so an abandoned cycle cannot resurrect on the next restart.
+  // Drop buffers that have been silent past staleEntryMs — a round that never
+  // reached quorum and the per-cycle state of a cycle that never finalized.
+  // Bounds memory regardless of which agent or constraint went missing. Pending
+  // rows age out on the same horizon so an abandoned cycle cannot resurrect on
+  // the next restart. Evicting a buffer abandons its cycle, so the matching DB
+  // rows are closed as 'timeout' too — otherwise they sit in 'running' forever.
   function sweepStale(nowMs) {
+    const cutoff = new Date(nowMs - staleEntryMs).toISOString();
     let evicted = 0;
     for (const [k, entry] of rounds) {
-      if (nowMs - entry.createdAt > staleEntryMs) {
+      if (nowMs - entry.lastSeenAt > staleEntryMs) {
         rounds.delete(k);
         evicted += 1;
       }
@@ -219,12 +233,28 @@ export function createEmitter({
         firstVotesByCycle.delete(cycleId);
       }
     }
+    // Close abandoned cycles in the DB: still 'running', older than the stale
+    // horizon, and no longer tracked in memory. Cycles still in cycleSeenAt are
+    // alive however long ago they started (slow multi-round debates) and are
+    // passed as protected. Also catches strays from before a restart that
+    // recovery skipped as too old.
     repo
-      .deletePendingBefore?.(new Date(nowMs - staleEntryMs).toISOString())
+      .timeoutStaleCycles?.(cutoff, [...cycleSeenAt.keys()])
+      .then((timedOut) => {
+        if (timedOut?.length > 0) {
+          const names = timedOut.map((c) => `${c.symbol}#${c.id}`).join(', ');
+          logger.warn?.(
+            `[emitter] timed out ${timedOut.length} abandoned running cycle(s): ${names}`,
+          );
+        }
+      })
+      .catch((err) => logger.error(`[emitter] stale cycle timeout failed: ${err.message}`));
+    repo
+      .deletePendingBefore?.(cutoff)
       .catch((err) => logger.error(`[emitter] pending sweep failed: ${err.message}`));
     if (evicted > 0) {
       logger.warn?.(
-        `[emitter] evicted ${evicted} stale round buffer(s) older than ${staleEntryMs}ms — ` +
+        `[emitter] evicted ${evicted} stale round buffer(s) silent for ${staleEntryMs}ms — ` +
           `an agent likely never voted or a risk constraint never arrived`,
       );
     }
