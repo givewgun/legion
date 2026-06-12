@@ -320,4 +320,92 @@ describe('createEmitter (v2)', () => {
     expect(out[0].conviction).toBe(0.5); // capped
     expect(out[0].plan.riskCapped).toBe(true);
   });
+
+  it('keeps a slow round alive while votes keep arriving: staleness is gap since last activity, not age since first vote', async () => {
+    const bus = createMemoryBus();
+    const repo = fakeRepo();
+    let nowMs = 1_000_000;
+    const staleEntryMs = 60_000;
+    createEmitter({
+      bus,
+      repo,
+      telegram: vi.fn(async () => {}),
+      consensus,
+      expectedAgents: 3,
+      staleEntryMs,
+      clock: () => new Date(nowMs),
+    }).start();
+
+    // Three agents drain a saturated LLM queue: votes land 40s and 25s apart.
+    // Total round span (65s) exceeds staleEntryMs, but no activity gap does —
+    // the sweep on the third vote must not evict the first two.
+    const vote = (agentId) =>
+      emitVote(bus, {
+        cycleId: 30,
+        symbol: 'TSM',
+        round: 1,
+        vote: { agentId, stance: 2, conviction: 0.9, weight: 1, rationale: 'up' },
+      });
+    vote('technical');
+    nowMs += 40_000;
+    vote('news');
+    nowMs += 25_000;
+    vote('contrarian');
+
+    await vi.waitFor(() => expect(repo.finishCycle).toHaveBeenCalledWith(30, 'converged'));
+  });
+
+  it('times out abandoned running cycles in the DB on sweep, sparing cycles still active in memory', async () => {
+    const bus = createMemoryBus();
+    const repo = fakeRepo();
+    repo.timeoutStaleCycles = vi.fn(async () => [{ id: 8, symbol: 'MU' }]);
+    const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn() };
+    let nowMs = 1_000_000;
+    const staleEntryMs = 60_000;
+    createEmitter({
+      bus,
+      repo,
+      telegram: vi.fn(async () => {}),
+      consensus,
+      expectedAgents: 2,
+      staleEntryMs,
+      clock: () => new Date(nowMs),
+      logger,
+    }).start();
+
+    // Cycle 8 gets one of two votes, then goes silent past the stale horizon.
+    emitVote(bus, {
+      cycleId: 8,
+      symbol: 'MU',
+      round: 1,
+      vote: { agentId: 'technical', stance: 1, conviction: 0.5, weight: 1, rationale: 'x' },
+    });
+    // Cycle 9 stays active: its last vote is only 25s old at the next sweep.
+    nowMs += 40_000;
+    emitVote(bus, {
+      cycleId: 9,
+      symbol: 'TSLA',
+      round: 1,
+      vote: { agentId: 'technical', stance: 1, conviction: 0.5, weight: 1, rationale: 'y' },
+    });
+    nowMs += 25_000;
+    emitVote(bus, {
+      cycleId: 10,
+      symbol: 'NVDA',
+      round: 1,
+      vote: { agentId: 'technical', stance: 1, conviction: 0.5, weight: 1, rationale: 'z' },
+    });
+
+    // The sweep must close cycle 8 in the DB (not just drop its buffer) and
+    // pass the still-active cycle 9 as protected.
+    await vi.waitFor(() =>
+      expect(repo.timeoutStaleCycles).toHaveBeenCalledWith(
+        new Date(nowMs - staleEntryMs).toISOString(),
+        [9],
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('timed out 1')),
+    );
+  });
 });

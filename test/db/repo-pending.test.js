@@ -76,4 +76,19 @@ describe('repo pending state (ADR 0024)', () => {
     expect(await repo.cycleHasSignal(8)).toBe(false);
     expect(pool.calls[0].text.toLowerCase()).toContain('from legion.signals');
   });
+
+  it('timeoutStaleCycles closes abandoned running cycles, sparing the active ids', async () => {
+    const rows = [{ id: 8, symbol: 'MU' }];
+    const pool = poolReturning([rows]);
+    const repo = createRepo(createDb(pool));
+    const out = await repo.timeoutStaleCycles('2026-06-11T21:30:00Z', [9, 12]);
+    expect(out).toEqual(rows);
+    const { text, params } = pool.calls[0];
+    const sql = text.toLowerCase();
+    expect(sql).toContain('update legion.cycles');
+    expect(sql).toContain(`status = 'timeout'`);
+    expect(sql).toContain(`status = 'running'`);
+    expect(sql).toContain('started_at <');
+    expect(params).toEqual(['2026-06-11T21:30:00Z', [9, 12]]);
+  });
 });
