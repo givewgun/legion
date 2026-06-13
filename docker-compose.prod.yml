@@ -15,15 +15,28 @@
 # network. The gunvest network name differs by compose project, so it's
 # parameterised; the deploy workflow detects it and writes GUNVEST_NETWORK into .env.
 #
+# Oculory observability: every worker process starts with
+# `node --import ./src/instrumentation/otel.mjs`, which exposes Prometheus metrics
+# on :9100 and ships OTLP traces to oculory-alloy. NATS publishes monitoring on
+# :8222 for the nats-exporter.
+#
 #   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+
+# Shared OTel env for every instrumented Node worker.
+x-otel-env: &otel-env
+  OTEL_SERVICE_NAME: legion
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://oculory-alloy:4317
 
 services:
   nats:
     image: nats:2.10-alpine
     container_name: legion-nats
-    command: ['-js']
+    # -m 8222 exposes the HTTP monitoring endpoint scraped by Oculory's nats-exporter.
+    command: ['-js', '-m', '8222']
     ports:
       - '4222:4222' # host-published so `npm run kick` from the host can reach it
+    expose:
+      - '8222'
     restart: unless-stopped
     networks: [legion]
     environment:
@@ -52,10 +65,12 @@ services:
   emitter:
     build: .
     container_name: legion-emitter
-    command: npm run emitter
+    command: node --import=./src/instrumentation/otel.mjs src/run/emitter.js
     env_file: .env
     environment:
-      - TZ=Asia/Bangkok
+      <<: *otel-env
+      TZ: Asia/Bangkok
+    expose: ['9100']
     depends_on: [nats]
     restart: unless-stopped
     networks: [legion, gunvest]
@@ -63,10 +78,12 @@ services:
   agent-technical:
     build: .
     container_name: legion-agent-technical
-    command: npm run agent:technical
+    command: node --import=./src/instrumentation/otel.mjs src/run/agent-technical.js
     env_file: .env
     environment:
-      - TZ=Asia/Bangkok
+      <<: *otel-env
+      TZ: Asia/Bangkok
+    expose: ['9100']
     depends_on: [nats, ollama]
     restart: unless-stopped
     networks: [legion, gunvest]
@@ -74,10 +91,12 @@ services:
   agent-news:
     build: .
     container_name: legion-agent-news
-    command: npm run agent:news
+    command: node --import=./src/instrumentation/otel.mjs src/run/agent-news.js
     env_file: .env
     environment:
-      - TZ=Asia/Bangkok
+      <<: *otel-env
+      TZ: Asia/Bangkok
+    expose: ['9100']
     depends_on: [nats, ollama]
     restart: unless-stopped
     networks: [legion, gunvest]
@@ -85,10 +104,12 @@ services:
   agent-social:
     build: .
     container_name: legion-agent-social
-    command: npm run agent:social
+    command: node --import=./src/instrumentation/otel.mjs src/run/agent-social.js
     env_file: .env
     environment:
-      - TZ=Asia/Bangkok
+      <<: *otel-env
+      TZ: Asia/Bangkok
+    expose: ['9100']
     depends_on: [nats, ollama]
     restart: unless-stopped
     networks: [legion, gunvest]
@@ -96,10 +117,12 @@ services:
   agent-contrarian:
     build: .
     container_name: legion-agent-contrarian
-    command: npm run agent:contrarian
+    command: node --import=./src/instrumentation/otel.mjs src/run/agent-contrarian.js
     env_file: .env
     environment:
-      - TZ=Asia/Bangkok
+      <<: *otel-env
+      TZ: Asia/Bangkok
+    expose: ['9100']
     depends_on: [nats, ollama]
     restart: unless-stopped
     networks: [legion, gunvest]
@@ -107,10 +130,12 @@ services:
   risk:
     build: .
     container_name: legion-risk
-    command: npm run risk
+    command: node --import=./src/instrumentation/otel.mjs src/run/risk.js
     env_file: .env
     environment:
-      - TZ=Asia/Bangkok
+      <<: *otel-env
+      TZ: Asia/Bangkok
+    expose: ['9100']
     depends_on: [nats]
     restart: unless-stopped
     networks: [legion, gunvest]
@@ -118,24 +143,27 @@ services:
   scheduler:
     build: .
     container_name: legion-scheduler
-    command: npm run scheduler
+    command: node --import=./src/instrumentation/otel.mjs src/run/scheduler.js
     env_file: .env
     environment:
-      - TZ=Asia/Bangkok
+      <<: *otel-env
+      TZ: Asia/Bangkok
+    expose: ['9100']
     depends_on: [nats]
     restart: unless-stopped
     networks: [legion, gunvest]
 
   # Dashboard REST API. Reads gunvest's Postgres (legion schema); no host port —
-  # only the web service (same legion network) talks to it.
+  # only the web service (same legion network) talks to it. :9100 = metrics.
   api:
     build: .
     container_name: legion-api
-    command: npm run api
+    command: node --import=./src/instrumentation/otel.mjs src/run/api.js
     env_file: .env
-    expose: ['8088']
+    expose: ['8088', '9100']
     environment:
-      - TZ=Asia/Bangkok
+      <<: *otel-env
+      TZ: Asia/Bangkok
     depends_on: [nats]
     restart: unless-stopped
     networks: [legion, gunvest]
