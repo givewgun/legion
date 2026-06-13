@@ -2,6 +2,7 @@ import { cycleWildcard, voteSubject } from '../bus/subjects.js';
 import { createVote } from '../consensus/vote.js';
 import { parseVote } from './parse.js';
 import { summarizePeers } from './peers.js';
+import { agentInference } from '../instrumentation/metrics.js';
 
 // How long a cycle's gathered data stays reusable across revision rounds. A full
 // cycle spans minutes; entries older than this belong to a cycle that died and
@@ -77,10 +78,17 @@ export function createAgent({
         }
       }
       const { system, prompt } = buildPrompt(symbol, data, peers);
-      const text = await activeProvider.generate({
-        system,
-        prompt: memory ? `${memory}\n\n${prompt}` : prompt,
-      });
+      // Time the reasoning step (LLM generate) per agent for the dashboards.
+      const stopInference = agentInference.startTimer({ agent: id });
+      let text;
+      try {
+        text = await activeProvider.generate({
+          system,
+          prompt: memory ? `${memory}\n\n${prompt}` : prompt,
+        });
+      } finally {
+        stopInference();
+      }
       const parsed = parseVote(text, { agentId: id, weight });
       if (parsed.ok) {
         vote = parsed.vote;

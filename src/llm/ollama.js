@@ -1,6 +1,7 @@
 // Local LLM provider backed by the Ollama HTTP API.
 // fetchImpl is injectable for testing; defaults to global fetch (Node >=18).
 import { createLimiter, retryAsync } from '../util/resilient.js';
+import { ollamaRequest } from '../instrumentation/metrics.js';
 
 // no custom dispatcher: NUM_PARALLEL=1 + shallow queue keeps waits < undici's 300s headers-timeout
 
@@ -62,12 +63,16 @@ export function createOllamaProvider(
   return {
     name: 'local',
     async generate({ system, prompt }) {
+      // Measure end-to-end generate latency (incl. queue wait + retries).
+      const stop = ollamaRequest.startTimer();
       try {
         return await limit(() =>
           retryAsync(() => doRequest({ system, prompt }), { retries, baseMs: 500, isTransient }),
         );
       } catch (err) {
         throw wrapError(err, timeoutMs);
+      } finally {
+        stop();
       }
     },
   };

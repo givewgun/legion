@@ -7,6 +7,7 @@ import { backtestRoutes } from './routes/backtest.js';
 import { triggerRoutes } from './routes/trigger.js';
 import { agentRoutes } from './routes/agents.js';
 import { portfolioRoutes } from './routes/portfolio.js';
+import { httpMetricsMiddleware } from '../instrumentation/metrics.js';
 
 // Builds the Express app without listening (so tests can drive it in-process).
 // Routes are mounted from the supplied repo. An optional orchestrator enables
@@ -14,6 +15,9 @@ import { portfolioRoutes } from './routes/portfolio.js';
 export function createApp({ repo, orchestrator = null, gunvest = null, horizonDays = 5 }) {
   const app = express();
   app.use(express.json());
+  // RED metrics for every API request (recorded into the shared registry that
+  // the :9100 /metrics server exposes). Skips /metrics itself.
+  app.use(httpMetricsMiddleware);
 
   app.get('/health', (req, res) => res.json({ ok: true }));
   app.use('/api/tickers', tickerRoutes(repo));
