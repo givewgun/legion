@@ -214,9 +214,12 @@ export function createEmitter({
   // Drop buffers that have been silent past staleEntryMs — a round that never
   // reached quorum and the per-cycle state of a cycle that never finalized.
   // Bounds memory regardless of which agent or constraint went missing. Pending
-  // rows age out on the same horizon so an abandoned cycle cannot resurrect on
-  // the next restart. Evicting a buffer abandons its cycle, so the matching DB
-  // rows are closed as 'timeout' too — otherwise they sit in 'running' forever.
+  // rows age out on the same horizon — but per CYCLE (repo.deletePendingBefore
+  // spares every row of a cycle with any recent row), so a slow-but-alive
+  // cycle's early votes and one-shot risk constraint stay recoverable while an
+  // abandoned cycle cannot resurrect on the next restart. Evicting a buffer
+  // abandons its cycle, so the matching DB rows are closed as 'timeout' too —
+  // otherwise they sit in 'running' forever.
   function sweepStale(nowMs) {
     const cutoff = new Date(nowMs - staleEntryMs).toISOString();
     let evicted = 0;

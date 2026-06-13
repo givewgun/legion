@@ -35,14 +35,30 @@ describe('repo pending state (ADR 0024)', () => {
     expect(params).toEqual([7, 1, 'NVDA', '{"capConviction":0.5}']);
   });
 
-  it('loadPendingVotes filters by age', async () => {
+  it('loadPendingVotes returns ALL rows of recently-active cycles, not just recent rows', async () => {
     const rows = [{ cycle_id: 7, round: 1, symbol: 'NVDA', vote: { agentId: 'technical' } }];
     const pool = poolReturning([rows]);
     const repo = createRepo(createDb(pool));
     const out = await repo.loadPendingVotes('2026-06-04T00:00:00Z');
     expect(out).toEqual(rows);
-    expect(pool.calls[0].text.toLowerCase()).toContain('created_at >=');
+    // Cycle-level cutoff: a slow cycle's early votes must survive recovery, so
+    // recency is judged per cycle (any row in either table), not per row.
+    const sql = pool.calls[0].text.toLowerCase();
+    expect(sql).toContain('created_at >=');
+    expect(sql).toContain('union');
+    expect(sql).toContain('legion.pending_constraints');
     expect(pool.calls[0].params).toEqual(['2026-06-04T00:00:00Z']);
+  });
+
+  it('loadPendingConstraints uses the same cycle-level cutoff', async () => {
+    const rows = [{ cycle_id: 7, round: 1, symbol: 'NVDA', payload: { capConviction: 0.5 } }];
+    const pool = poolReturning([rows]);
+    const repo = createRepo(createDb(pool));
+    const out = await repo.loadPendingConstraints('2026-06-04T00:00:00Z');
+    expect(out).toEqual(rows);
+    const sql = pool.calls[0].text.toLowerCase();
+    expect(sql).toContain('union');
+    expect(sql).toContain('legion.pending_votes');
   });
 
   it('deletePendingCycle clears both tables for the cycle', async () => {
@@ -54,12 +70,21 @@ describe('repo pending state (ADR 0024)', () => {
     expect(pool.calls[0].params).toEqual([7]);
   });
 
-  it('deletePendingBefore ages both tables out', async () => {
+  it('deletePendingBefore only deletes rows of cycles with NO recent activity in either table', async () => {
     const pool = poolReturning([[], []]);
     const repo = createRepo(createDb(pool));
     await repo.deletePendingBefore('2026-06-04T00:00:00Z');
     expect(pool.calls).toHaveLength(2);
-    expect(pool.calls[0].text.toLowerCase()).toContain('created_at <');
+    // A slow-but-alive cycle keeps refreshing rows; its OLD rows (early votes,
+    // the one-shot risk constraint) must be spared or a restart strands it.
+    for (const call of pool.calls) {
+      const sql = call.text.toLowerCase();
+      expect(sql).toContain('delete from');
+      expect(sql).toContain('not in');
+      expect(sql).toContain('created_at >=');
+      expect(sql).toContain('union');
+      expect(call.params).toEqual(['2026-06-04T00:00:00Z']);
+    }
   });
 
   it('roundExists reports whether a round was already aggregated', async () => {

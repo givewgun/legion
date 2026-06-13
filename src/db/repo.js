@@ -377,11 +377,20 @@ export function createRepo(db) {
       );
     },
 
+    // Pending-row recency is judged per CYCLE, not per row: a slow cycle's
+    // early votes and its one-shot risk constraint can be much older than the
+    // staleness cutoff while the cycle is still alive (later rows keep arriving).
+    // A cycle counts as active if ANY of its rows in EITHER table is recent —
+    // then ALL its rows are loaded on recovery and spared by the sweep.
     async loadPendingVotes(since) {
       return db.query(
         `SELECT cycle_id, round, symbol, vote
            FROM legion.pending_votes
-          WHERE created_at >= $1
+          WHERE cycle_id IN (
+                  SELECT cycle_id FROM legion.pending_votes WHERE created_at >= $1
+                  UNION
+                  SELECT cycle_id FROM legion.pending_constraints WHERE created_at >= $1
+                )
           ORDER BY cycle_id, round`,
         [since],
       );
@@ -391,7 +400,11 @@ export function createRepo(db) {
       return db.query(
         `SELECT cycle_id, round, symbol, payload
            FROM legion.pending_constraints
-          WHERE created_at >= $1
+          WHERE cycle_id IN (
+                  SELECT cycle_id FROM legion.pending_votes WHERE created_at >= $1
+                  UNION
+                  SELECT cycle_id FROM legion.pending_constraints WHERE created_at >= $1
+                )
           ORDER BY cycle_id, round`,
         [since],
       );
@@ -403,8 +416,26 @@ export function createRepo(db) {
     },
 
     async deletePendingBefore(cutoff) {
-      await db.query(`DELETE FROM legion.pending_votes WHERE created_at < $1`, [cutoff]);
-      await db.query(`DELETE FROM legion.pending_constraints WHERE created_at < $1`, [cutoff]);
+      // Whole abandoned cycles only (no recent row in either table) — never
+      // individual old rows of a still-active cycle, which recovery still needs.
+      await db.query(
+        `DELETE FROM legion.pending_votes
+          WHERE cycle_id NOT IN (
+                  SELECT cycle_id FROM legion.pending_votes WHERE created_at >= $1
+                  UNION
+                  SELECT cycle_id FROM legion.pending_constraints WHERE created_at >= $1
+                )`,
+        [cutoff],
+      );
+      await db.query(
+        `DELETE FROM legion.pending_constraints
+          WHERE cycle_id NOT IN (
+                  SELECT cycle_id FROM legion.pending_votes WHERE created_at >= $1
+                  UNION
+                  SELECT cycle_id FROM legion.pending_constraints WHERE created_at >= $1
+                )`,
+        [cutoff],
+      );
     },
 
     // Whether a round was already aggregated — recovery must not re-run it.

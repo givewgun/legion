@@ -46,6 +46,11 @@ Mirror the in-memory buffers in two pending tables and replay them on start:
     the crash finalizes unconstrained with a loud warning.
 - **Lifecycle.** A cycle's pending rows are deleted on finalize; the stale sweep ages out
   rows past `staleEntryMs` so an abandoned cycle cannot resurrect on the next restart.
+  Both aging and recovery judge recency per *cycle*, not per row (a cycle with any
+  recent row in either pending table keeps — and reloads — all of its rows): a slow
+  batch legitimately spreads one round's votes past `staleEntryMs`, and the early
+  votes plus the one-shot risk constraint must survive a restart or the cycle is
+  stranded until the stale sweep times it out.
 - **Herding-guard priors are now the RAW round-1 votes** (not the calibration-scaled
   copies): "independent backing" means the agents' own pre-dissent claims, and raw votes
   are what the pending table can faithfully restore. (With neutral dials the two are
