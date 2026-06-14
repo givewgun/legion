@@ -93,5 +93,11 @@ describe('loadConfig', () => {
     expect(loadConfig({ OLLAMA_THINK: 'false' }).ollama.think).toBe(false);
     expect(loadConfig({ OLLAMA_THINK: 'true' }).ollama.think).toBe(true);
     expect(loadConfig({}).ollama.think).toBeNull();
+    // case-insensitive per the helper contract
+    expect(loadConfig({ OLLAMA_THINK: 'TRUE' }).ollama.think).toBe(true);
+    expect(loadConfig({ OLLAMA_THINK: 'False' }).ollama.think).toBe(false);
+    // unrecognized values fall back to null (field omitted, qwen2.5-safe)
+    expect(loadConfig({ OLLAMA_THINK: 'yes' }).ollama.think).toBeNull();
+    expect(loadConfig({ OLLAMA_THINK: '' }).ollama.think).toBeNull();
   });
 });

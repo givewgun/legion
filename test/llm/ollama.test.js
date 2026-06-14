@@ -46,6 +46,17 @@ describe('createOllamaProvider', () => {
     expect(body.think).toBe(false);
   });
 
+  it('includes think: true in the request body when configured', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ response: 'ok' }) }));
+    const provider = createOllamaProvider(
+      { url: 'http://o:11434', model: 'm', think: true },
+      fetchMock,
+    );
+    await provider.generate({ system: 's', prompt: 'p' });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.think).toBe(true);
+  });
+
   it('passes per-agent sampling options (temperature, seed) to the API', async () => {
     const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ response: 'ok' }) }));
     const provider = createOllamaProvider(
