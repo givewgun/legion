@@ -149,10 +149,14 @@ jobs:
           script: |
             set -euo pipefail
             APP_DIR=/opt/legion/app
-            # To switch back to qwen2.5: set MODEL=qwen2.5:7b-instruct and remove
-            # (or blank) OLLAMA_THINK below — qwen2.5 has no thinking mode and
-            # ignores the field, but omitting it keeps the request body unchanged.
-            MODEL=qwen3:4b
+            # qwen2.5:3b-instruct: light + fast on the 2-OCPU free tier, no
+            # thinking mode, emits clean JSON for the agents' votes. To try a
+            # qwen3 thinking model instead, set MODEL and OLLAMA_THINK=false —
+            # BUT note: on ollama 0.30.6 the `qwen3:4b` tag ignored both
+            # `think:false` and `/no_think` (kept emitting reasoning, too slow
+            # on CPU), so only switch once a non-thinking qwen3 instruct tag is
+            # available. Blank OLLAMA_THINK omits the field (qwen2.5-safe).
+            MODEL=qwen2.5:3b-instruct
             REPO_URL="https://x-access-token:${REPO_CLONE_TOKEN}@github.com/${GH_REPO}.git"
 
             # First-run bootstrap: clone if missing. The VM already has Docker and
@@ -183,7 +187,7 @@ jobs:
             NATS_URL=nats://nats:4222
             OLLAMA_URL=http://ollama:11434
             OLLAMA_MODEL=${MODEL}
-            OLLAMA_THINK=false
+            OLLAMA_THINK=
             OLLAMA_TIMEOUT_MS=300000
             OLLAMA_MAX_CONCURRENT=1
             DATABASE_URL=${DATABASE_URL}
