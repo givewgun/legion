@@ -58,8 +58,10 @@ services:
     restart: unless-stopped
     # Hard cap as backstop: kernel reclaims page cache under pressure, and a
     # runaway runner gets OOM-killed and restarted instead of starving the
-    # gunvest stack on the shared 24GB VM.
-    mem_limit: 12g
+    # gunvest stack on the shared VM. Oracle cut the free tier to 12GB total
+    # (2026), so the cap must leave room for the rest of the box: base
+    # footprint ~2.6GB + qwen2.5:7b (~5.5GB loaded) fits in 7g with headroom.
+    mem_limit: 7g
     networks: [legion]
 
   emitter:
