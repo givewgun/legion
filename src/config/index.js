@@ -6,6 +6,17 @@ function num(env, key, fallback) {
   return parsed;
 }
 
+// Tri-state boolean: only the literal strings "true"/"false" (any case) are
+// recognized; unset/empty/anything else -> null (caller-specific "don't send this").
+function bool(env, key) {
+  const raw = env[key];
+  if (raw === undefined) return null;
+  const lower = raw.toLowerCase();
+  if (lower === 'true') return true;
+  if (lower === 'false') return false;
+  return null;
+}
+
 export function loadConfig(env = process.env) {
   return {
     gunvestApiUrl: env.GUNVEST_API_URL || 'http://localhost:3001',
@@ -33,6 +44,11 @@ export function loadConfig(env = process.env) {
       model: env.OLLAMA_MODEL || 'qwen2.5:7b-instruct',
       timeoutMs: num(env, 'OLLAMA_TIMEOUT_MS', 300000),
       maxConcurrent: num(env, 'OLLAMA_MAX_CONCURRENT', 1),
+      // qwen3 emits <think>...</think> reasoning by default; qwen2.5 has no
+      // thinking mode and doesn't understand the `think` field at all. null
+      // means "omit the field entirely" so qwen2.5 deploys see an unchanged
+      // request body — only set OLLAMA_THINK when running a qwen3-family model.
+      think: bool(env, 'OLLAMA_THINK'),
     },
     // OpenAI-compatible provider families. An empty apiKey means the provider is
     // unconfigured: constructing it throws a clear error, and an agent assigned
