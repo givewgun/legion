@@ -149,7 +149,10 @@ jobs:
           script: |
             set -euo pipefail
             APP_DIR=/opt/legion/app
-            MODEL=qwen2.5:7b-instruct
+            # To switch back to qwen2.5: set MODEL=qwen2.5:7b-instruct and remove
+            # (or blank) OLLAMA_THINK below — qwen2.5 has no thinking mode and
+            # ignores the field, but omitting it keeps the request body unchanged.
+            MODEL=qwen3:4b
             REPO_URL="https://x-access-token:${REPO_CLONE_TOKEN}@github.com/${GH_REPO}.git"
 
             # First-run bootstrap: clone if missing. The VM already has Docker and
@@ -180,6 +183,7 @@ jobs:
             NATS_URL=nats://nats:4222
             OLLAMA_URL=http://ollama:11434
             OLLAMA_MODEL=${MODEL}
+            OLLAMA_THINK=false
             OLLAMA_TIMEOUT_MS=300000
             OLLAMA_MAX_CONCURRENT=1
             DATABASE_URL=${DATABASE_URL}

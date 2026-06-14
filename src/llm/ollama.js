@@ -36,7 +36,7 @@ const wrapError = (err, timeoutMs) => {
 };
 
 export function createOllamaProvider(
-  { url, model, timeoutMs = 300000, maxConcurrent = 1, retries = 1, options = null },
+  { url, model, timeoutMs = 300000, maxConcurrent = 1, retries = 1, options = null, think = null },
   fetchImpl = fetch,
 ) {
   const limit = createLimiter(maxConcurrent);
@@ -50,7 +50,16 @@ export function createOllamaProvider(
         headers: { 'Content-Type': 'application/json' },
         // `options` carries per-agent sampling settings (temperature, seed) so
         // agents sharing one base model still sample decorrelated outputs.
-        body: JSON.stringify({ model, system, prompt, stream: false, ...(options && { options }) }),
+        // `think` is omitted entirely when null, so qwen2.5 (no thinking mode)
+        // sees a byte-identical body to before this field existed.
+        body: JSON.stringify({
+          model,
+          system,
+          prompt,
+          stream: false,
+          ...(options && { options }),
+          ...(think != null && { think }),
+        }),
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(`Ollama request failed: ${res.status}`);

@@ -27,6 +27,25 @@ describe('createOllamaProvider', () => {
     expect(opts.signal).toBeDefined();
   });
 
+  it('omits the think field when not configured', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ response: 'ok' }) }));
+    const provider = createOllamaProvider({ url: 'http://o:11434', model: 'm' }, fetchMock);
+    await provider.generate({ system: 's', prompt: 'p' });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body).not.toHaveProperty('think');
+  });
+
+  it('includes think: false in the request body when configured', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ response: 'ok' }) }));
+    const provider = createOllamaProvider(
+      { url: 'http://o:11434', model: 'm', think: false },
+      fetchMock,
+    );
+    await provider.generate({ system: 's', prompt: 'p' });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.think).toBe(false);
+  });
+
   it('passes per-agent sampling options (temperature, seed) to the API', async () => {
     const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ response: 'ok' }) }));
     const provider = createOllamaProvider(

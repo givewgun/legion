@@ -19,6 +19,7 @@ describe('loadConfig', () => {
       model: 'qwen2.5:7b-instruct',
       timeoutMs: 300000,
       maxConcurrent: 1,
+      think: null,
     });
     expect(cfg.gunvest).toEqual({
       timeoutMs: 15000,
@@ -69,6 +70,7 @@ describe('loadConfig', () => {
       model: 'llama3.1:8b',
       timeoutMs: 120000,
       maxConcurrent: 2,
+      think: null,
     });
     expect(cfg.gunvest).toEqual({
       timeoutMs: 20000,
@@ -85,5 +87,11 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ CONSENSUS_THETA_V: 'abc' })).toThrow(
       'CONSENSUS_THETA_V must be a number',
     );
+  });
+
+  it('parses OLLAMA_THINK as a tri-state boolean', () => {
+    expect(loadConfig({ OLLAMA_THINK: 'false' }).ollama.think).toBe(false);
+    expect(loadConfig({ OLLAMA_THINK: 'true' }).ollama.think).toBe(true);
+    expect(loadConfig({}).ollama.think).toBeNull();
   });
 });
