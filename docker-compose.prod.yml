@@ -203,13 +203,11 @@ services:
     restart: unless-stopped
     networks: [legion, gunvest]
 
-  # Dashboard SPA (vite preview). Sole tunnel ingress; proxies /api to `api`.
+  # Dashboard SPA served by nginx. Sole tunnel ingress; proxies /api to `api`.
   web:
     build: ./web
     container_name: legion-web
-    command: npm run preview -- --host --port 5174
     environment:
-      LEGION_API_PROXY: http://api:8088
       TZ: Asia/Bangkok
     expose: ['5174']
     depends_on: [api]

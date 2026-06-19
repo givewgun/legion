@@ -7,10 +7,19 @@ async function get(path) {
 async function send(method, path, body) {
   const res = await fetch(path, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`API ${method} ${path} failed: ${res.status}`);
+  return res.json();
+}
+
+// Like get(), but returns null on 401 so callers can treat "not logged in" as
+// a value rather than an exception.
+async function getOrNull(path) {
+  const res = await fetch(path);
+  if (res.status === 401) return null;
+  if (!res.ok) throw new Error(`API GET ${path} failed: ${res.status}`);
   return res.json();
 }
 
@@ -29,4 +38,10 @@ export const api = {
   getPortfolio: () => get('/api/portfolio'),
   listAgents: () => get('/api/agents'),
   setAgent: (id, cfg) => send('PATCH', `/api/agents/${id}`, cfg),
+  getMe: () => getOrNull('/api/auth/me'),
+  logout: () =>
+    fetch('/api/auth/logout', { method: 'POST', headers: { 'X-Requested-With': 'fetch' } }),
+  getWatchlist: () => get('/api/watchlist'),
+  addToWatchlist: (symbol) => send('PUT', `/api/watchlist/${symbol}`, {}),
+  removeFromWatchlist: (symbol) => send('DELETE', `/api/watchlist/${symbol}`),
 };

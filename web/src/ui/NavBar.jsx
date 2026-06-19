@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 const LINKS = [
   { to: '/', label: 'Signals', end: true },
@@ -7,11 +8,14 @@ const LINKS = [
   { to: '/reliability', label: 'Reliability' },
   { to: '/backtest', label: 'Backtest' },
   { to: '/portfolio', label: 'Portfolio' },
+  { to: '/watchlist', label: 'Watchlist' },
   { to: '/config', label: 'Config' },
   { to: '/agents', label: 'Agents' },
 ];
 
 export function NavBar() {
+  const { user, signOut } = useAuth();
+
   return (
     <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/80 backdrop-blur">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
@@ -35,6 +39,14 @@ export function NavBar() {
             </NavLink>
           ))}
         </nav>
+        {user && (
+          <div className="ml-auto flex items-center gap-3">
+            <span className="text-sm text-slate-600">{user.name ?? user.email}</span>
+            <button onClick={signOut} className="text-sm text-slate-500 hover:underline">
+              Log out
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

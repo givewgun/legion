@@ -218,3 +218,43 @@ ALTER TABLE legion.agent_reliability ADD COLUMN IF NOT EXISTS learned_prior DOUB
 -- system never auto-retires — a human decides on the Agents tab.
 ALTER TABLE legion.agent_reliability ADD COLUMN IF NOT EXISTS floored_streak INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE legion.agent_reliability ADD COLUMN IF NOT EXISTS flagged BOOLEAN NOT NULL DEFAULT false;
+
+-- ── Multi-tenant web (ADR 0030) ──────────────────────────────────────────────
+-- Authenticated dashboard users (Google OAuth). The research engine stays
+-- shared; only watchlist + portfolio config below are per-user.
+CREATE TABLE IF NOT EXISTS legion.users (
+  id            BIGSERIAL PRIMARY KEY,
+  google_sub    TEXT UNIQUE NOT NULL,   -- Google's stable subject id
+  email         TEXT NOT NULL,
+  name          TEXT,
+  avatar_url    TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_login_at TIMESTAMPTZ
+);
+
+-- connect-pg-simple session store. Columns are fixed by that library.
+CREATE TABLE IF NOT EXISTS legion.user_session (
+  sid    TEXT PRIMARY KEY,
+  sess   JSONB NOT NULL,
+  expire TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_user_session_expire ON legion.user_session (expire);
+
+-- Symbols a user follows (subset of the global roster). Engine still evaluates
+-- the full legion.tickers roster; this only filters that user's dashboard.
+CREATE TABLE IF NOT EXISTS legion.user_watchlist (
+  user_id  BIGINT NOT NULL REFERENCES legion.users(id) ON DELETE CASCADE,
+  symbol   TEXT NOT NULL REFERENCES legion.tickers(symbol),
+  added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, symbol)
+);
+
+-- Per-user simulated-portfolio knobs. The sim stays deterministic (no stored
+-- positions): config + the user's watchlist fully determine the replay.
+CREATE TABLE IF NOT EXISTS legion.user_portfolio_config (
+  user_id       BIGINT PRIMARY KEY REFERENCES legion.users(id) ON DELETE CASCADE,
+  starting_cash NUMERIC(14,2) NOT NULL DEFAULT 100000,
+  horizon_days  INTEGER NOT NULL DEFAULT 5,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);

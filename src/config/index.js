@@ -96,5 +96,17 @@ export function loadConfig(env = process.env) {
       // degraded — the single-outlier tolerance of ADR 0001 no longer holds.
       minPanel: num(env, 'CONSENSUS_MIN_PANEL', 3),
     },
+    // Multi-tenant web auth (ADR 0030). allowedEmails gates who can create a
+    // session; empty array = nobody can log in (fail closed).
+    auth: {
+      googleClientId: env.GOOGLE_OAUTH_CLIENT_ID || '',
+      googleClientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET || '',
+      sessionSecret: env.SESSION_SECRET || '',
+      publicUrl: env.LEGION_PUBLIC_URL || 'http://localhost:5174',
+      allowedEmails: (env.LEGION_ALLOWED_EMAILS || '')
+        .split(',')
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean),
+    },
   };
 }

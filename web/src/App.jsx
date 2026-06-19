@@ -8,27 +8,35 @@ import { BacktestPage } from './pages/BacktestPage.jsx';
 import { PortfolioPage } from './pages/PortfolioPage.jsx';
 import { LearnPage } from './pages/LearnPage.jsx';
 import { AgentConfig } from './pages/AgentConfig.jsx';
+import { AuthProvider } from './auth/AuthContext.jsx';
+import { LoginGate } from './auth/LoginGate.jsx';
+import { WatchlistPage } from './pages/WatchlistPage.jsx';
 
 export function App() {
   return (
-    <BrowserRouter>
-      <div className="min-h-screen bg-slate-50 text-slate-900">
-        <NavBar />
-        <main className="mx-auto max-w-5xl px-6 py-6">
-          <Routes>
-            <Route path="/" element={<SignalFeed />} />
-            <Route path="/debate" element={<DebateViewer />} />
-            <Route path="/debate/:symbol" element={<DebateViewer />} />
-            <Route path="/debate/:symbol/:cycleId" element={<DebateViewer />} />
-            <Route path="/learn" element={<LearnPage />} />
-            <Route path="/reliability" element={<ReliabilityBoard />} />
-            <Route path="/backtest" element={<BacktestPage />} />
-            <Route path="/portfolio" element={<PortfolioPage />} />
-            <Route path="/config" element={<TickerConfig />} />
-            <Route path="/agents" element={<AgentConfig />} />
-          </Routes>
-        </main>
-      </div>
-    </BrowserRouter>
+    <AuthProvider>
+      <LoginGate>
+        <BrowserRouter>
+          <div className="min-h-screen bg-slate-50 text-slate-900">
+            <NavBar />
+            <main className="mx-auto max-w-5xl px-6 py-6">
+              <Routes>
+                <Route path="/" element={<SignalFeed />} />
+                <Route path="/debate" element={<DebateViewer />} />
+                <Route path="/debate/:symbol" element={<DebateViewer />} />
+                <Route path="/debate/:symbol/:cycleId" element={<DebateViewer />} />
+                <Route path="/learn" element={<LearnPage />} />
+                <Route path="/reliability" element={<ReliabilityBoard />} />
+                <Route path="/backtest" element={<BacktestPage />} />
+                <Route path="/portfolio" element={<PortfolioPage />} />
+                <Route path="/watchlist" element={<WatchlistPage />} />
+                <Route path="/config" element={<TickerConfig />} />
+                <Route path="/agents" element={<AgentConfig />} />
+              </Routes>
+            </main>
+          </div>
+        </BrowserRouter>
+      </LoginGate>
+    </AuthProvider>
   );
 }
