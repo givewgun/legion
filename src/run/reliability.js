@@ -41,15 +41,22 @@ export async function runReliabilityOnce({
 
 // Boot wiring: run one pass immediately so a fresh deploy (or restart) starts
 // resolving already-due signals and learning right away instead of waiting up to
-// a full cron interval, then arm the recurring schedule. `schedule`/`runImmediately`
-// are injectable for tests.
+// a full cron interval, then arm the recurring schedule.
+//
+// The boot pass uses `bootRunner` (resolve + recompute only — pure DB work that
+// is deterministic and idempotent, so it is safe to repeat on every deploy). The
+// scheduled `runner` additionally runs LLM reflection; we keep that off the boot
+// path so frequent deploys don't re-spend Ollama on each restart or contend with
+// the agents for the single Ollama slot during market hours.
+// `schedule`/`runImmediately` are injectable for tests.
 export function startReliability({
   runner,
+  bootRunner = runner,
   cronExpr,
   schedule = cron.schedule,
   runImmediately = true,
 }) {
-  if (runImmediately) runner();
+  if (runImmediately) bootRunner();
   return schedule(cronExpr, runner);
 }
 
@@ -58,20 +65,26 @@ function main() {
   const repo = createRepo(connectDb(cfg.databaseUrl));
   const gunvest = createGunvestFromConfig(cfg);
   const reflectionProvider = cfg.reflectionEnabled ? createProvider('local', cfg) : null;
-  const runner = () =>
-    runReliabilityOnce({ repo, gunvest, reflectionProvider })
+  const makeRunner = (provider, tag) => () =>
+    runReliabilityOnce({ repo, gunvest, reflectionProvider: provider })
       .then((s) =>
-        console.log(`[reliability] resolved=${s.resolved} lessons=${s.lessons}`, s.reliability),
+        console.log(
+          `[reliability${tag}] resolved=${s.resolved} lessons=${s.lessons}`,
+          s.reliability,
+        ),
       )
-      .catch((err) => console.error(`[reliability] run failed: ${err.message}`));
+      .catch((err) => console.error(`[reliability${tag}] run failed: ${err.message}`));
+  const runner = makeRunner(reflectionProvider, '');
+  // Boot pass never reflects, even when reflection is enabled.
+  const bootRunner = makeRunner(null, ':boot');
 
   if (process.argv.includes('--now')) {
     runner();
     return;
   }
-  startReliability({ runner, cronExpr: cfg.reliabilityCron });
+  startReliability({ runner, bootRunner, cronExpr: cfg.reliabilityCron });
   console.log(
-    `[reliability] scheduled: ${cfg.reliabilityCron} (reflection=${cfg.reflectionEnabled}, kicked once on boot)`,
+    `[reliability] scheduled: ${cfg.reliabilityCron} (reflection=${cfg.reflectionEnabled}, resolve+recompute kicked once on boot)`,
   );
 }
 

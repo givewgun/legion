@@ -44,6 +44,23 @@ describe('startReliability', () => {
     expect(job.fn).toBe(runner);
   });
 
+  it('uses bootRunner for the immediate pass but schedules the full runner', () => {
+    const calls = [];
+    const runner = () => calls.push('scheduled-run');
+    const bootRunner = () => calls.push('boot-run');
+    let scheduled;
+    startReliability({
+      runner,
+      bootRunner,
+      cronExpr: '0 */12 * * *',
+      schedule: (_expr, fn) => {
+        scheduled = fn;
+      },
+    });
+    expect(calls).toEqual(['boot-run']);
+    expect(scheduled).toBe(runner);
+  });
+
   it('can skip the immediate boot run', () => {
     const calls = [];
     startReliability({
