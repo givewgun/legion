@@ -20,6 +20,11 @@ export function reliabilityRoutes(repo) {
 
       const perfMap = summarizeAgents(boardRows, { window: WINDOW });
 
+      // The leaderboard drives the output: every agent with resolved board rows
+      // also has a dial (recomputeReliability upserts one per agent in the same
+      // pass), so iterating dials misses nothing in practice. An agent with
+      // board rows but no dial would be dropped — acceptable per the contract,
+      // which only guarantees the dial-without-rows direction.
       const result = leaderboard.map((dial) => {
         const perf = perfMap.get(dial.agentId);
         return {
