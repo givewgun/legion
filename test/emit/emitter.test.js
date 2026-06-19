@@ -355,6 +355,37 @@ describe('createEmitter (v2)', () => {
     await vi.waitFor(() => expect(repo.finishCycle).toHaveBeenCalledWith(30, 'converged'));
   });
 
+  it('persists the served model on snapshot votes', async () => {
+    const bus = createMemoryBus();
+    const repo = fakeRepo();
+    // Nested map: { agentId: { model: rho } } — technical's gpt-oss:20b gets rho 1.2
+    repo.getAllReliability = vi.fn(async () => ({ technical: { 'gpt-oss:20b': 1.2 } }));
+    const addSignalVotesSpy = repo.addSignalVotes;
+
+    createEmitter({ bus, repo, telegram: vi.fn(async () => {}), consensus, expectedAgents: 2 }).start();
+
+    emitVote(bus, {
+      cycleId: 50,
+      symbol: 'NVDA',
+      round: 1,
+      vote: { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'breakout', model: 'gpt-oss:20b' },
+    });
+    emitVote(bus, {
+      cycleId: 50,
+      symbol: 'NVDA',
+      round: 1,
+      vote: { agentId: 'news', stance: 2, conviction: 0.8, weight: 1, rationale: 'beat', model: 'gpt-oss:20b' },
+    });
+
+    await vi.waitFor(() => expect(addSignalVotesSpy).toHaveBeenCalledTimes(1));
+    const persisted = addSignalVotesSpy.mock.calls.at(-1)[1];
+    // model field must survive into the snapshot
+    expect(persisted[0].model).toBe('gpt-oss:20b');
+    // technical's weight is scaled by rho 1.2 from the nested map
+    const technicalVote = persisted.find((v) => v.agentId === 'technical');
+    expect(technicalVote.weight).toBeCloseTo(1.2);
+  });
+
   it('times out abandoned running cycles in the DB on sweep, sparing cycles still active in memory', async () => {
     const bus = createMemoryBus();
     const repo = fakeRepo();
