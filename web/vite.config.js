@@ -11,9 +11,11 @@ export default defineConfig({
     port: 5174,
     proxy: { '/api': apiProxy }, // dev server
   },
+  // `vite preview` is no longer used in production (nginx serves the build).
+  // Kept only so `npm run preview` works for a local production-bundle check.
   preview: {
     port: 5174,
-    proxy: { '/api': apiProxy }, // `vite preview` isn't proxied by default — required in prod
+    proxy: { '/api': apiProxy },
     allowedHosts: ['legion.givewgun.com'],
   },
   test: {
