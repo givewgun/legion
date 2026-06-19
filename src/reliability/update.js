@@ -15,6 +15,7 @@ import {
   WINDOW,
 } from '../consensus/reliability.js';
 import { REGIMES } from './regime.js';
+import { modelKey } from '../llm/provider.js';
 
 // ρ and calibration for one agent's window of resolved forecasts (rows
 // newest-first). ρ scores against the magnitude-aware graded outcome (alpha vs
@@ -59,17 +60,19 @@ export const ROSTER_FLOOR_EPS = 0.55;
 // 12h cron cadence that is ~3 days of sustained anti-skill, not one bad batch.
 export const ROSTER_FLAG_AFTER = 6;
 
-// Groups rows per agent, newest-first, capped at `cap` each. `pick` filters
-// which rows enter the bucket (e.g. a regime).
-function bucketByAgent(rows, pick = () => true, cap = WINDOW) {
-  const byAgent = new Map();
+// Groups rows per (agent, model), newest-first, capped at `cap` each. `pick`
+// filters which rows enter the bucket (e.g. a regime). The map key is the
+// modelKey composite; each value is { agentId, model, rows }.
+function bucketByAgentModel(rows, pick = () => true, cap = WINDOW) {
+  const byBucket = new Map();
   for (const r of rows) {
     if (!pick(r)) continue;
-    if (!byAgent.has(r.agent_id)) byAgent.set(r.agent_id, []);
-    const bucket = byAgent.get(r.agent_id);
-    if (bucket.length < cap) bucket.push(r);
+    const key = modelKey(r.agent_id, r.model);
+    if (!byBucket.has(key)) byBucket.set(key, { agentId: r.agent_id, model: r.model, rows: [] });
+    const bucket = byBucket.get(key);
+    if (bucket.rows.length < cap) bucket.rows.push(r);
   }
-  return byAgent;
+  return byBucket;
 }
 
 // Recompute, per agent, the learned dials from its trailing window of resolved
@@ -85,56 +88,54 @@ export async function recomputeReliability(repo, logger = console) {
   const rows = await repo.getResolvedForecasts(WINDOW * 8); // headroom for many agents
   const streaks = (await repo.getFlooredStreaks?.()) ?? {};
   const map = {};
-  for (const [agentId, agentRows] of bucketByAgent(rows)) {
+  for (const [key, { agentId, model, rows: agentRows }] of bucketByAgentModel(rows)) {
     const { rho, calibration, weights } = computeDials(agentRows);
 
     // Information check (ADR 0021): a near-constant voter is invisible to Brier
     // and correlation alike; discount its conviction until its stances move.
     const info = informationFactor(
-      stanceVariance(
-        agentRows.map((r) => r.stance),
-        weights,
-      ),
+      stanceVariance(agentRows.map((r) => r.stance), weights),
       agentRows.length,
     );
 
-    map[agentId] = { rho, calibration, info };
-    await repo.upsertReliability(agentId, rho, agentRows.length, calibration, info);
+    map[key] = { agentId, model, rho, calibration, info };
+    await repo.upsertReliability(agentId, model, rho, agentRows.length, calibration, info);
 
     // Roster watch (ADR 0028): an agent pinned at the rho floor recompute after
     // recompute is flagged for human review — never auto-retired. Any recovery
     // above the floor resets the streak and clears the flag.
-    const streak = rho <= ROSTER_FLOOR_EPS ? (streaks[agentId] ?? 0) + 1 : 0;
+    const prev = streaks[agentId]?.[model] ?? 0;
+    const streak = rho <= ROSTER_FLOOR_EPS ? prev + 1 : 0;
     const flagged = streak >= ROSTER_FLAG_AFTER;
-    map[agentId].flooredStreak = streak;
-    map[agentId].flagged = flagged;
+    map[key].flooredStreak = streak;
+    map[key].flagged = flagged;
     if (flagged) {
       logger.warn?.(
-        `[reliability] ${agentId} has been at the rho floor for ${streak} recomputes — review it on the Agents tab`,
+        `[reliability] ${agentId} (${model}) has been at the rho floor for ${streak} recomputes — review it on the Agents tab`,
       );
     }
-    await repo.updateRosterFlag?.(agentId, streak, flagged);
+    await repo.updateRosterFlag?.(agentId, model, streak, flagged);
   }
 
   // Learned domain prior (ADR 0027): the same skill score over a long, UNIFORM
   // window — the number the hand-set w_i is guessing at. Measure-first: it is
   // persisted and surfaced on the leaderboard but NOT yet folded into weights;
   // the question "should w_i drift toward it" waits on this data.
-  for (const [agentId, longRows] of bucketByAgent(rows, () => true, LONG_WINDOW)) {
+  for (const [key, { agentId, model, rows: longRows }] of bucketByAgentModel(rows, () => true, LONG_WINDOW)) {
     const uniform = longRows.map(() => 1);
     const { rho: learnedPrior } = computeDials(longRows, uniform);
-    if (map[agentId]) map[agentId].learnedPrior = learnedPrior;
-    await repo.upsertLearnedPrior?.(agentId, learnedPrior);
+    if (map[key]) map[key].learnedPrior = learnedPrior;
+    await repo.upsertLearnedPrior?.(agentId, model, learnedPrior);
   }
 
   // Per-regime dials (ADR 0023): same machinery over each regime's slice.
   // Buckets below MIN_RESOLVED are skipped (not persisted as neutral) so the
   // emitter's regime overlay only ever overrides with real evidence.
   for (const regime of REGIMES) {
-    for (const [agentId, agentRows] of bucketByAgent(rows, (r) => r.regime === regime)) {
+    for (const [, { agentId, model, rows: agentRows }] of bucketByAgentModel(rows, (r) => r.regime === regime)) {
       if (agentRows.length < MIN_RESOLVED) continue;
       const { rho, calibration } = computeDials(agentRows);
-      await repo.upsertRegimeReliability?.(agentId, regime, rho, agentRows.length, calibration);
+      await repo.upsertRegimeReliability?.(agentId, regime, model, rho, agentRows.length, calibration);
     }
   }
   return map;
