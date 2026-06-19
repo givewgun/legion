@@ -38,6 +38,7 @@ export function portfolioRoutes(repo, gunvest, { horizonDays = 5 } = {}) {
       const signals = (await repo.listAllSignals()).filter((s) => watchSet.has(s.symbol));
       const symbols = [...new Set(signals.map((s) => s.symbol))];
 
+      // Benchmark failure propagates and fails the request; per-symbol failure is caught and skipped.
       const [spy, qqq] = await Promise.all([
         gunvest.getCandles('SPY', FetchDays),
         gunvest.getCandles('QQQ', FetchDays),

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { portfolioRoutes } from '../../src/api/routes/portfolio.js';
@@ -28,6 +28,8 @@ function repoStub(overrides = {}) {
 const gunvestStub = { getCandles: vi.fn(async () => candles) };
 
 describe('per-user portfolio', () => {
+  beforeEach(() => { gunvestStub.getCandles.mockClear(); });
+
   it('503s when price data is unavailable', async () => {
     const res = await request(build(repoStub(), null)).get('/api/portfolio');
     expect(res.status).toBe(503);
@@ -47,5 +49,31 @@ describe('per-user portfolio', () => {
     const repo = repoStub({ getPortfolioConfig: vi.fn(async () => null) });
     const res = await request(build(repo, gunvestStub)).get('/api/portfolio');
     expect(res.status).toBe(200);
+  });
+
+  it('serves cached response on second request', async () => {
+    const repo = repoStub();
+    const app = build(repo, gunvestStub);
+    await request(app).get('/api/portfolio');
+    await request(app).get('/api/portfolio');
+    expect(repo.listAllSignals).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips a symbol whose candle fetch fails', async () => {
+    const failing = { getCandles: vi.fn(async (sym) => {
+      if (sym === 'NVDA') throw new Error('boom');
+      return candles;
+    })};
+    const res = await request(build(repoStub(), failing)).get('/api/portfolio');
+    expect(res.status).toBe(200);
+  });
+
+  it('fails the request when a benchmark fetch fails', async () => {
+    const failing = { getCandles: vi.fn(async (sym) => {
+      if (sym === 'SPY') throw new Error('down');
+      return candles;
+    })};
+    const res = await request(build(repoStub(), failing)).get('/api/portfolio');
+    expect(res.status).toBe(500);
   });
 });
