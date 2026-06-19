@@ -133,7 +133,8 @@ foreach ($et in $CycleTimesEt) {
     -Settings $primeSettings -Principal $primePrincipal | Out-Null
   Write-Host ("      $name  ->  {0} local  (= {1} ET, cycle {2} ET)" -f $local.ToString('HH:mm'), $etDt.ToString('HH:mm'), $et)
 }
-Write-Host "      Wakes fire every day; prime.ps1 skips warming on US-market-closed days." -ForegroundColor DarkGray
+Write-Host ("      One wake per cycle ({0} wakes/day, one before each cycle time)." -f $CycleTimesEt.Count) -ForegroundColor DarkGray
+Write-Host "      Each recurs daily incl. weekends; prime.ps1 skips warming on US-market-closed days." -ForegroundColor DarkGray
 
 # ---- 7. print the Legion-side env -------------------------------------------
 $tsIp = ''
