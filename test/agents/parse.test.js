@@ -13,6 +13,7 @@ describe('shared parseVote', () => {
       conviction: 0.7,
       weight: 1.0,
       rationale: 'guidance raise',
+      model: null,
     });
   });
 
@@ -59,5 +60,20 @@ describe('shared parseVote', () => {
     const res = parseVote('{"stance": 0, "conviction": 0.2}', ctx);
     expect(res.ok).toBe(true);
     expect(res.vote.rationale).toBe('');
+  });
+
+  it('tags the vote with the served model', () => {
+    const text = '{"stance": 1, "conviction": 0.7, "rationale": "ok"}';
+    const { ok, vote } = parseVote(text, { agentId: 'news', weight: 1.2, model: 'gpt-oss:20b' });
+    expect(ok).toBe(true);
+    expect(vote.model).toBe('gpt-oss:20b');
+  });
+
+  it('defaults model to null when not supplied', () => {
+    const { vote } = parseVote('{"stance":0,"conviction":0,"rationale":"x"}', {
+      agentId: 'news',
+      weight: 1,
+    });
+    expect(vote.model).toBeNull();
   });
 });

@@ -5,6 +5,8 @@
 // dials make a wrong agent quieter, the lesson tells it what to do differently.
 // Disabled by default (LEGION_REFLECTION=true) — it puts an LLM in the cron.
 
+import { normalizeGenerate } from '../llm/provider.js';
+
 const LABEL = {
   '-2': 'STRONG_SELL',
   '-1': 'SELL',
@@ -59,7 +61,8 @@ export async function reflectAgents({ repo, provider, agentIds, logger = console
       const misses = await repo.getAgentMisses(agentId, 10);
       if (misses.length < MIN_MISSES) continue;
       const { system, prompt } = buildReflectionPrompt(agentId, misses);
-      const lesson = parseLesson(await provider.generate({ system, prompt }));
+      const { text } = await normalizeGenerate(provider, { system, prompt });
+      const lesson = parseLesson(text);
       if (!lesson) continue;
       await repo.upsertAgentLesson(agentId, lesson, misses.length);
       written += 1;
