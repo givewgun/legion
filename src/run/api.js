@@ -6,12 +6,13 @@ import { connectBus } from '../bus/nats.js';
 import { createOrchestrator } from '../orchestrator.js';
 import { createApp } from '../api/app.js';
 import { createGunvestFromConfig } from '../data/gunvest.js';
+import { createGoogleAuth } from '../auth/google.js';
+import { createSessionMiddleware } from '../auth/session.js';
 
 const cfg = loadConfig();
-const repo = createRepo(connectDb(cfg.databaseUrl));
+const db = connectDb(cfg.databaseUrl);
+const repo = createRepo(db);
 
-// Connect the bus so the on-demand trigger endpoint can kick cycles. If NATS is
-// unreachable the API still serves read routes; trigger endpoints return 503.
 let orchestrator = null;
 try {
   const bus = await connectBus(cfg.natsUrl);
@@ -22,5 +23,24 @@ try {
 }
 
 const gunvest = createGunvestFromConfig(cfg);
-const app = createApp({ repo, orchestrator, gunvest, horizonDays: cfg.horizonDays });
+
+// Build the auth stack. Secure cookies in production (HTTPS terminates at the
+// Cloudflare edge); plain HTTP only for local dev.
+const isProd = process.env.NODE_ENV === 'production';
+const auth = {
+  session: createSessionMiddleware({
+    pool: db.pool,
+    secret: cfg.auth.sessionSecret,
+    secure: isProd,
+  }),
+  google: createGoogleAuth({
+    clientId: cfg.auth.googleClientId,
+    clientSecret: cfg.auth.googleClientSecret,
+    redirectUri: `${cfg.auth.publicUrl}/api/auth/google/callback`,
+  }),
+  allowedEmails: cfg.auth.allowedEmails,
+  repo,
+};
+
+const app = createApp({ repo, orchestrator, gunvest, horizonDays: cfg.horizonDays, auth });
 app.listen(cfg.apiPort, () => console.log(`[api] listening on :${cfg.apiPort}`));
