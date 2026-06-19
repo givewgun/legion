@@ -95,10 +95,12 @@ describe('ReliabilityBoard', () => {
     render(<ReliabilityBoard />);
     await waitFor(() => expect(screen.getByText('News')).toBeInTheDocument());
 
-    // hitRate null → "—"
-    const dashes = screen.getAllByText('—');
-    // At least hitRate and avgAlpha columns show "—"
-    expect(dashes.length).toBeGreaterThanOrEqual(2);
+    // Scope assertions to the specific agent row so we know which cells are "—"
+    const row = screen.getByTestId('agent-row-news');
+    const cells = row.querySelectorAll('td');
+    // td[2] = Hit%, td[3] = Avg α (0-indexed)
+    expect(cells[2].textContent).toBe('—');
+    expect(cells[3].textContent).toBe('—');
   });
 
   it('expanding a row reveals recent calls', async () => {
@@ -166,8 +168,14 @@ describe('ReliabilityBoard', () => {
 
     fireEvent.click(screen.getByTestId('agent-row-technical'));
 
-    // MSFT hold has alpha=null → should show "—"
-    const dashes = screen.getAllByText('—');
-    expect(dashes.length).toBeGreaterThanOrEqual(1);
+    // MSFT row in recent-calls: stance=0 (hold) and alpha=null → alpha cell shows "—"
+    const table = screen.getByTestId('recent-calls-table');
+    // Find the row whose first cell contains "MSFT"
+    const allRows = table.querySelectorAll('tbody tr');
+    const msftRow = Array.from(allRows).find((row) => row.textContent.includes('MSFT'));
+    expect(msftRow).toBeTruthy();
+    // Last cell is Alpha
+    const tds = msftRow.querySelectorAll('td');
+    expect(tds[tds.length - 1].textContent).toBe('—');
   });
 });

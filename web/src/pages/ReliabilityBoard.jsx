@@ -41,7 +41,7 @@ function winBand(win) {
 function HowToRead() {
   const [open, setOpen] = useState(false);
   return (
-    <Card className="mb-5 overflow-hidden">
+    <Card className="mb-5">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -120,7 +120,7 @@ function RecentCallsDetail({ recent }) {
             {recent.map((c, i) => {
               const { band, label } = winBand(c.win);
               return (
-                <tr key={i} className="border-t border-slate-100">
+                <tr key={`${c.symbol}-${i}`} className="border-t border-slate-100">
                   <td className="pr-4 py-1 font-medium text-slate-800">{c.symbol}</td>
                   <td className="pr-4 py-1">
                     <Badge band={stanceLabel(c.stance)}>{stanceLabel(c.stance)}</Badge>
@@ -166,9 +166,9 @@ function AgentRow({ r }) {
         </td>
         <td className="px-4 py-2 text-slate-700">{fmtHitRate(r.hitRate)}</td>
         <td className="px-4 py-2 text-slate-600 text-xs whitespace-nowrap">{avgAlphaStr}</td>
-        <td className="px-4 py-2 text-slate-700">{r.rho.toFixed(2)}</td>
-        <td className="px-4 py-2 text-slate-700">{r.calibration.toFixed(2)}</td>
-        <td className="px-4 py-2 text-slate-700">{r.infoFactor.toFixed(2)}</td>
+        <td className="px-4 py-2 text-slate-700">{r.rho?.toFixed(2) ?? '—'}</td>
+        <td className="px-4 py-2 text-slate-700">{r.calibration?.toFixed(2) ?? '—'}</td>
+        <td className="px-4 py-2 text-slate-700">{r.infoFactor?.toFixed(2) ?? '—'}</td>
         <td className="px-4 py-2 text-slate-500">{r.sampleSize}</td>
       </tr>
       {expanded && <RecentCallsDetail recent={r.recent} />}
@@ -223,7 +223,12 @@ export function ReliabilityBoard() {
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-slate-200">
-              <th className="px-4 py-2 font-medium text-slate-500">Agent</th>
+              <th className="px-4 py-2 font-medium text-slate-500">
+                Agent
+                <InfoTip label="Agent">
+                  The agent whose track record this row summarizes.
+                </InfoTip>
+              </th>
               <th className="px-4 py-2 font-medium text-slate-500">
                 Record
                 <InfoTip label="Record">
