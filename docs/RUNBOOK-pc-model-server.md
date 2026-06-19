@@ -4,6 +4,17 @@ This runbook documents the operator setup for routing Legion inference to a home
 running Ollama when the PC is idle and available, with automatic fail-over to the
 Oracle VM's local model when the PC is busy or asleep.
 
+> **The PC side is now turnkey scripts — start at [`pc-host/README.md`](../pc-host/README.md).**
+> Run `pc-host/setup.ps1` once (elevated); it pulls the model, configures power/wake
+> timers, opens the firewall, and registers the readiness sidecar + RTC-wake tasks.
+> This runbook below is the conceptual reference behind those scripts.
+>
+> **Port model (resolves the earlier ambiguity):** Ollama binds **`127.0.0.1:11434`**
+> (localhost only — never on the tailnet). The readiness sidecar is the sole
+> tailnet-facing process on **`:11435`** and reverse-proxies to Ollama, returning 503
+> when the PC is busy. Set `HOME_OLLAMA_URL=http://<pc-tailnet-ip>:11435` on Legion,
+> and the Tailscale ACL to `dst: ["tag:legion-pc:11435"]`.
+
 ---
 
 ## 1. Tailscale Setup and ACL
