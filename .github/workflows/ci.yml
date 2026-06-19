@@ -145,12 +145,17 @@ jobs:
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
           LEGION_ALLOWED_EMAILS: ${{ secrets.LEGION_ALLOWED_EMAILS }}
           LEGION_PUBLIC_URL: ${{ secrets.LEGION_PUBLIC_URL }}
+          # Home PC model server (tiered local provider). Empty when unset =>
+          # tiered provider stays pure-Oracle, byte-identical to before.
+          HOME_OLLAMA_URL: ${{ secrets.HOME_OLLAMA_URL }}
+          HOME_MODEL: ${{ secrets.HOME_MODEL }}
+          HOME_THINK: ${{ secrets.HOME_THINK }}
         with:
           host: ${{ secrets.ORACLE_VM_HOST }}
           username: ubuntu
           key: ${{ secrets.ORACLE_VM_SSH_KEY }}
           port: 22
-          envs: DATABASE_URL,FINNHUB_API_KEY,TELEGRAM_BOT_TOKEN,TELEGRAM_CHAT_ID,REPO_CLONE_TOKEN,GH_REPO,GOOGLE_OAUTH_CLIENT_ID,GOOGLE_OAUTH_CLIENT_SECRET,SESSION_SECRET,LEGION_ALLOWED_EMAILS,LEGION_PUBLIC_URL
+          envs: DATABASE_URL,FINNHUB_API_KEY,TELEGRAM_BOT_TOKEN,TELEGRAM_CHAT_ID,REPO_CLONE_TOKEN,GH_REPO,GOOGLE_OAUTH_CLIENT_ID,GOOGLE_OAUTH_CLIENT_SECRET,SESSION_SECRET,LEGION_ALLOWED_EMAILS,LEGION_PUBLIC_URL,HOME_OLLAMA_URL,HOME_MODEL,HOME_THINK
           script: |
             set -euo pipefail
             APP_DIR=/opt/legion/app
@@ -195,6 +200,9 @@ jobs:
             OLLAMA_THINK=
             OLLAMA_TIMEOUT_MS=300000
             OLLAMA_MAX_CONCURRENT=1
+            HOME_OLLAMA_URL=${HOME_OLLAMA_URL}
+            HOME_MODEL=${HOME_MODEL}
+            HOME_THINK=${HOME_THINK}
             DATABASE_URL=${DATABASE_URL}
             GUNVEST_API_URL=http://gunvest-app:3001
             FINNHUB_API_KEY=${FINNHUB_API_KEY}
