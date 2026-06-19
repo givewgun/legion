@@ -40,7 +40,7 @@ When it finishes it prints the three env vars to put on the **Legion** side (`.e
 ```
 HOME_OLLAMA_URL=http://<this-pc-tailscale-ip>:11435
 HOME_MODEL=gpt-oss:20b
-HOME_THINK=false
+HOME_THINK=true
 ```
 
 Then **restart Ollama** (quit the tray app and relaunch, or reboot) so the localhost

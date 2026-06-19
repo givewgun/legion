@@ -144,7 +144,7 @@ if (-not $tsIp) { $tsIp = '<this-PC-tailscale-ip>' }
 Write-Host "`n[7/7] DONE. Set these on the Legion side (.env) and redeploy:" -ForegroundColor Green
 Write-Host "      HOME_OLLAMA_URL=http://${tsIp}:${GatePort}"
 Write-Host "      HOME_MODEL=$Model"
-Write-Host "      HOME_THINK=false"
+Write-Host "      HOME_THINK=true"
 Write-Host "`nVerify now:" -ForegroundColor Cyan
 Write-Host "      Invoke-RestMethod http://localhost:${GatePort}/ready    # this PC: should show ready=true when idle"
 Write-Host "      # From the Oracle VM (on the tailnet):"
