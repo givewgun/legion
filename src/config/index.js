@@ -67,6 +67,18 @@ export function loadConfig(env = process.env) {
       timeoutMs: num(env, 'GEMINI_TIMEOUT_MS', 120000),
       maxConcurrent: num(env, 'GEMINI_MAX_CONCURRENT', 2),
     },
+    // Home PC model server (the tiered `local` primary tier). An empty url means
+    // unconfigured: the `local` provider stays pure-Oracle, byte-identical to before.
+    // `enabled` is the static default; the dashboard toggle (runtime_config) overrides
+    // it per cycle. `probeTimeoutMs` bounds the readiness-sidecar health probe so a
+    // sleeping PC fails fast to Oracle instead of hanging the cycle.
+    home: {
+      url: env.HOME_OLLAMA_URL || '',
+      model: env.HOME_MODEL || 'gpt-oss:20b',
+      think: bool(env, 'HOME_THINK'),
+      probeTimeoutMs: num(env, 'HOME_PROBE_TIMEOUT_MS', 1500),
+      enabled: true,
+    },
     // Resilience knobs for the GunVest read client. Defaults live in
     // src/data/gunvest.js; these env overrides let operators raise the timeout or
     // throttle concurrency when a sweep bursts the single-threaded API.

@@ -100,4 +100,31 @@ describe('loadConfig', () => {
     expect(loadConfig({ OLLAMA_THINK: 'yes' }).ollama.think).toBeNull();
     expect(loadConfig({ OLLAMA_THINK: '' }).ollama.think).toBeNull();
   });
+
+  it('defaults the home block to disabled (empty url) and gpt-oss:20b', () => {
+    const cfg = loadConfig({});
+    expect(cfg.home).toEqual({
+      url: '',
+      model: 'gpt-oss:20b',
+      think: null,
+      probeTimeoutMs: 1500,
+      enabled: true,
+    });
+  });
+
+  it('reads home overrides from env', () => {
+    const cfg = loadConfig({
+      HOME_OLLAMA_URL: 'http://100.64.0.2:11434',
+      HOME_MODEL: 'qwen3:14b',
+      HOME_THINK: 'false',
+      HOME_PROBE_TIMEOUT_MS: '2000',
+    });
+    expect(cfg.home).toEqual({
+      url: 'http://100.64.0.2:11434',
+      model: 'qwen3:14b',
+      think: false,
+      probeTimeoutMs: 2000,
+      enabled: true,
+    });
+  });
 });
