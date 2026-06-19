@@ -653,5 +653,73 @@ export function createRepo(db) {
         [agentId, provider, model, enabled],
       );
     },
+
+    // ── Multi-tenant web (ADR 0030) ─────────────────────────────────────────
+    async upsertUser({ googleSub, email, name, avatarUrl }) {
+      const row = await db.queryOne(
+        `INSERT INTO legion.users (google_sub, email, name, avatar_url, last_login_at)
+         VALUES ($1, $2, $3, $4, now())
+         ON CONFLICT (google_sub) DO UPDATE
+           SET email = EXCLUDED.email, name = EXCLUDED.name,
+               avatar_url = EXCLUDED.avatar_url, last_login_at = now()
+         RETURNING id, email, name, avatar_url`,
+        [googleSub, email, name, avatarUrl],
+      );
+      return { id: row.id, email: row.email, name: row.name, avatarUrl: row.avatar_url };
+    },
+
+    async getUserById(id) {
+      const row = await db.queryOne(
+        `SELECT id, email, name, avatar_url FROM legion.users WHERE id = $1`,
+        [id],
+      );
+      if (!row) return null;
+      return { id: row.id, email: row.email, name: row.name, avatarUrl: row.avatar_url };
+    },
+
+    async listWatchlist(userId) {
+      const rows = await db.query(
+        `SELECT symbol FROM legion.user_watchlist WHERE user_id = $1 ORDER BY symbol`,
+        [userId],
+      );
+      return rows.map((r) => r.symbol);
+    },
+
+    async addWatchlistSymbol(userId, symbol) {
+      await db.query(
+        `INSERT INTO legion.user_watchlist (user_id, symbol) VALUES ($1, $2)
+         ON CONFLICT (user_id, symbol) DO NOTHING`,
+        [userId, symbol.toUpperCase()],
+      );
+    },
+
+    async removeWatchlistSymbol(userId, symbol) {
+      await db.query(
+        `DELETE FROM legion.user_watchlist WHERE user_id = $1 AND symbol = $2`,
+        [userId, symbol.toUpperCase()],
+      );
+    },
+
+    async getPortfolioConfig(userId) {
+      const row = await db.queryOne(
+        `SELECT starting_cash, horizon_days FROM legion.user_portfolio_config WHERE user_id = $1`,
+        [userId],
+      );
+      if (!row) return null;
+      return { startingCash: Number(row.starting_cash), horizonDays: row.horizon_days };
+    },
+
+    async upsertPortfolioConfig(userId, { startingCash, horizonDays }) {
+      const row = await db.queryOne(
+        `INSERT INTO legion.user_portfolio_config (user_id, starting_cash, horizon_days, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (user_id) DO UPDATE
+           SET starting_cash = EXCLUDED.starting_cash, horizon_days = EXCLUDED.horizon_days,
+               updated_at = now()
+         RETURNING starting_cash, horizon_days`,
+        [userId, startingCash, horizonDays],
+      );
+      return { startingCash: Number(row.starting_cash), horizonDays: row.horizon_days };
+    },
   };
 }
