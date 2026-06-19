@@ -25,6 +25,11 @@ export function createApp({ repo, orchestrator = null, gunvest = null, horizonDa
   app.get('/health', (req, res) => res.json({ ok: true }));
 
   if (auth) {
+    // Behind nginx + the Cloudflare tunnel, the app sees plain HTTP while the
+    // public connection is HTTPS. Trust the proxy so Express derives req.secure
+    // from X-Forwarded-Proto — required for express-session to set the
+    // Secure session cookie in production (else login silently loops).
+    app.set('trust proxy', 1);
     app.use(auth.session);
     app.use('/api/auth', authRoutes(auth));
     // Gate everything else under /api.
