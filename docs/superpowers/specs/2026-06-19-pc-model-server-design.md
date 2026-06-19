@@ -16,7 +16,7 @@ must never block, slow, or fail because the PC is asleep, busy, or off.
 - True remote on-demand wake (Wake-on-LAN over the internet). Deferred — see Phase 4.
   No always-on LAN device exists to emit the magic packet, and the PC (the thing asleep)
   cannot wake itself remotely. Self-wake + opportunistic covers the realistic cases now.
-- Per-(agent, model) reliability segmentation. Deferred — see Reliability section.
+- Warm-start / cross-model transfer of ρ. A new model starts neutral (see Reliability).
 - Replacing Oracle's Ollama. The VM remains the always-available fallback.
 
 ## Architecture — two planes
@@ -107,18 +107,46 @@ Legion uses `ready`; the rest is for diagnostics/dashboard. All thresholds are t
 
 ## Model
 
-- Default: **`qwen2.5:14b-instruct` (q4_K_M, ~9GB VRAM)** — same family as the 7b for
-  behavior continuity, with headroom for KV cache and incidental GPU use.
-- Stretch (tunable via `HOME_MODEL`): `qwen2.5:32b` (q3/q4, ~15GB, tight) or `gpt-oss:20b`.
+- Default: **`gpt-oss:20b` (MXFP4, ~12–13GB VRAM)** — strongest reasoning at the ~12GB
+  budget, fits the 16GB card with headroom. Tunable via `HOME_MODEL`.
+- **Reasoning-model caveat:** gpt-oss is a reasoning model — it emits thinking/analysis
+  tokens that must NOT reach `parseVote`. Mitigation (plan to verify against Ollama's
+  gpt-oss behavior): set `HOME_THINK=false` to suppress reasoning where the API honors it,
+  AND add a defensive reasoning-strip (e.g. drop `<think>…</think>` / harmony analysis
+  channel) in the parse path as a backstop. The existing `think` config plumbing
+  (`OLLAMA_THINK`) is the model for the new `HOME_THINK`.
 
-## Reliability / model-tagging
+## Reliability — per-(agent, model) segmentation (Phase 1, not deferred)
 
-- New `votes.model` column (migration). The tiered provider reports which model served
-  each call; the agent includes it in the vote payload; the emitter persists it through
-  NATS → DB. Surface the model on the dashboard.
-- **v1 does NOT segment ρ by model.** Reliability's recency-weighting (ADR 0017)
-  re-converges ρ after the model upgrade, and a larger model is an *improvement*, not
-  random noise. The tag provides the data to segment later if drift appears.
+The learned dials are *applied* at vote-aggregation time in the emitter
+(`scaleWeights(votes, rho)` / `scaleConviction`, today keyed by `agent_id`) and *measured*
+by `recomputeReliability` from `signal_votes` joined to resolved `signals`. Segmentation
+threads the producing model through that entire loop:
+
+- **Persist:** the in-flight vote payload carries the served model (agent → NATS →
+  emitter). The emitter persists it to a new **`signal_votes.model`** column — this is the
+  resolved-forecast source the learner reads. (`votes.model` on the per-round audit table
+  is optional/nice-to-have; `signal_votes.model` is required.) The served-model string is
+  the Ollama model name (`HOME_MODEL` when the PC served, `OLLAMA_MODEL` when Oracle did);
+  the tiered provider reports which.
+- **Measure:** `legion.agent_reliability` PK `(agent_id)` → **`(agent_id, model)`**. All its
+  dials (rho, calibration, info_factor, learned_prior, roster streak) are computed per
+  `(agent, model)`. `recomputeReliability` buckets by `(agent_id, model)`;
+  `getResolvedForecasts` and `getAgentBoardRows` SELECT `sv.model`.
+- **Apply:** the emitter loads ρ/calibration/info as `[agentId][model]`-keyed maps;
+  `scaleWeights`/`scaleConviction` look up by each vote's own `(agent, model)`. A failover
+  cycle that mixes models weights each vote by the right model's ρ.
+- **Regime/correlation:** key `agent_regime_reliability` by `(agent_id, model)` too. Regime
+  buckets need `MIN_RESOLVED` depth to persist; split by model they are sparse early and
+  simply fall back to the base `(agent, model)` ρ — consistent keying, graceful degradation.
+- **Cold-start:** a new `(agent, model)` with no resolved history defaults to **ρ = 1.0
+  (neutral)** and re-learns over ~`MIN_RESOLVED` samples. Switching models resets that
+  agent's learned skill for the new model — the honest cost of pure per-model measurement.
+  No warm-start in v1.
+- **Backfill:** existing `signal_votes` rows predate the column → backfill `model` with the
+  current Oracle model (`OLLAMA_MODEL`, e.g. `qwen2.5:7b-instruct`), so historical ρ stays
+  attributed to the model that actually produced it.
+- Surface the per-model dial on the dashboard reliability board.
 
 ## Edge cases / pitfalls (designed-for)
 
@@ -126,8 +154,11 @@ Legion uses `ready`; the rest is for diagnostics/dashboard. All thresholds are t
 2. **Windows wake-timer gotchas** — fast-startup / hybrid sleep and the "Allow wake timers"
    power setting can silently block RTC wake; S3 sleep vs S4 hibernate behave differently.
    Power settings must be configured explicitly. Covered by the runbook + verification.
-3. **PC sleeps mid-sweep** → per-call failover, mixed-model cycle, tagged per vote.
-   Acceptable.
+3. **PC sleeps mid-sweep** → per-call failover, mixed-model cycle; each vote is weighted by
+   its own model's ρ. Acceptable.
+3b. **Reasoning tokens leak into parse** → `HOME_THINK=false` + defensive strip in parse.
+3c. **New model neutral period** → after a model switch, that model's votes carry ρ=1.0
+    until ~`MIN_RESOLVED` resolved signals accrue. Expected, not a bug.
 4. **Active use / gaming / intense work** → busy-check routes to Oracle automatically;
    dashboard toggle is the manual backstop.
 5. **Reliability cron** also uses `local`; at post-close the PC is likely asleep → Oracle
@@ -137,20 +168,28 @@ Legion uses `ready`; the rest is for diagnostics/dashboard. All thresholds are t
 ## Testing
 
 - **Unit (mock `fetchImpl`):** probe-ready → PC; probe-down/timeout/not-ready → Oracle;
-  mid-call PC failure → Oracle; model tag matches the served tier; `HOME_OLLAMA_URL` unset
-  → pure-Oracle no-op.
-- **Config:** new env parsed; absent = today's behavior.
-- **Vote payload** carries `model`; emitter persists `votes.model`.
+  mid-call PC failure → Oracle; served-model tag matches the served tier; `HOME_OLLAMA_URL`
+  unset → pure-Oracle no-op.
+- **Config:** new env parsed (`HOME_OLLAMA_URL`, `HOME_MODEL`, `HOME_THINK`, probe timeout);
+  absent = today's behavior.
+- **Vote payload** carries served model; emitter persists `signal_votes.model`.
+- **Reliability segmentation:** `recomputeReliability` buckets by `(agent, model)`;
+  upsert/read by `(agent, model)`; emitter weights each vote by its own `(agent, model)` ρ;
+  cold-start `(agent, new-model)` → ρ=1.0; backfill defaults legacy rows to `OLLAMA_MODEL`.
+- **Parse:** reasoning/thinking tokens stripped before `parseVote` produces a vote.
 - **No automated test** for wake/Tailscale/sidecar OS integration (infra) → manual runbook
   + verification checklist instead.
 
 ## Phasing
 
-1. **Legion code** — tiered `local` provider + health gate + config + `votes.model`
-   migration + dashboard toggle + tests. Ships now; no-op until the PC is configured.
+1. **Legion code** — tiered `local` provider + health gate + config + dashboard toggle +
+   per-(agent, model) reliability segmentation (`signal_votes.model`, `agent_reliability`
+   /`agent_regime_reliability` re-keyed, emitter per-model dial lookup, backfill) +
+   reasoning-token strip + tests. Ships now; routing is a no-op until the PC is configured,
+   but segmentation is live immediately (every vote tagged with its served model).
 2. **Infra runbook** — Tailscale on VM + PC + ACL; install Ollama on PC + pull model; set
    `HOME_OLLAMA_URL`. Verify Docker→tailnet reach.
 3. **PC lifecycle** — readiness sidecar; RTC wake task; busy-aware prime task; power/sleep
    policy; `keep_alive`. Verification checklist.
 4. **Later (optional)** — WoL helper (old phone / Pi Zero 2 W / ESP32) for true remote
-   wake; ρ model-segmentation if drift appears.
+   wake; warm-start ρ transfer across models if the neutral cold-start period proves costly.
