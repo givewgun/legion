@@ -1,5 +1,15 @@
 import { STANCE } from '../consensus/stance.js';
 
+// Folds flat (agent_id, model, value) rows into { [agentId]: { [model]: value } }.
+// The emitter composes the (agent, model) lookup; the repo stays SQL-shaped.
+function nestByAgentModel(rows, valueKey) {
+  const out = {};
+  for (const r of rows) {
+    (out[r.agent_id] ??= {})[r.model] = r[valueKey];
+  }
+  return out;
+}
+
 // Persistence over the legion schema. Each method maps to one INSERT/UPDATE.
 export function createRepo(db) {
   return {
@@ -65,42 +75,49 @@ export function createRepo(db) {
       const tuples = [];
       const params = [];
       votes.forEach((v, i) => {
-        const b = i * 5;
-        tuples.push(`($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5})`);
-        params.push(signalId, v.agentId, v.stance, v.conviction, v.weight);
+        const b = i * 6;
+        tuples.push(`($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6})`);
+        params.push(
+          signalId, v.agentId, v.stance, v.conviction, v.weight,
+          v.model ?? 'qwen2.5:7b-instruct',
+        );
       });
       await db.query(
-        `INSERT INTO legion.signal_votes (signal_id, agent_id, stance, conviction, weight)
+        `INSERT INTO legion.signal_votes (signal_id, agent_id, stance, conviction, weight, model)
          VALUES ${tuples.join(', ')}`,
         params,
       );
     },
 
     async getAllReliability() {
-      const rows = await db.query(`SELECT agent_id, rho FROM legion.agent_reliability`);
-      return Object.fromEntries(rows.map((r) => [r.agent_id, r.rho]));
+      const rows = await db.query(`SELECT agent_id, model, rho FROM legion.agent_reliability`);
+      return nestByAgentModel(rows, 'rho');
     },
 
     async getAgentCalibration() {
-      const rows = await db.query(`SELECT agent_id, calibration FROM legion.agent_reliability`);
-      return Object.fromEntries(rows.map((r) => [r.agent_id, r.calibration]));
+      const rows = await db.query(
+        `SELECT agent_id, model, calibration FROM legion.agent_reliability`,
+      );
+      return nestByAgentModel(rows, 'calibration');
     },
 
     // Information factor (ADR 0021): conviction discount for near-constant voters.
     async getAgentInfoFactors() {
-      const rows = await db.query(`SELECT agent_id, info_factor FROM legion.agent_reliability`);
-      return Object.fromEntries(rows.map((r) => [r.agent_id, r.info_factor]));
+      const rows = await db.query(
+        `SELECT agent_id, model, info_factor FROM legion.agent_reliability`,
+      );
+      return nestByAgentModel(rows, 'info_factor');
     },
 
-    async upsertReliability(agentId, rho, sampleSize, calibration = 1.0, infoFactor = 1.0) {
+    async upsertReliability(agentId, model, rho, sampleSize, calibration = 1.0, infoFactor = 1.0) {
       await db.query(
-        `INSERT INTO legion.agent_reliability (agent_id, rho, sample_size, calibration, info_factor, updated_at)
-         VALUES ($1, $2, $3, $4, $5, now())
-         ON CONFLICT (agent_id) DO UPDATE
+        `INSERT INTO legion.agent_reliability (agent_id, model, rho, sample_size, calibration, info_factor, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, now())
+         ON CONFLICT (agent_id, model) DO UPDATE
            SET rho = EXCLUDED.rho, sample_size = EXCLUDED.sample_size,
                calibration = EXCLUDED.calibration, info_factor = EXCLUDED.info_factor,
                updated_at = now()`,
-        [agentId, rho, sampleSize, calibration, infoFactor],
+        [agentId, model, rho, sampleSize, calibration, infoFactor],
       );
     },
 
@@ -148,39 +165,42 @@ export function createRepo(db) {
     },
 
     // Long-window learned prior (ADR 0027) — measured, not yet applied.
-    async upsertLearnedPrior(agentId, learnedPrior) {
+    async upsertLearnedPrior(agentId, model, learnedPrior) {
       await db.query(
-        `INSERT INTO legion.agent_reliability (agent_id, learned_prior, updated_at)
-         VALUES ($1, $2, now())
-         ON CONFLICT (agent_id) DO UPDATE
+        `INSERT INTO legion.agent_reliability (agent_id, model, learned_prior, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (agent_id, model) DO UPDATE
            SET learned_prior = EXCLUDED.learned_prior, updated_at = now()`,
-        [agentId, learnedPrior],
+        [agentId, model, learnedPrior],
       );
     },
 
     // Roster watch (ADR 0028): how long each agent has sat at the rho floor.
     async getFlooredStreaks() {
-      const rows = await db.query(`SELECT agent_id, floored_streak FROM legion.agent_reliability`);
-      return Object.fromEntries(rows.map((r) => [r.agent_id, r.floored_streak]));
+      const rows = await db.query(
+        `SELECT agent_id, model, floored_streak FROM legion.agent_reliability`,
+      );
+      return nestByAgentModel(rows, 'floored_streak');
     },
 
-    async updateRosterFlag(agentId, flooredStreak, flagged) {
+    async updateRosterFlag(agentId, model, streak, flagged) {
       await db.query(
         `UPDATE legion.agent_reliability
-            SET floored_streak = $2, flagged = $3, updated_at = now()
-          WHERE agent_id = $1`,
-        [agentId, flooredStreak, flagged],
+            SET floored_streak = $3, flagged = $4, updated_at = now()
+          WHERE agent_id = $1 AND model = $2`,
+        [agentId, model, streak, flagged],
       );
     },
 
     async getReliabilityLeaderboard() {
       const rows = await db.query(
-        `SELECT agent_id, rho, sample_size, calibration, info_factor, learned_prior,
+        `SELECT agent_id, model, rho, sample_size, calibration, info_factor, learned_prior,
                 floored_streak, flagged
            FROM legion.agent_reliability ORDER BY rho DESC`,
       );
       return rows.map((r) => ({
         agentId: r.agent_id,
+        model: r.model,
         rho: r.rho,
         sampleSize: r.sample_size,
         calibration: r.calibration,
@@ -222,7 +242,7 @@ export function createRepo(db) {
       // resolved before those columns existed fall back to the binary outcome
       // and the unconditional dials.
       return db.query(
-        `SELECT sv.agent_id, sv.stance, sv.conviction, s.outcome,
+        `SELECT sv.agent_id, sv.model, sv.stance, sv.conviction, s.outcome,
                 s.forward_return, s.spy_return, s.regime
            FROM legion.signal_votes sv
            JOIN legion.signals s ON s.id = sv.signal_id
@@ -239,7 +259,7 @@ export function createRepo(db) {
     // limit = WINDOW * (agent count headroom) — same pattern as getResolvedForecasts.
     async getAgentBoardRows(limit) {
       return db.query(
-        `SELECT sv.agent_id, s.id, s.symbol, sv.stance, sv.conviction, s.outcome,
+        `SELECT sv.agent_id, sv.model, s.id, s.symbol, sv.stance, sv.conviction, s.outcome,
                 s.forward_return, s.spy_return
            FROM legion.signal_votes sv
            JOIN legion.signals s ON s.id = sv.signal_id
@@ -254,28 +274,28 @@ export function createRepo(db) {
     // enough to learn from, so these maps overlay the unconditional ones.
     async getRegimeReliability(regime) {
       const rows = await db.query(
-        `SELECT agent_id, rho FROM legion.agent_regime_reliability WHERE regime = $1`,
+        `SELECT agent_id, model, rho FROM legion.agent_regime_reliability WHERE regime = $1`,
         [regime],
       );
-      return Object.fromEntries(rows.map((r) => [r.agent_id, r.rho]));
+      return nestByAgentModel(rows, 'rho');
     },
 
     async getRegimeCalibration(regime) {
       const rows = await db.query(
-        `SELECT agent_id, calibration FROM legion.agent_regime_reliability WHERE regime = $1`,
+        `SELECT agent_id, model, calibration FROM legion.agent_regime_reliability WHERE regime = $1`,
         [regime],
       );
-      return Object.fromEntries(rows.map((r) => [r.agent_id, r.calibration]));
+      return nestByAgentModel(rows, 'calibration');
     },
 
-    async upsertRegimeReliability(agentId, regime, rho, sampleSize, calibration = 1.0) {
+    async upsertRegimeReliability(agentId, regime, model, rho, sampleSize, calibration = 1.0) {
       await db.query(
-        `INSERT INTO legion.agent_regime_reliability (agent_id, regime, rho, calibration, sample_size, updated_at)
-         VALUES ($1, $2, $3, $4, $5, now())
-         ON CONFLICT (agent_id, regime) DO UPDATE
+        `INSERT INTO legion.agent_regime_reliability (agent_id, regime, model, rho, calibration, sample_size, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, now())
+         ON CONFLICT (agent_id, regime, model) DO UPDATE
            SET rho = EXCLUDED.rho, calibration = EXCLUDED.calibration,
                sample_size = EXCLUDED.sample_size, updated_at = now()`,
-        [agentId, regime, rho, calibration, sampleSize],
+        [agentId, regime, model, rho, calibration, sampleSize],
       );
     },
 
