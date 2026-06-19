@@ -1,0 +1,416 @@
+# Runbook: PC Model Server (Tailscale + Ollama + Readiness Sidecar)
+
+This runbook documents the operator setup for routing Legion inference to a home PC
+running Ollama when the PC is idle and available, with automatic fail-over to the
+Oracle VM's local model when the PC is busy or asleep.
+
+> **The PC side is now turnkey scripts — start at [`pc-host/README.md`](../pc-host/README.md).**
+> Run `pc-host/setup.ps1` once (elevated); it pulls the model, configures power/wake
+> timers, opens the firewall, and registers the readiness sidecar + RTC-wake tasks.
+> This runbook below is the conceptual reference behind those scripts.
+>
+> **Port model (resolves the earlier ambiguity):** Ollama binds **`127.0.0.1:11434`**
+> (localhost only — never on the tailnet). The readiness sidecar is the sole
+> tailnet-facing process on **`:11435`** and reverse-proxies to Ollama, returning 503
+> when the PC is busy. Set `HOME_OLLAMA_URL=http://<pc-tailnet-ip>:11435` on Legion,
+> and the Tailscale ACL to `dst: ["tag:legion-pc:11435"]`.
+
+---
+
+## 1. Tailscale Setup and ACL
+
+### 1.1 Install Tailscale
+
+**On the Oracle VM host (the Docker host):**
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up --authkey=<YOUR_AUTHKEY>
+```
+
+**On the gaming PC:**
+
+Download and install from https://tailscale.com/download/windows, then:
+
+```powershell
+tailscale up
+```
+
+Record the PC's Tailscale address — either the `100.x.x.x` IP or its MagicDNS
+hostname (e.g. `pc.tail1234.ts.net`). This will be the `HOME_OLLAMA_URL` host.
+
+### 1.2 ACL Stanza (Tailscale Admin Console)
+
+Restrict the PC's Ollama port (11434) and the readiness sidecar port (default 8765)
+to the Oracle VM node only — no other device should be able to reach these ports:
+
+```json
+{
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["tag:legion-oracle"],
+      "dst": ["tag:legion-pc:11434", "tag:legion-pc:8765"]
+    }
+  ],
+  "tagOwners": {
+    "tag:legion-oracle": ["autogroup:admin"],
+    "tag:legion-pc":     ["autogroup:admin"]
+  }
+}
+```
+
+Tag the Oracle VM as `tag:legion-oracle` and the PC as `tag:legion-pc` in the
+Tailscale admin console.
+
+---
+
+## 2. Docker → Tailnet Reach Verification
+
+By default the Legion containers run in Docker's bridge network and reach the
+host's Tailscale interface through host routing. Verify reachability from inside
+a running container:
+
+```bash
+docker exec legion-agent-news \
+  wget -qO- http://<pc-tailnet-host>:11434/api/tags
+```
+
+Expected output: a JSON object listing available Ollama models.
+
+### 2.1 Fallback: Sidecar Network Namespace
+
+If host routing does not reach the tailnet from inside containers (e.g. the VM
+runs network isolation), add a Tailscale service to `docker-compose.prod.yml` and
+have the agent containers join its network namespace:
+
+```yaml
+services:
+  tailscale:
+    image: tailscale/tailscale:stable
+    environment:
+      - TS_AUTHKEY=${TAILSCALE_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
+  legion-agent-news:
+    network_mode: "service:tailscale"
+    # ... rest of service definition
+
+volumes:
+  tailscale-state:
+```
+
+With this layout every agent container uses the `tailscale` container's network
+stack, which includes the Tailscale interface.
+
+---
+
+## 3. PC Ollama: Install, Model, and VRAM
+
+### 3.1 Install Ollama
+
+Download from https://ollama.com/download/windows. After installation, Ollama
+starts automatically and listens on `localhost:11434`.
+
+### 3.2 Pull the Model
+
+```powershell
+ollama pull gpt-oss:20b
+```
+
+This downloads the `gpt-oss:20b` model. Verify it is listed:
+
+```powershell
+ollama list
+```
+
+### 3.3 VRAM Headroom
+
+The 16 GB GPU card should provide adequate headroom for `gpt-oss:20b` alongside
+idle driver overhead (~1–2 GB). If other applications consume significant VRAM
+the readiness sidecar (section 4) will detect this and hold the PC as BUSY.
+
+### 3.4 Set OLLAMA_KEEP_ALIVE
+
+The model should stay loaded in VRAM between Legion inference calls to avoid
+repeated load latency. Set this in Ollama's Windows service environment:
+
+```powershell
+# Add to the Ollama system service environment (via Windows Services GUI
+# or the registry key for the Ollama service):
+OLLAMA_KEEP_ALIVE=90m
+```
+
+Alternatively, the prime task (section 6) sends a warmup generate with
+`keep_alive: "90m"` in the request body, which overrides the global setting
+for that session.
+
+---
+
+## 4. Readiness Sidecar
+
+The readiness sidecar is a small HTTP server running on the PC. The Legion
+probe issues `GET /api/tags` against `HOME_OLLAMA_URL`, which the sidecar
+proxies to the real Ollama endpoint — returning `503 Service Unavailable`
+when the PC is BUSY so Legion stays sidecar-agnostic (it probes the same
+URL it uses for inference; no special busy-check endpoint needed).
+
+### 4.1 Busy Criteria
+
+The sidecar returns BUSY (and blocks `/api/tags` with `503`) when **any** of the
+following conditions hold:
+
+| Condition | Implementation |
+|---|---|
+| Recent user input | `GetLastInputInfo` Win32 API: idle seconds < 10 min (600 s) |
+| Fullscreen/exclusive app | `GetForegroundWindow` + `GetWindowRect` vs display rect, or DXGI `IDXGIOutput::GetDisplayModeList` exclusive mode |
+| Non-Ollama VRAM usage | `nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader`: exclude PIDs whose image is `ollama.exe`; if remaining usage > threshold (e.g. 2 GB) → BUSY |
+
+### 4.2 Response Diagnostic Shape
+
+A `GET /ready` endpoint (or `/api/tags` when `200`) returns:
+
+```json
+{
+  "ready": true,
+  "reason": "idle",
+  "gpuFreeMiB": 12800,
+  "idleSec": 1240
+}
+```
+
+When BUSY:
+
+```json
+{
+  "ready": false,
+  "reason": "active_user_input",
+  "gpuFreeMiB": 6400,
+  "idleSec": 45
+}
+```
+
+Possible `reason` values: `"idle"`, `"active_user_input"`, `"fullscreen_app"`,
+`"gpu_busy"`.
+
+### 4.3 How `/api/tags` Is Gated
+
+```
+GET /api/tags
+  → sidecar checks busy flags
+  → if BUSY:  HTTP 503 {"error":"pc busy","reason":"..."}
+  → if READY: proxy → http://127.0.0.1:11434/api/tags → return response
+```
+
+Because Legion's `tieredProvider` treats a non-200 on the probe as "home
+unavailable" and falls through to the Oracle model, the sidecar is completely
+transparent to Legion's code.
+
+### 4.4 Binding and Firewall
+
+Bind the sidecar to the Tailscale interface IP (`100.x.x.x`) only, not
+`0.0.0.0`, so it is unreachable from outside the tailnet:
+
+```powershell
+# Example (Node.js sidecar):
+server.listen(11434, '100.x.x.x')
+```
+
+The Windows Firewall rule should allow inbound TCP 11434 from the Tailscale
+subnet (`100.64.0.0/10`) only.
+
+---
+
+## 5. RTC Wake (Task Scheduler)
+
+The PC must be in a low-power sleep/hibernate state (S3 or S4), **not** fully
+shut down (S5), for RTC wake to work.
+
+### 5.1 Configure Power Plan
+
+```powershell
+# Set idle-sleep timeout (20 min on AC power — see section 7)
+powercfg /change standby-timeout-ac 20
+
+# Allow hibernate after sleep (S3 → S4 after additional time)
+powercfg /change hibernate-timeout-ac 120
+
+# NEVER auto-shutdown — S5 cannot be woken by RTC
+# (Ensure "Turn off the display" is set, not "Shut down")
+```
+
+### 5.2 Allow Wake Timers
+
+```powershell
+# Enable wake timers on the active power plan
+powercfg /setacvalueindex SCHEME_CURRENT SUB_SLEEP RTCWAKE 1
+powercfg /setactive SCHEME_CURRENT
+```
+
+Or via Group Policy: Computer Configuration → Administrative Templates →
+System → Power Management → Sleep Settings → **Allow wake timers** = Enabled.
+
+### 5.3 Task Scheduler Wake Task
+
+Create one scheduled task per Legion cron window. Example for a 06:00 UTC
+window (adjust for local timezone):
+
+```powershell
+$action  = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c echo wake"
+$trigger = New-ScheduledTaskTrigger -Daily -At "06:00AM"
+$settings = New-ScheduledTaskSettingsSet -WakeToRun -ExecutionTimeLimit (New-TimeSpan -Minutes 1)
+Register-ScheduledTask -TaskName "LegionWake-0600" `
+  -Action $action -Trigger $trigger -Settings $settings -RunLevel Limited
+```
+
+The trigger fires ~10 minutes before the Legion cron window so the model has
+time to load before the first vote lands.
+
+### 5.4 S3 / S4 vs S5
+
+| Power state | RTC wake | Notes |
+|---|---|---|
+| S3 (sleep) | **Yes** | RAM powered, fast resume (~5 s) |
+| S4 (hibernate) | **Yes** | RAM to disk, slower resume (~30 s) |
+| S5 (shutdown) | **No** | Full power off; RTC wake not supported |
+
+Configure power to `sleep → hibernate`, never auto-shutdown.
+
+---
+
+## 6. Busy-Aware Prime Task
+
+On each RTC wake event, before Legion's cron window opens, run a prime task
+that checks the sidecar's `/ready` endpoint. If idle, it sends a warmup
+generate to Ollama to pre-load the model into VRAM:
+
+```powershell
+# prime.ps1
+$ready = (Invoke-RestMethod http://100.x.x.x:11434/ready).ready
+if (-not $ready) { exit 0 }  # Gaming or active — skip; Legion will fall back to Oracle
+
+$body = @{
+  model      = "gpt-oss:20b"
+  prompt     = "Hello"
+  keep_alive = "90m"
+  stream     = $false
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:11434/api/generate `
+  -Body $body -ContentType "application/json"
+```
+
+Register this as a scheduled task triggered ~5 minutes before the Legion cron
+window (i.e. after the wake task fires):
+
+```powershell
+$action  = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-File C:\legion\prime.ps1"
+$trigger = New-ScheduledTaskTrigger -Daily -At "05:55AM"
+$settings = New-ScheduledTaskSettingsSet -WakeToRun:$false -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+Register-ScheduledTask -TaskName "LegionPrime-0600" `
+  -Action $action -Trigger $trigger -Settings $settings -RunLevel Limited
+```
+
+---
+
+## 7. Windows Idle Sleep
+
+After each Legion cron window the PC should return to low-power state
+automatically. With a 20-minute idle-sleep timeout:
+
+```powershell
+powercfg /change standby-timeout-ac 20
+```
+
+When Ollama is done serving requests and no other activity keeps the PC awake,
+it will enter S3 after 20 minutes. The `OLLAMA_KEEP_ALIVE` expiry (90 min in
+the warmup request) will unload the model from VRAM before the next wake cycle,
+preventing stale VRAM allocation.
+
+---
+
+## 8. Legion Environment Variables
+
+Set these in `.env` or the Docker Compose `environment:` block for the agent
+and emitter services:
+
+| Variable | Example | Effect |
+|---|---|---|
+| `HOME_OLLAMA_URL` | `http://pc.tail1234.ts.net:11434` | URL of the sidecar-fronted Ollama on the PC. **Leave unset to disable the feature entirely.** |
+| `HOME_MODEL` | `gpt-oss:20b` | Model name passed to Ollama on the PC. |
+| `HOME_THINK` | `false` | Set `true` to enable chain-of-thought (if the model supports it). `false` disables thinking tokens for faster inference. |
+| `HOME_PROBE_TIMEOUT_MS` | `3000` | Timeout for the `/api/tags` probe (default 3 s). Tune up if the PC wakes slowly. |
+
+When `HOME_OLLAMA_URL` is absent, the tiered provider skips the PC path and
+uses the Oracle model exclusively.
+
+---
+
+## 9. Verification Checklist
+
+Run these checks in order after deploying.
+
+### 9.1 PC Asleep → Oracle Fail-Fast
+
+1. Put the PC to sleep (`Start → Power → Sleep`).
+2. Trigger a Legion cron cycle manually or wait for the next scheduled run.
+3. Confirm the probe times out quickly (within `HOME_PROBE_TIMEOUT_MS` ms) and
+   does not stall the cycle.
+4. Confirm the signal is produced using the Oracle model (check agent logs for
+   the Oracle model name, not `gpt-oss:20b`).
+
+### 9.2 PC Awake + Idle → Votes Tagged `gpt-oss:20b`
+
+1. Ensure the PC is awake and no user is active (wait for idle timeout or use
+   the prime task to confirm readiness).
+2. Trigger a Legion cycle.
+3. After the cycle completes, run:
+
+   ```sql
+   SELECT DISTINCT model FROM legion.signal_votes
+   ORDER BY 1;
+   ```
+
+   Expected output includes `gpt-oss:20b`.
+
+### 9.3 Gaming / Active → BUSY → Oracle
+
+1. Launch a fullscreen game or any GPU-heavy application on the PC.
+2. Trigger a Legion cycle.
+3. Confirm the sidecar returns `503` (check the sidecar logs or run
+   `curl http://<pc-tailnet>:11434/api/tags` from the Oracle VM).
+4. Confirm Legion falls through to the Oracle model (votes show the Oracle
+   model name, not `gpt-oss:20b`).
+
+### 9.4 Dashboard Toggle OFF → Oracle Even When PC Is Ready
+
+1. With the PC awake and idle, use the Legion web dashboard settings page to
+   **toggle `home_model_enabled` OFF**.
+2. Trigger a cycle.
+3. Confirm votes use the Oracle model despite the PC being available.
+4. Toggle the setting back ON and confirm the PC model resumes in the next cycle.
+
+### 9.5 New (Agent, Model) ρ Starts at 1.0 and Moves After MIN_RESOLVED
+
+1. Switch `HOME_MODEL` to a new model name (e.g. `gpt-oss:20b-q4`).
+2. Trigger several cycles; confirm votes are tagged with the new model.
+3. Before `MIN_RESOLVED` (= 5) forecasts resolve, query:
+
+   ```sql
+   SELECT agent_id, model, rho, sample_size
+   FROM legion.agent_reliability
+   WHERE model = 'gpt-oss:20b-q4';
+   ```
+
+   `rho` should be `1.0` and `sample_size` should be `0` (no resolved
+   forecasts yet — cold start stays neutral).
+
+4. After at least 5 forecasts resolve (after `horizonDays` calendar days),
+   re-query. `rho` will now be non-neutral and `sample_size` ≥ 5, showing the
+   reliability learner has incorporated evidence.

@@ -1,5 +1,6 @@
 import { createOllamaProvider } from './ollama.js';
 import { createOpenAICompatProvider } from './openai.js';
+import { createTieredProvider } from './tiered.js';
 
 // Which config block feeds each provider type.
 const CFG_BLOCK = { local: 'ollama', openai: 'openai', gemini: 'gemini' };
@@ -9,7 +10,7 @@ const CFG_BLOCK = { local: 'ollama', openai: 'openai', gemini: 'gemini' };
 export function createProvider(name, cfg, fetchImpl = fetch) {
   switch (name) {
     case 'local':
-      return createOllamaProvider(cfg.ollama, fetchImpl);
+      return buildLocalProvider(cfg, fetchImpl);
     case 'openai':
       return createOpenAICompatProvider({ name: 'openai', ...cfg.openai }, fetchImpl);
     case 'gemini':
@@ -56,4 +57,46 @@ export function resolveProvider({ provider, model } = {}, factory = defaultFacto
 
 function defaultFactory({ type, model }) {
   return createProvider(type, withModel({}, type, model));
+}
+
+// The `local` provider is tiered when a home PC URL is configured AND not disabled:
+// primary = PC Ollama (cfg.home), fallback = Oracle Ollama (cfg.ollama). Otherwise it
+// is the plain Oracle Ollama provider — byte-identical to before this feature.
+function buildLocalProvider(cfg, fetchImpl) {
+  const oracle = createOllamaProvider(cfg.ollama, fetchImpl);
+  const home = cfg.home;
+  if (!home?.url || home.enabled === false) return oracle;
+
+  const pc = createOllamaProvider(
+    { ...cfg.ollama, url: home.url, model: home.model, think: home.think },
+    fetchImpl,
+  );
+  const probe = async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), home.probeTimeoutMs);
+    try {
+      const res = await fetchImpl(`${home.url}/api/tags`, { signal: controller.signal });
+      return res.ok;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  return createTieredProvider({ primary: pc, fallback: oracle, probe });
+}
+
+// Normalizes the provider generate contract: plain providers return a string,
+// the tiered provider returns { text, model }. Callers that need the served model
+// (the agent runner) use this; text-only callers read `.text`.
+export async function normalizeGenerate(provider, args) {
+  const out = await provider.generate(args);
+  if (typeof out === 'string') return { text: out, model: provider.model ?? null };
+  return out;
+}
+
+// Composite key for per-(agent, model) reliability dial maps. NUL never appears in
+// an agent id or an Ollama model name, so it is a safe, reversible separator.
+export function modelKey(agentId, model) {
+  return `${agentId} ${model}`;
 }

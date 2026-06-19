@@ -5,6 +5,7 @@ const PROVIDERS = ['local', 'gemini', 'openai'];
 
 export function AgentConfig() {
   const [agents, setAgents] = useState([]);
+  const [homePcEnabled, setHomePcEnabled] = useState(true);
 
   useEffect(() => {
     api
@@ -12,6 +13,15 @@ export function AgentConfig() {
       .then(setAgents)
       .catch(() => setAgents([]));
   }, []);
+
+  useEffect(() => {
+    api.getSettings().then((s) => setHomePcEnabled(s.homePcEnabled)).catch(() => {});
+  }, []);
+
+  async function toggleHomePc(next) {
+    setHomePcEnabled(next);
+    await api.setSettings({ homePcEnabled: next });
+  }
 
   function update(id, patch) {
     setAgents((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
@@ -22,7 +32,17 @@ export function AgentConfig() {
   }
 
   return (
-    <table className="w-full text-left">
+    <>
+      <label className="flex items-center gap-2 mb-3">
+        <input
+          aria-label="home-pc-enabled"
+          type="checkbox"
+          checked={homePcEnabled}
+          onChange={(e) => toggleHomePc(e.target.checked)}
+        />
+        Use home PC model (falls back to Oracle when off, asleep, or busy)
+      </label>
+      <table className="w-full text-left">
       <thead>
         <tr className="border-b">
           <th className="p-2">Agent</th>
@@ -82,5 +102,6 @@ export function AgentConfig() {
         ))}
       </tbody>
     </table>
+    </>
   );
 }

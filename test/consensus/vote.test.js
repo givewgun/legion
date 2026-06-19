@@ -16,6 +16,7 @@ describe('vote', () => {
       conviction: 0.8,
       weight: 1.2,
       rationale: 'uptrend intact',
+      model: null,
     });
   });
 

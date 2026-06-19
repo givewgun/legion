@@ -17,73 +17,86 @@ function poolReturning(rowsByCall) {
 }
 
 describe('repo phase4', () => {
-  it('getAllReliability returns an agentId->rho map', async () => {
+  it('getAllReliability returns a nested agentId->model->rho map', async () => {
     const pool = poolReturning([
       [
-        { agent_id: 'technical', rho: 1.3 },
-        { agent_id: 'news', rho: 0.9 },
+        { agent_id: 'technical', model: 'qwen2.5:7b-instruct', rho: 1.3 },
+        { agent_id: 'news', model: 'qwen2.5:7b-instruct', rho: 0.9 },
       ],
     ]);
     const repo = createRepo(createDb(pool));
     const map = await repo.getAllReliability();
-    expect(map).toEqual({ technical: 1.3, news: 0.9 });
+    expect(map).toEqual({
+      technical: { 'qwen2.5:7b-instruct': 1.3 },
+      news: { 'qwen2.5:7b-instruct': 0.9 },
+    });
     expect(pool.calls[0].text.toLowerCase()).toContain('from legion.agent_reliability');
   });
 
-  it('upsertReliability upserts rho + sample_size + calibration + info', async () => {
+  it('upsertReliability upserts rho + sample_size + calibration + info keyed by model', async () => {
     const pool = poolReturning([[]]);
     const repo = createRepo(createDb(pool));
-    await repo.upsertReliability('technical', 1.25, 12, 1.3, 0.6);
+    await repo.upsertReliability('technical', 'qwen2.5:7b-instruct', 1.25, 12, 1.3, 0.6);
     const { text, params } = pool.calls[0];
     expect(text.toLowerCase()).toContain('insert into legion.agent_reliability');
-    expect(text.toLowerCase()).toContain('on conflict');
-    expect(params).toEqual(['technical', 1.25, 12, 1.3, 0.6]);
+    expect(text.toLowerCase()).toContain('on conflict (agent_id, model)');
+    expect(params).toEqual(['technical', 'qwen2.5:7b-instruct', 1.25, 12, 1.3, 0.6]);
   });
 
   it('upsertReliability defaults calibration and info to neutral 1.0', async () => {
     const pool = poolReturning([[]]);
     const repo = createRepo(createDb(pool));
-    await repo.upsertReliability('technical', 1.25, 12);
-    expect(pool.calls[0].params).toEqual(['technical', 1.25, 12, 1.0, 1.0]);
+    await repo.upsertReliability('technical', 'qwen2.5:7b-instruct', 1.25, 12);
+    expect(pool.calls[0].params).toEqual(['technical', 'qwen2.5:7b-instruct', 1.25, 12, 1.0, 1.0]);
   });
 
-  it('regime reliability round-trips per-(agent, regime) dials', async () => {
+  it('regime reliability round-trips per-(agent, regime, model) dials', async () => {
     const pool = poolReturning([
       [],
-      [{ agent_id: 'technical', rho: 1.4 }],
-      [{ agent_id: 'technical', calibration: 1.2 }],
+      [{ agent_id: 'technical', model: 'qwen2.5:7b-instruct', rho: 1.4 }],
+      [{ agent_id: 'technical', model: 'qwen2.5:7b-instruct', calibration: 1.2 }],
     ]);
     const repo = createRepo(createDb(pool));
-    await repo.upsertRegimeReliability('technical', 'stressed', 1.4, 12, 1.2);
+    await repo.upsertRegimeReliability('technical', 'stressed', 'qwen2.5:7b-instruct', 1.4, 12, 1.2);
     expect(pool.calls[0].text.toLowerCase()).toContain('legion.agent_regime_reliability');
-    expect(pool.calls[0].params).toEqual(['technical', 'stressed', 1.4, 1.2, 12]);
-    expect(await repo.getRegimeReliability('stressed')).toEqual({ technical: 1.4 });
+    expect(pool.calls[0].params).toEqual(['technical', 'stressed', 'qwen2.5:7b-instruct', 1.4, 1.2, 12]);
+    expect(await repo.getRegimeReliability('stressed')).toEqual({
+      technical: { 'qwen2.5:7b-instruct': 1.4 },
+    });
     expect(pool.calls[1].params).toEqual(['stressed']);
-    expect(await repo.getRegimeCalibration('stressed')).toEqual({ technical: 1.2 });
+    expect(await repo.getRegimeCalibration('stressed')).toEqual({
+      technical: { 'qwen2.5:7b-instruct': 1.2 },
+    });
   });
 
-  it('getAgentInfoFactors returns an agentId->info map', async () => {
+  it('getAgentInfoFactors returns a nested agentId->model->info map', async () => {
     const pool = poolReturning([
       [
-        { agent_id: 'technical', info_factor: 1.0 },
-        { agent_id: 'social', info_factor: 0.25 },
+        { agent_id: 'technical', model: 'qwen2.5:7b-instruct', info_factor: 1.0 },
+        { agent_id: 'social', model: 'qwen2.5:7b-instruct', info_factor: 0.25 },
       ],
     ]);
     const repo = createRepo(createDb(pool));
     const map = await repo.getAgentInfoFactors();
-    expect(map).toEqual({ technical: 1.0, social: 0.25 });
+    expect(map).toEqual({
+      technical: { 'qwen2.5:7b-instruct': 1.0 },
+      social: { 'qwen2.5:7b-instruct': 0.25 },
+    });
   });
 
-  it('getAgentCalibration returns an agentId->calibration map', async () => {
+  it('getAgentCalibration returns a nested agentId->model->calibration map', async () => {
     const pool = poolReturning([
       [
-        { agent_id: 'technical', calibration: 1.4 },
-        { agent_id: 'news', calibration: 0.8 },
+        { agent_id: 'technical', model: 'qwen2.5:7b-instruct', calibration: 1.4 },
+        { agent_id: 'news', model: 'qwen2.5:7b-instruct', calibration: 0.8 },
       ],
     ]);
     const repo = createRepo(createDb(pool));
     const map = await repo.getAgentCalibration();
-    expect(map).toEqual({ technical: 1.4, news: 0.8 });
+    expect(map).toEqual({
+      technical: { 'qwen2.5:7b-instruct': 1.4 },
+      news: { 'qwen2.5:7b-instruct': 0.8 },
+    });
     expect(pool.calls[0].text.toLowerCase()).toContain('calibration');
   });
 
@@ -131,17 +144,18 @@ describe('repo phase4', () => {
     ]);
   });
 
-  it('addSignalVotes bulk-inserts a snapshot row per vote', async () => {
+  it('addSignalVotes bulk-inserts a snapshot row per vote with model', async () => {
     const pool = poolReturning([[]]);
     const repo = createRepo(createDb(pool));
     await repo.addSignalVotes(77, [
-      { agentId: 'technical', stance: 1, conviction: 0.8, weight: 1.0 },
-      { agentId: 'news', stance: -1, conviction: 0.5, weight: 1.2 },
+      { agentId: 'technical', stance: 1, conviction: 0.8, weight: 1.0, model: 'qwen2.5:7b-instruct' },
+      { agentId: 'news', stance: -1, conviction: 0.5, weight: 1.2, model: null },
     ]);
     const { text, params } = pool.calls[0];
     expect(text.toLowerCase()).toContain('insert into legion.signal_votes');
-    expect(params).toHaveLength(10);
-    expect(params.slice(0, 5)).toEqual([77, 'technical', 1, 0.8, 1.0]);
+    expect(params).toHaveLength(12);
+    expect(params.slice(0, 6)).toEqual([77, 'technical', 1, 0.8, 1.0, 'qwen2.5:7b-instruct']);
+    expect(params[11]).toBe('qwen2.5:7b-instruct'); // null model defaults to oracle
   });
 
   it('addSignalVotes is a no-op on empty votes', async () => {
@@ -213,11 +227,15 @@ describe('repo phase4', () => {
     expect(params).toEqual(['NVDA', 5, 10, 6, 0.6, 0.12, 0.05, 0.07]);
   });
 
-  it('getReliabilityLeaderboard orders by rho desc', async () => {
-    const pool = poolReturning([[{ agent_id: 'technical', rho: 1.4, sample_size: 20 }]]);
+  it('getReliabilityLeaderboard orders by rho desc and includes model', async () => {
+    const pool = poolReturning([
+      [{ agent_id: 'technical', model: 'qwen2.5:7b-instruct', rho: 1.4, sample_size: 20 }],
+    ]);
     const repo = createRepo(createDb(pool));
     const out = await repo.getReliabilityLeaderboard();
-    expect(out).toEqual([{ agentId: 'technical', rho: 1.4, sampleSize: 20 }]);
+    expect(out).toEqual([
+      { agentId: 'technical', model: 'qwen2.5:7b-instruct', rho: 1.4, sampleSize: 20 },
+    ]);
     expect(pool.calls[0].text.toLowerCase()).toContain('order by rho desc');
   });
 
@@ -297,19 +315,20 @@ describe('agent lessons (ADR 0026)', () => {
 });
 
 describe('learned prior (ADR 0027)', () => {
-  it('upsertLearnedPrior writes the long-window prior', async () => {
+  it('upsertLearnedPrior writes the long-window prior keyed by model', async () => {
     const pool = poolReturning([[]]);
     const repo = createRepo(createDb(pool));
-    await repo.upsertLearnedPrior('news', 1.15);
+    await repo.upsertLearnedPrior('news', 'qwen2.5:7b-instruct', 1.15);
     expect(pool.calls[0].text.toLowerCase()).toContain('learned_prior');
-    expect(pool.calls[0].params).toEqual(['news', 1.15]);
+    expect(pool.calls[0].params).toEqual(['news', 'qwen2.5:7b-instruct', 1.15]);
   });
 
-  it('leaderboard surfaces every learned dial', async () => {
+  it('leaderboard surfaces every learned dial including model', async () => {
     const pool = poolReturning([
       [
         {
           agent_id: 'technical',
+          model: 'qwen2.5:7b-instruct',
           rho: 1.2,
           sample_size: 30,
           calibration: 1.1,
@@ -324,6 +343,7 @@ describe('learned prior (ADR 0027)', () => {
     expect(await repo.getReliabilityLeaderboard()).toEqual([
       {
         agentId: 'technical',
+        model: 'qwen2.5:7b-instruct',
         rho: 1.2,
         sampleSize: 30,
         calibration: 1.1,
@@ -337,12 +357,15 @@ describe('learned prior (ADR 0027)', () => {
 });
 
 describe('roster watch repo (ADR 0028)', () => {
-  it('reads floored streaks and writes the flag', async () => {
-    const pool = poolReturning([[{ agent_id: 'social', floored_streak: 5 }], []]);
+  it('reads floored streaks as nested map and writes the flag keyed by model', async () => {
+    const pool = poolReturning([
+      [{ agent_id: 'social', model: 'qwen2.5:7b-instruct', floored_streak: 5 }],
+      [],
+    ]);
     const repo = createRepo(createDb(pool));
-    expect(await repo.getFlooredStreaks()).toEqual({ social: 5 });
-    await repo.updateRosterFlag('social', 6, true);
+    expect(await repo.getFlooredStreaks()).toEqual({ social: { 'qwen2.5:7b-instruct': 5 } });
+    await repo.updateRosterFlag('social', 'qwen2.5:7b-instruct', 6, true);
     expect(pool.calls[1].text.toLowerCase()).toContain('floored_streak');
-    expect(pool.calls[1].params).toEqual(['social', 6, true]);
+    expect(pool.calls[1].params).toEqual(['social', 'qwen2.5:7b-instruct', 6, true]);
   });
 });

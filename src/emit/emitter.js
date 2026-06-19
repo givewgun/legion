@@ -11,6 +11,18 @@ import { buildSignal } from './plan.js';
 import { applyRiskConstraint } from '../risk/apply.js';
 import { formatSignal } from './telegram.js';
 
+// Overlays regime-conditional nested dials onto the unconditional ones at the
+// (agent, model) leaf: a deep-enough regime bucket overrides the base value,
+// otherwise the base survives. Mirrors the old `{...rho, ...regimeRho}` spread
+// but one level deeper now that dials are keyed by (agent, model).
+function mergeNested(base, overlay) {
+  const out = {};
+  for (const agentId of new Set([...Object.keys(base), ...Object.keys(overlay)])) {
+    out[agentId] = { ...(base[agentId] ?? {}), ...(overlay[agentId] ?? {}) };
+  }
+  return out;
+}
+
 const DAY_MS = 86400000;
 // Buffered (cycleId, round) state is only freed on the happy path — a round that
 // collects all expected votes, or a cycle that finalizes. A round that never
@@ -46,7 +58,7 @@ export function createEmitter({
   logger = console,
 }) {
   const rounds = new Map(); // `${cycleId}:${round}` -> { symbol, round, votes, constraint, lastSeenAt }
-  const learnedByCycle = new Map(); // cycleId -> { rho, calib, corr } loaded once per cycle
+  const learnedByCycle = new Map(); // cycleId -> { rhoLookup, calibLookup, corr, regime } loaded once per cycle
   const firstVotesByCycle = new Map(); // cycleId -> round-1 votes (independent priors)
   const cycleSeenAt = new Map(); // cycleId -> ms of last activity (drives stale-cycle eviction)
   const sweepThrottleMs = Math.min(SweepThrottleMs, staleEntryMs);
@@ -183,7 +195,7 @@ export function createEmitter({
     // aggregation inputs (ADR 0001's replication property — any node recomputes
     // the same S/V/κ from them), and the recorded `converged` already reflects
     // the herding guard's pre-crash decision, so it is honored, not re-derived.
-    const { rho, corr } = await learnedForCycle(cycleId);
+    const { rhoLookup, corr } = await learnedForCycle(cycleId);
     const calibrated = ((await repo.getVotes?.(roundRow.id)) ?? []).map((v) => ({
       agentId: v.agent_id,
       stance: Number(v.stance),
@@ -194,7 +206,7 @@ export function createEmitter({
     if (calibrated.length === 0) return;
     const result = evaluateRound(calibrated, { ...consensus, corr });
     result.converged = converged;
-    const scaled = scaleWeights(entry.votes, rho);
+    const scaled = scaleWeights(entry.votes, rhoLookup);
     await finalize(cycleId, entry, result, calibrated, scaled);
     logger.info?.(
       `[emitter] resumed ${symbol} cycle ${cycleId}: emitted final round ${round} after crash`,
@@ -297,22 +309,25 @@ export function createEmitter({
         (conditioned ? repo.getRegimeReliability?.(regime) : null) ?? {},
         (conditioned ? repo.getRegimeCalibration?.(regime) : null) ?? {},
       ]);
-      // Regime overlay (ADR 0023): per-(agent, regime) dials override the
+      // Regime overlay (ADR 0023): per-(agent, model, regime) dials override the
       // unconditional ones where a deep-enough bucket exists (the learner only
       // persists such buckets), so "News is 1.4x in stressed tape, 0.8x in calm"
-      // beats one averaged number.
-      const rhoEff = { ...rho, ...regimeRho };
-      const calEff = { ...calibration, ...regimeCal };
-      // The conviction term is scaled by calibration × information factor: cal
-      // asks "is its confidence meaningful", info asks "is anyone home" (a
+      // beats one averaged number. Dials are now keyed by (agent, model) —
+      // mergeNested overlays at the model level rather than the agent level.
+      const rhoEff = mergeNested(rho, regimeRho);
+      const calEff = mergeNested(calibration, regimeCal);
+      // Conviction term = calibration × information factor, per (agent, model).
+      // cal asks "is its confidence meaningful", info asks "is anyone home" (a
       // near-constant voter is discounted until its stances move — ADR 0021).
-      const calib = {};
-      for (const agentId of new Set([...Object.keys(calEff), ...Object.keys(info)])) {
-        calib[agentId] = (calEff[agentId] ?? 1.0) * (info[agentId] ?? 1.0);
-      }
+      const calibLookup = (agentId, model) => {
+        const cal = calEff[agentId]?.[model] ?? 1.0;
+        const inf = info[agentId]?.[model] ?? 1.0;
+        return cal * inf;
+      };
+      const rhoLookup = (agentId, model) => rhoEff[agentId]?.[model] ?? 1.0;
       // Symmetric lookup; defaults to 0 (independent) for unseen pairs.
       const corr = (a, b) => corrMap[a]?.[b] ?? 0;
-      learnedByCycle.set(cycleId, { rho: rhoEff, calib, corr, regime });
+      learnedByCycle.set(cycleId, { rhoLookup, calibLookup, corr, regime });
     }
     return learnedByCycle.get(cycleId);
   }
@@ -325,9 +340,9 @@ export function createEmitter({
     // these effective inputs so any node recomputes the same S/V/κ (ADR 0001), while the
     // forecast snapshot below keeps RAW conviction to avoid a calibration feedback loop.
     // `corr` discounts redundant agreement in the quorum (ADR 0015).
-    const { rho, calib, corr } = await learnedForCycle(cycleId);
-    const scaled = scaleWeights(entry.votes, rho);
-    const calibrated = scaleConviction(scaled, calib);
+    const { rhoLookup, calibLookup, corr } = await learnedForCycle(cycleId);
+    const scaled = scaleWeights(entry.votes, rhoLookup);
+    const calibrated = scaleConviction(scaled, calibLookup);
 
     const result = evaluateRound(calibrated, { ...consensus, corr });
 
@@ -436,6 +451,7 @@ export function createEmitter({
         stance: v.stance,
         conviction: v.conviction,
         weight: v.weight,
+        model: v.model ?? null,
       })),
     );
     await repo.finishCycle(cycleId, result.converged ? 'converged' : 'no_consensus');

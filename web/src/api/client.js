@@ -44,4 +44,6 @@ export const api = {
   getWatchlist: () => get('/api/watchlist'),
   addToWatchlist: (symbol) => send('PUT', `/api/watchlist/${symbol}`, {}),
   removeFromWatchlist: (symbol) => send('DELETE', `/api/watchlist/${symbol}`),
+  getSettings: () => get('/api/settings'),
+  setSettings: (body) => send('PUT', '/api/settings', body),
 };

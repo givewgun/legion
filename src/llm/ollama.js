@@ -71,6 +71,7 @@ export function createOllamaProvider(
 
   return {
     name: 'local',
+    model,
     async generate({ system, prompt }) {
       // Measure end-to-end generate latency (incl. queue wait + retries).
       const stop = ollamaRequest.startTimer();

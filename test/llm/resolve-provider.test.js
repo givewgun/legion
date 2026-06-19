@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest';
-import { resolveProvider, withAgentOptions, DEFAULT_MODELS } from '../../src/llm/provider.js';
+import { describe, it, expect, vi } from 'vitest';
+import {
+  resolveProvider,
+  withAgentOptions,
+  DEFAULT_MODELS,
+  createProvider,
+  normalizeGenerate,
+  modelKey,
+} from '../../src/llm/provider.js';
 
 describe('withAgentOptions', () => {
   it('overlays sampling options onto the ollama config block', () => {
@@ -49,5 +56,57 @@ describe('resolveProvider', () => {
     };
     resolveProvider({ provider: 'bogus', model: null }, fakeFactory);
     expect(calls[0].type).toBe('local');
+  });
+});
+
+describe('tiered local wiring', () => {
+  const baseCfg = {
+    ollama: { url: 'http://oracle:11434', model: 'qwen2.5:7b-instruct' },
+    home: { url: '', model: 'gpt-oss:20b', think: null, probeTimeoutMs: 1500, enabled: true },
+  };
+
+  it('returns a plain ollama provider (string generate) when home url is empty', async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ response: 'hi' }) }));
+    const p = createProvider('local', baseCfg, fetchImpl);
+    const out = await p.generate({ system: 's', prompt: 'p' });
+    expect(out).toBe('hi'); // plain string contract preserved
+    expect(p.model).toBe('qwen2.5:7b-instruct');
+  });
+
+  it('returns a tiered provider when home url is set and enabled', async () => {
+    const cfg = { ...baseCfg, home: { ...baseCfg.home, url: 'http://pc:11434' } };
+    // probe (GET /api/tags) ready, primary generate returns text
+    const fetchImpl = vi.fn(async (url) => {
+      if (url.endsWith('/api/tags')) return { ok: true, json: async () => ({}) };
+      return { ok: true, json: async () => ({ response: 'from-pc' }) };
+    });
+    const p = createProvider('local', cfg, fetchImpl);
+    const out = await p.generate({ system: 's', prompt: 'p' });
+    expect(out).toEqual({ text: 'from-pc', model: 'gpt-oss:20b' });
+  });
+
+  it('stays pure-Oracle when home.enabled is false even if url set', async () => {
+    const cfg = { ...baseCfg, home: { ...baseCfg.home, url: 'http://pc:11434', enabled: false } };
+    const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ response: 'oracle' }) }));
+    const p = createProvider('local', cfg, fetchImpl);
+    await p.generate({ system: 's', prompt: 'p' });
+    expect(p.model).toBe('qwen2.5:7b-instruct');
+  });
+});
+
+describe('normalizeGenerate', () => {
+  it('wraps a string result with the provider model', async () => {
+    const provider = { model: 'm', generate: async () => 'txt' };
+    expect(await normalizeGenerate(provider, {})).toEqual({ text: 'txt', model: 'm' });
+  });
+  it('passes through an object result', async () => {
+    const provider = { model: 'm', generate: async () => ({ text: 't', model: 'pc' }) };
+    expect(await normalizeGenerate(provider, {})).toEqual({ text: 't', model: 'pc' });
+  });
+});
+
+describe('modelKey', () => {
+  it('joins agent and model with a NUL separator', () => {
+    expect(modelKey('news', 'gpt-oss:20b')).toBe('news gpt-oss:20b');
   });
 });

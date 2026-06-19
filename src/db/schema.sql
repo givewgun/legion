@@ -258,3 +258,49 @@ CREATE TABLE IF NOT EXISTS legion.user_portfolio_config (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ── PC model server: per-(agent, model) reliability segmentation ──────────────
+-- The served model is tagged on every signal vote so the learner can earn a
+-- separate track record per model. Existing rows backfill to the Oracle model
+-- (the only model that produced them) via the column default.
+ALTER TABLE legion.signal_votes
+  ADD COLUMN IF NOT EXISTS model TEXT NOT NULL DEFAULT 'qwen2.5:7b-instruct';
+
+ALTER TABLE legion.agent_reliability
+  ADD COLUMN IF NOT EXISTS model TEXT NOT NULL DEFAULT 'qwen2.5:7b-instruct';
+ALTER TABLE legion.agent_regime_reliability
+  ADD COLUMN IF NOT EXISTS model TEXT NOT NULL DEFAULT 'qwen2.5:7b-instruct';
+
+-- Re-key the dial tables to include model. Guarded so re-running the schema is a
+-- no-op once the composite key is in place.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+     WHERE n.nspname = 'legion' AND t.relname = 'agent_reliability'
+       AND c.contype = 'p' AND array_length(c.conkey, 1) = 1
+  ) THEN
+    ALTER TABLE legion.agent_reliability DROP CONSTRAINT agent_reliability_pkey;
+    ALTER TABLE legion.agent_reliability ADD PRIMARY KEY (agent_id, model);
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+     WHERE n.nspname = 'legion' AND t.relname = 'agent_regime_reliability'
+       AND c.contype = 'p' AND array_length(c.conkey, 1) = 2
+  ) THEN
+    ALTER TABLE legion.agent_regime_reliability DROP CONSTRAINT agent_regime_reliability_pkey;
+    ALTER TABLE legion.agent_regime_reliability ADD PRIMARY KEY (agent_id, regime, model);
+  END IF;
+END $$;
+
+-- Global runtime flags editable from the dashboard (e.g. the home-PC kill switch).
+CREATE TABLE IF NOT EXISTS legion.runtime_config (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

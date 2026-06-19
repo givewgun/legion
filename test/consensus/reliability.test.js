@@ -149,19 +149,20 @@ describe('decayWeights / weightedMean', () => {
 });
 
 describe('scaleWeights', () => {
-  it('multiplies each vote weight by its agent rho, default 1.0', () => {
+  it('scaleWeights multiplies by rho for the vote\'s own (agent, model)', () => {
     const votes = [
-      { agentId: 'technical', weight: 1.0, stance: 1, conviction: 0.8 },
-      { agentId: 'news', weight: 1.2, stance: -1, conviction: 0.5 },
+      { agentId: 'news', model: 'gpt-oss:20b', weight: 1.2 },
+      { agentId: 'news', model: 'qwen2.5:7b-instruct', weight: 1.2 },
     ];
-    const out = scaleWeights(votes, { technical: 1.5 });
-    expect(out[0].weight).toBeCloseTo(1.5);
-    expect(out[1].weight).toBeCloseTo(1.2);
+    const rho = { news: { 'gpt-oss:20b': 1.5, 'qwen2.5:7b-instruct': 0.5 } };
+    const lookup = (agentId, model) => rho[agentId]?.[model] ?? 1.0;
+    const out = scaleWeights(votes, lookup);
+    expect(out[0].weight).toBeCloseTo(1.8);
+    expect(out[1].weight).toBeCloseTo(0.6);
   });
-  it('does not mutate input', () => {
-    const votes = [{ agentId: 'a', weight: 1, stance: 0, conviction: 0 }];
-    scaleWeights(votes, { a: 0.5 });
-    expect(votes[0].weight).toBe(1);
+  it('defaults missing dials to 1.0', () => {
+    const votes = [{ agentId: 'x', model: 'm', weight: 1, conviction: 0.5 }];
+    expect(scaleWeights(votes)[0].weight).toBe(1);
   });
 });
 
@@ -278,22 +279,13 @@ describe('boundCombined', () => {
 });
 
 describe('scaleConviction', () => {
-  it('multiplies each conviction by its agent calibration, default 1.0', () => {
-    const votes = [
-      { agentId: 'technical', weight: 1, stance: 1, conviction: 0.8 },
-      { agentId: 'news', weight: 1, stance: 1, conviction: 0.5 },
-    ];
-    const out = scaleConviction(votes, { technical: 0.5 });
-    expect(out[0].conviction).toBeCloseTo(0.4);
-    expect(out[1].conviction).toBeCloseTo(0.5);
+  it('scaleConviction clamps to [0,1] using the (agent, model) calibration', () => {
+    const votes = [{ agentId: 'news', model: 'gpt-oss:20b', conviction: 0.8 }];
+    const lookup = () => 1.5;
+    expect(scaleConviction(votes, lookup)[0].conviction).toBe(1); // 0.8*1.5 clamped
   });
-  it('clamps scaled conviction back into [0,1]', () => {
-    const votes = [{ agentId: 'a', weight: 1, stance: 1, conviction: 0.8 }];
-    expect(scaleConviction(votes, { a: 1.5 })[0].conviction).toBe(1);
-  });
-  it('does not mutate input', () => {
-    const votes = [{ agentId: 'a', weight: 1, stance: 1, conviction: 0.8 }];
-    scaleConviction(votes, { a: 0.5 });
-    expect(votes[0].conviction).toBe(0.8);
+  it('defaults missing dials to 1.0', () => {
+    const votes = [{ agentId: 'x', model: 'm', weight: 1, conviction: 0.5 }];
+    expect(scaleConviction(votes)[0].conviction).toBe(0.5);
   });
 });

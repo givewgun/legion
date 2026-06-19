@@ -2,8 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { buildGetProvider } from '../../src/agents/get-provider.js';
 import { DEFAULT_MODELS } from '../../src/llm/provider.js';
 
-function repoStub(map) {
-  return { getAgentConfig: async (id) => map[id] ?? null };
+function repoStub(map, homePcEnabled = true) {
+  return {
+    getAgentConfig: async (id) => map[id] ?? null,
+    getHomePcEnabled: async () => homePcEnabled,
+  };
 }
 
 describe('buildGetProvider', () => {
@@ -53,5 +56,22 @@ describe('buildGetProvider', () => {
     const out = await getProvider({ agentId: 'social' });
     expect(out).toEqual({ enabled: false });
     expect(built).toBe(false);
+  });
+
+  it('disables the home tier when the global toggle is off', async () => {
+    const receivedCfgs = [];
+    const factory = (opts, cfg) => {
+      receivedCfgs.push({ opts, cfg });
+      return { name: opts.type, model: opts.model, generate: async () => 'x' };
+    };
+    const repo = {
+      getAgentConfig: async () => ({ provider: 'local', model: null, enabled: true }),
+      getHomePcEnabled: async () => false,
+    };
+    const cfg = { ollama: { url: 'o' }, home: { url: 'http://pc:11434', enabled: true, model: 'gpt-oss:20b' } };
+    const getProvider = buildGetProvider({ repo, cfg, factory });
+    await getProvider({ agentId: 'news' });
+    expect(receivedCfgs).toHaveLength(1);
+    expect(receivedCfgs[0].cfg.home.enabled).toBe(false);
   });
 });

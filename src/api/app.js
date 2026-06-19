@@ -8,6 +8,7 @@ import { triggerRoutes } from './routes/trigger.js';
 import { agentRoutes } from './routes/agents.js';
 import { portfolioRoutes } from './routes/portfolio.js';
 import { watchlistRoutes } from './routes/watchlist.js';
+import { settingsRoutes } from './routes/settings.js';
 import { authRoutes } from '../auth/routes.js';
 import { requireUser } from '../auth/middleware.js';
 import { httpMetricsMiddleware } from '../instrumentation/metrics.js';
@@ -45,6 +46,7 @@ export function createApp({ repo, orchestrator = null, gunvest = null, horizonDa
   app.use('/api/agents', agentRoutes(repo));
   app.use('/api/watchlist', watchlistRoutes(repo));
   app.use('/api/portfolio', portfolioRoutes(repo, gunvest, { horizonDays }));
+  app.use('/api/settings', settingsRoutes(repo));
 
   app.use((err, req, res, _next) => {
     res.status(500).json({ error: err.message });

@@ -153,10 +153,10 @@ export function boundCombined(rho, calibration) {
   return { rho, calibration };
 }
 
-export function scaleWeights(votes, rhoMap = {}) {
+export function scaleWeights(votes, rhoLookup = () => 1.0) {
   return votes.map((v) => ({
     ...v,
-    weight: v.weight * (rhoMap[v.agentId] ?? 1.0),
+    weight: v.weight * (rhoLookup(v.agentId, v.model) ?? 1.0),
   }));
 }
 
@@ -198,9 +198,9 @@ export function calibrationFromSamples(samples) {
 // Applies each agent's calibration to its conviction term (clamped back into [0,1]).
 // The learning loop scores RAW self-reported conviction, so only aggregation inputs are
 // calibrated — never the persisted forecast snapshot (which would create a feedback loop).
-export function scaleConviction(votes, calibMap = {}) {
+export function scaleConviction(votes, calibLookup = () => 1.0) {
   return votes.map((v) => ({
     ...v,
-    conviction: clamp(v.conviction * (calibMap[v.agentId] ?? 1.0), 0, 1),
+    conviction: clamp(v.conviction * (calibLookup(v.agentId, v.model) ?? 1.0), 0, 1),
   }));
 }

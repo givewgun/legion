@@ -3,6 +3,7 @@ import { createVote } from '../consensus/vote.js';
 import { parseVote } from './parse.js';
 import { summarizePeers } from './peers.js';
 import { agentInference } from '../instrumentation/metrics.js';
+import { normalizeGenerate } from '../llm/provider.js';
 
 // How long a cycle's gathered data stays reusable across revision rounds. A full
 // cycle spans minutes; entries older than this belong to a cycle that died and
@@ -81,20 +82,23 @@ export function createAgent({
       // Time the reasoning step (LLM generate) per agent for the dashboards.
       const stopInference = agentInference.startTimer({ agent: id });
       let text;
+      let servedModel = null;
       try {
-        text = await activeProvider.generate({
+        const out = await normalizeGenerate(activeProvider, {
           system,
           prompt: memory ? `${memory}\n\n${prompt}` : prompt,
         });
+        text = out.text;
+        servedModel = out.model;
       } finally {
         stopInference();
       }
-      const parsed = parseVote(text, { agentId: id, weight });
+      const parsed = parseVote(text, { agentId: id, weight, model: servedModel });
       if (parsed.ok) {
         vote = parsed.vote;
       } else {
         logger.warn(`[${id}] parse failed: ${parsed.errors.join('; ')}`);
-        vote = abstain(id, weight, 'unparseable vote');
+        vote = abstain(id, weight, 'unparseable vote', servedModel);
       }
     } catch (err) {
       logger.error(`[${id}] cycle error: ${err.message}`);
@@ -112,12 +116,13 @@ export function createAgent({
   };
 }
 
-function abstain(id, weight, reason) {
+function abstain(id, weight, reason, model = null) {
   return createVote({
     agentId: id,
     stance: 0,
     conviction: 0,
     weight,
     rationale: `abstain (${reason})`,
+    model,
   });
 }

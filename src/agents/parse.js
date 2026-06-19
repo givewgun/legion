@@ -38,7 +38,7 @@ function extractJson(text) {
   return null;
 }
 
-export function parseVote(text, { agentId, weight }) {
+export function parseVote(text, { agentId, weight, model = null }) {
   const obj = extractJson(text);
   if (!obj) return { ok: false, vote: null, errors: ['no JSON object found in LLM output'] };
 
@@ -48,6 +48,7 @@ export function parseVote(text, { agentId, weight }) {
     conviction: obj.conviction,
     weight,
     rationale: typeof obj.rationale === 'string' ? obj.rationale : '',
+    model,
   });
 
   const { ok, errors } = validateVote(vote);
