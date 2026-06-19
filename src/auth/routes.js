@@ -4,6 +4,8 @@ import { isAllowed } from './middleware.js';
 
 // Routes for the Google OAuth login flow. `google` is a createGoogleAuth
 // result; `allowedEmails` gates who may create a session.
+// Note: the OAuth redirect URI is baked into `createGoogleAuth` (src/auth/google.js),
+// so `publicUrl` is not consumed here — it does not belong in this interface.
 export function authRoutes({ google, repo, allowedEmails }) {
   const router = Router();
 
