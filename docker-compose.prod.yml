@@ -170,6 +170,39 @@ services:
     restart: unless-stopped
     networks: [legion, gunvest]
 
+  # Long-lived cron (ADR 0026 self-learning): resolves due signals against
+  # forward/benchmark returns, recomputes each agent's reliability ρ and vote
+  # correlations, and (when LEGION_REFLECTION=true) distills misses into lessons.
+  # Reads gunvest Postgres + the gunvest REST API, so it needs the gunvest network;
+  # reflection uses the local Ollama provider. Without this service the entire
+  # reliability pipeline never runs and agent_reliability stays empty.
+  reliability:
+    build: .
+    container_name: legion-reliability
+    command: node --import=./src/instrumentation/otel.mjs src/run/reliability.js
+    env_file: .env
+    environment:
+      <<: *otel-env
+      TZ: Asia/Bangkok
+    expose: ['9100']
+    depends_on: [ollama]
+    restart: unless-stopped
+    networks: [legion, gunvest]
+
+  # Long-lived cron: sends the periodic Telegram digest of the window's signals.
+  # Reads gunvest Postgres for the signal history.
+  summary:
+    build: .
+    container_name: legion-summary
+    command: node --import=./src/instrumentation/otel.mjs src/run/summary.js
+    env_file: .env
+    environment:
+      <<: *otel-env
+      TZ: Asia/Bangkok
+    expose: ['9100']
+    restart: unless-stopped
+    networks: [legion, gunvest]
+
   # Dashboard SPA (vite preview). Sole tunnel ingress; proxies /api to `api`.
   web:
     build: ./web
