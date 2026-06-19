@@ -233,6 +233,23 @@ export function createRepo(db) {
       );
     },
 
+    // Board rows for the Reliability Board v2: includes symbol, signal id, and
+    // return columns needed to compute per-agent win/loss/alpha performance.
+    // Rows ordered newest-first so callers can bucket per agent with a simple cap.
+    // limit = WINDOW * (agent count headroom) — same pattern as getResolvedForecasts.
+    async getAgentBoardRows(limit) {
+      return db.query(
+        `SELECT sv.agent_id, s.id, s.symbol, sv.stance, sv.conviction, s.outcome,
+                s.forward_return, s.spy_return
+           FROM legion.signal_votes sv
+           JOIN legion.signals s ON s.id = sv.signal_id
+          WHERE s.resolved = true AND s.outcome IS NOT NULL
+          ORDER BY s.id DESC
+          LIMIT $1`,
+        [limit],
+      );
+    },
+
     // Per-(agent, regime) dials (ADR 0023). Rows exist only for buckets deep
     // enough to learn from, so these maps overlay the unconditional ones.
     async getRegimeReliability(regime) {
