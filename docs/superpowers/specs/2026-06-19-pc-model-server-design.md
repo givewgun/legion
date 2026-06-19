@@ -151,9 +151,15 @@ threads the producing model through that entire loop:
 ## Edge cases / pitfalls (designed-for)
 
 1. **PC off / RTC wake didn't fire** → fail-fast probe → Oracle. No hang.
-2. **Windows wake-timer gotchas** — fast-startup / hybrid sleep and the "Allow wake timers"
-   power setting can silently block RTC wake; S3 sleep vs S4 hibernate behave differently.
-   Power settings must be configured explicitly. Covered by the runbook + verification.
+2. **Windows wake-timer gotchas** — the "Allow wake timers" power setting must be ON (not
+   "Important only"). RTC wake fires from **both S3 (sleep) and S4 (hibernate)** — hibernate
+   is fine. The boundary is **S5 (full shutdown): Task Scheduler wake does NOT fire from a
+   power-off** — only WoL (Phase 4) can. So configure power to sleep→hibernate but never
+   auto-shutdown. Covered by the runbook + verification.
+2b. **Hibernate resume specifics** — resume reads the hiberfile (~10–30s on NVMe; the T-10min
+    prime absorbs it); **VRAM is lost across hibernate** (GPU powers off, model evicted,
+    `keep_alive` wall-clock expired), so the prime task MUST reload the model on resume —
+    which it does. Tailscale/Ollama/sidecar run as services and re-establish on resume.
 3. **PC sleeps mid-sweep** → per-call failover, mixed-model cycle; each vote is weighted by
    its own model's ρ. Acceptable.
 3b. **Reasoning tokens leak into parse** → `HOME_THINK=false` + defensive strip in parse.
