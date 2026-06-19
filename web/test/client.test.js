@@ -20,4 +20,18 @@ describe('api client auth helpers', () => {
     expect(out).toEqual({ symbols: ['NVDA'] });
     expect(fetchMock).toHaveBeenCalledWith('/api/watchlist/NVDA', expect.objectContaining({ method: 'PUT' }));
   });
+
+  it('getSettings GETs /api/settings', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({ homePcEnabled: true }) });
+    const out = await api.getSettings();
+    expect(out).toEqual({ homePcEnabled: true });
+    expect(fetchMock).toHaveBeenCalledWith('/api/settings');
+  });
+
+  it('setSettings PUTs /api/settings with body', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({ homePcEnabled: false }) });
+    const out = await api.setSettings({ homePcEnabled: false });
+    expect(out).toEqual({ homePcEnabled: false });
+    expect(fetchMock).toHaveBeenCalledWith('/api/settings', expect.objectContaining({ method: 'PUT' }));
+  });
 });
