@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runReliabilityOnce } from '../../src/run/reliability.js';
+import { runReliabilityOnce, startReliability } from '../../src/run/reliability.js';
 import { runBacktestOnce } from '../../src/run/backtest.js';
 
 describe('runReliabilityOnce', () => {
@@ -28,6 +28,31 @@ describe('runReliabilityOnce', () => {
     expect(order).toEqual(['list', 'forecasts', 'votes']);
     expect(out).toMatchObject({ resolved: 0, correlations: 0 });
     expect(out.reliability).toEqual({});
+  });
+});
+
+describe('startReliability', () => {
+  it('runs one pass immediately on boot, then arms the cron schedule', () => {
+    const calls = [];
+    const runner = () => calls.push('run');
+    const schedule = (expr, fn) => {
+      calls.push(['schedule', expr]);
+      return { expr, fn };
+    };
+    const job = startReliability({ runner, cronExpr: '0 */12 * * *', schedule });
+    expect(calls).toEqual(['run', ['schedule', '0 */12 * * *']]);
+    expect(job.fn).toBe(runner);
+  });
+
+  it('can skip the immediate boot run', () => {
+    const calls = [];
+    startReliability({
+      runner: () => calls.push('run'),
+      cronExpr: '0 */12 * * *',
+      schedule: () => {},
+      runImmediately: false,
+    });
+    expect(calls).toEqual([]);
   });
 });
 

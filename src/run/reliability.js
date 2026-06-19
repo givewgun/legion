@@ -39,6 +39,20 @@ export async function runReliabilityOnce({
   return { resolved, reliability, correlations: correlations.length, lessons };
 }
 
+// Boot wiring: run one pass immediately so a fresh deploy (or restart) starts
+// resolving already-due signals and learning right away instead of waiting up to
+// a full cron interval, then arm the recurring schedule. `schedule`/`runImmediately`
+// are injectable for tests.
+export function startReliability({
+  runner,
+  cronExpr,
+  schedule = cron.schedule,
+  runImmediately = true,
+}) {
+  if (runImmediately) runner();
+  return schedule(cronExpr, runner);
+}
+
 function main() {
   const cfg = loadConfig();
   const repo = createRepo(connectDb(cfg.databaseUrl));
@@ -55,9 +69,9 @@ function main() {
     runner();
     return;
   }
-  cron.schedule(cfg.reliabilityCron, runner);
+  startReliability({ runner, cronExpr: cfg.reliabilityCron });
   console.log(
-    `[reliability] scheduled: ${cfg.reliabilityCron} (reflection=${cfg.reflectionEnabled})`,
+    `[reliability] scheduled: ${cfg.reliabilityCron} (reflection=${cfg.reflectionEnabled}, kicked once on boot)`,
   );
 }
 
