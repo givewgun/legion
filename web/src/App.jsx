@@ -10,6 +10,7 @@ import { LearnPage } from './pages/LearnPage.jsx';
 import { AgentConfig } from './pages/AgentConfig.jsx';
 import { AuthProvider } from './auth/AuthContext.jsx';
 import { LoginGate } from './auth/LoginGate.jsx';
+import { WatchlistPage } from './pages/WatchlistPage.jsx';
 
 export function App() {
   return (
@@ -28,7 +29,7 @@ export function App() {
                 <Route path="/reliability" element={<ReliabilityBoard />} />
                 <Route path="/backtest" element={<BacktestPage />} />
                 <Route path="/portfolio" element={<PortfolioPage />} />
-                {/* /watchlist route added in B12 */}
+                <Route path="/watchlist" element={<WatchlistPage />} />
                 <Route path="/config" element={<TickerConfig />} />
                 <Route path="/agents" element={<AgentConfig />} />
               </Routes>
