@@ -3,10 +3,21 @@ import { createMemoryBus } from '../../src/bus/memory.js';
 import { createEmitter } from '../../src/emit/emitter.js';
 import { voteSubject } from '../../src/bus/subjects.js';
 
+// Wraps a flat { agentId: value } map into the nested { agentId: { null: value } }
+// shape that repo.getAllReliability() and getRegimeReliability() now return
+// (keyed by (agent, model) where null is the model for untagged votes).
+function nestFlat(flat) {
+  const out = {};
+  for (const [agentId, val] of Object.entries(flat)) {
+    out[agentId] = { null: val };
+  }
+  return out;
+}
+
 function buildRepo({
   calibration = {},
   correlations = {},
-  reliability = { technical: 1.5, news: 0.5 },
+  reliability = { technical: { null: 1.5 }, news: { null: 0.5 } },
   regimeReliability = null,
   regimeCalibration = null,
 } = {}) {
@@ -41,10 +52,10 @@ function buildRepo({
 }
 
 const votes = [
-  { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1.0, rationale: 't' },
-  { agentId: 'news', stance: 2, conviction: 0.9, weight: 1.2, rationale: 'n' },
-  { agentId: 'social', stance: 2, conviction: 0.8, weight: 0.8, rationale: 's' },
-  { agentId: 'contrarian', stance: 1, conviction: 0.6, weight: 0.9, rationale: 'c' },
+  { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1.0, rationale: 't', model: null },
+  { agentId: 'news', stance: 2, conviction: 0.9, weight: 1.2, rationale: 'n', model: null },
+  { agentId: 'social', stance: 2, conviction: 0.8, weight: 0.8, rationale: 's', model: null },
+  { agentId: 'contrarian', stance: 1, conviction: 0.6, weight: 0.9, rationale: 'c', model: null },
 ];
 
 describe('emitter reliability', () => {
@@ -89,7 +100,7 @@ describe('emitter reliability', () => {
   it('calibrates conviction for the round record but snapshots raw conviction', async () => {
     const bus = createMemoryBus();
     // technical's conviction is trusted (1.5x), news's is distrusted (0.5x).
-    const repo = buildRepo({ calibration: { technical: 1.5, news: 0.5 } });
+    const repo = buildRepo({ calibration: nestFlat({ technical: 1.5, news: 0.5 }) });
     const gunvest = { getPrice: async () => ({ price: 120 }) };
     createEmitter({
       bus,
@@ -177,8 +188,8 @@ describe('emitter regime conditioning (ADR 0023)', () => {
 
   it('overlays regime dials over the unconditional ones and stamps the signal', async () => {
     const repo = buildRepo({
-      reliability: { technical: 1.0 },
-      regimeReliability: { stressed: { technical: 1.5 } },
+      reliability: nestFlat({ technical: 1.0 }),
+      regimeReliability: { stressed: nestFlat({ technical: 1.5 }) },
     });
     const gunvest = {
       getPrice: async () => ({ price: 100 }),
@@ -199,8 +210,8 @@ describe('emitter regime conditioning (ADR 0023)', () => {
 
   it('falls back to unconditional dials when the regime is unknown', async () => {
     const repo = buildRepo({
-      reliability: { technical: 1.2 },
-      regimeReliability: { stressed: { technical: 1.5 } },
+      reliability: nestFlat({ technical: 1.2 }),
+      regimeReliability: { stressed: nestFlat({ technical: 1.5 }) },
     });
     const gunvest = { getPrice: async () => ({ price: 100 }) }; // no getMacro -> unknown
     const bus = start({ repo, gunvest });
