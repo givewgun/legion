@@ -140,12 +140,17 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           REPO_CLONE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          LEGION_ALLOWED_EMAILS: ${{ secrets.LEGION_ALLOWED_EMAILS }}
+          LEGION_PUBLIC_URL: ${{ secrets.LEGION_PUBLIC_URL }}
         with:
           host: ${{ secrets.ORACLE_VM_HOST }}
           username: ubuntu
           key: ${{ secrets.ORACLE_VM_SSH_KEY }}
           port: 22
-          envs: DATABASE_URL,FINNHUB_API_KEY,TELEGRAM_BOT_TOKEN,TELEGRAM_CHAT_ID,REPO_CLONE_TOKEN,GH_REPO
+          envs: DATABASE_URL,FINNHUB_API_KEY,TELEGRAM_BOT_TOKEN,TELEGRAM_CHAT_ID,REPO_CLONE_TOKEN,GH_REPO,GOOGLE_OAUTH_CLIENT_ID,GOOGLE_OAUTH_CLIENT_SECRET,SESSION_SECRET,LEGION_ALLOWED_EMAILS,LEGION_PUBLIC_URL
           script: |
             set -euo pipefail
             APP_DIR=/opt/legion/app
@@ -199,6 +204,12 @@ jobs:
             LEGION_RISK_ENABLED=true
             LEGION_CRON=0 11,17 * * 1-5
             LEGION_REFLECTION=true
+            NODE_ENV=production
+            GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+            GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
+            SESSION_SECRET=${SESSION_SECRET}
+            LEGION_ALLOWED_EMAILS=${LEGION_ALLOWED_EMAILS}
+            LEGION_PUBLIC_URL=${LEGION_PUBLIC_URL}
             EOF
             sudo chmod 600 .env
 

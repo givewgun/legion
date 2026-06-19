@@ -96,3 +96,21 @@ The VM already has Docker, the running gunvest stack, and the `tunnel-gateway`
 network from the gunvest deploy. No new host ports needed. Add the secrets above,
 add the cloudflared ingress rule, and run the deploy. The first run pulls the
 Ollama model (multi-GB).
+
+## Dashboard auth (Google OAuth)
+
+The dashboard requires Google sign-in (email allowlist). One-time setup, outside
+the repo:
+
+1. Google Cloud Console → APIs & Services → Credentials → Create OAuth client ID
+   (type: Web application).
+2. Authorized redirect URI: `https://legion.givewgun.com/api/auth/google/callback`
+   (must match `${LEGION_PUBLIC_URL}/api/auth/google/callback`).
+3. Copy the client id/secret into GitHub repo secrets:
+   - `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`
+   - `SESSION_SECRET` — a long random string (`openssl rand -hex 32`)
+   - `LEGION_ALLOWED_EMAILS` — comma-separated allowed Google emails
+   - `LEGION_PUBLIC_URL` — `https://legion.givewgun.com`
+
+The deploy workflow writes these into `.env`; no manual VM step. Adding/removing
+an allowed user = edit `LEGION_ALLOWED_EMAILS` and re-run the deploy.
