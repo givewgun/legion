@@ -152,4 +152,30 @@ describe('createRepo', () => {
     const leaderboard = await repo.getReliabilityLeaderboard();
     expect(leaderboard[0]).toMatchObject({ agentId: 'news', model: 'gpt-oss:20b', rho: 1.3 });
   });
+
+  it('getHomePcEnabled returns true when no row exists', async () => {
+    const pool = poolReturning([[]]); // queryOne returns undefined
+    const repo = createRepo(createDb(pool));
+    expect(await repo.getHomePcEnabled()).toBe(true);
+  });
+
+  it('getHomePcEnabled returns false when the row value is "false"', async () => {
+    const pool = poolReturning([[{ value: 'false' }]]);
+    const repo = createRepo(createDb(pool));
+    expect(await repo.getHomePcEnabled()).toBe(false);
+  });
+
+  it('getHomePcEnabled returns true when the row value is "true"', async () => {
+    const pool = poolReturning([[{ value: 'true' }]]);
+    const repo = createRepo(createDb(pool));
+    expect(await repo.getHomePcEnabled()).toBe(true);
+  });
+
+  it('setHomePcEnabled upserts the key with the string value', async () => {
+    const pool = poolReturning([[]]);
+    const repo = createRepo(createDb(pool));
+    await repo.setHomePcEnabled(false);
+    expect(pool.calls[0].text).toMatch(/INSERT INTO legion\.runtime_config/);
+    expect(pool.calls[0].params).toEqual(['false']);
+  });
 });

@@ -741,5 +741,23 @@ export function createRepo(db) {
       );
       return { startingCash: Number(row.starting_cash), horizonDays: row.horizon_days };
     },
+
+    // ── Global runtime flags (ADR 0031) ────────────────────────────────────────
+
+    async getHomePcEnabled() {
+      const row = await db.queryOne(
+        `SELECT value FROM legion.runtime_config WHERE key = 'home_pc_enabled'`,
+      );
+      return row ? row.value === 'true' : true; // default ON when unset
+    },
+
+    async setHomePcEnabled(enabled) {
+      await db.query(
+        `INSERT INTO legion.runtime_config (key, value, updated_at)
+         VALUES ('home_pc_enabled', $1, now())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+        [enabled ? 'true' : 'false'],
+      );
+    },
   };
 }
