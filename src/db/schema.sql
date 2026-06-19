@@ -276,20 +276,22 @@ ALTER TABLE legion.agent_regime_reliability
 DO $$
 BEGIN
   IF EXISTS (
-    SELECT 1 FROM pg_constraint
-     WHERE conname = 'agent_reliability_pkey'
-       AND (SELECT array_length(conkey, 1) FROM pg_constraint
-             WHERE conname = 'agent_reliability_pkey') = 1
+    SELECT 1 FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+     WHERE n.nspname = 'legion' AND t.relname = 'agent_reliability'
+       AND c.contype = 'p' AND array_length(c.conkey, 1) = 1
   ) THEN
     ALTER TABLE legion.agent_reliability DROP CONSTRAINT agent_reliability_pkey;
     ALTER TABLE legion.agent_reliability ADD PRIMARY KEY (agent_id, model);
   END IF;
 
   IF EXISTS (
-    SELECT 1 FROM pg_constraint
-     WHERE conname = 'agent_regime_reliability_pkey'
-       AND (SELECT array_length(conkey, 1) FROM pg_constraint
-             WHERE conname = 'agent_regime_reliability_pkey') = 2
+    SELECT 1 FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+     WHERE n.nspname = 'legion' AND t.relname = 'agent_regime_reliability'
+       AND c.contype = 'p' AND array_length(c.conkey, 1) = 2
   ) THEN
     ALTER TABLE legion.agent_regime_reliability DROP CONSTRAINT agent_regime_reliability_pkey;
     ALTER TABLE legion.agent_regime_reliability ADD PRIMARY KEY (agent_id, regime, model);
