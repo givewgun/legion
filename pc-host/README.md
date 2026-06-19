@@ -70,6 +70,52 @@ Behaviour checklist:
   never interrupted, even if you forget the dashboard toggle.
 - **Dashboard toggle OFF** ("Use home PC model") → cycle runs on Oracle regardless.
 
+## Stopping / decommissioning
+
+Three levels, least to most destructive — pick by how long you're stepping away.
+
+**1. Pause for now (no PC change, instant, reversible).**
+Turn OFF "Use home PC model" on the dashboard config page. Legion immediately routes
+every cycle to the Oracle VM. The PC still wakes/serves nothing for Legion until you
+turn it back on. Best for "not today" / debugging.
+
+**2. Stop serving but keep it installed.**
+Disable the sidecar + wake tasks without uninstalling — they're easy to re-enable:
+
+```powershell
+# elevated
+Get-ScheduledTask | Where-Object { $_.TaskName -like 'Legion *' } | Disable-ScheduledTask
+Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
+  Where-Object { $_.CommandLine -like '*readiness-sidecar.ps1*' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+```
+
+Re-enable later with `... | Enable-ScheduledTask` (then reboot, or run the sidecar
+task). Or just leave the dashboard toggle OFF (level 1) — simpler.
+
+**3. Full decommission (undo everything `setup.ps1` did).**
+
+```powershell
+# elevated
+powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
+# add -RevertPower to also disable wake timers + reset the sleep timeout
+# add -RemoveModel to also delete gpt-oss:20b (~12 GB)
+```
+
+It stops + removes the sidecar and wake/prime tasks, deletes the firewall rule,
+clears the `OLLAMA_HOST` / `OLLAMA_KEEP_ALIVE` env (Ollama returns to defaults after a
+restart), and deletes the generated config. By default it leaves your power settings
+and the model alone (they're shared / a big re-download) — use the flags above to also
+revert those.
+
+After uninstall, on the **Legion** side, stop routing to the PC either way:
+turn the dashboard toggle OFF, or remove `HOME_OLLAMA_URL` (and `HOME_MODEL` /
+`HOME_THINK`) from `.env` and redeploy. Either makes the tiered `local` provider
+pure-Oracle again — Legion keeps running on `qwen2.5:7b` exactly as before this feature.
+
+Optional cleanup outside these scripts: remove the PC from your Tailscale ACL/tailnet,
+and `ollama` itself if you don't use it for anything else.
+
 ## Tuning
 
 Re-run `setup.ps1` with parameters to change behaviour:
