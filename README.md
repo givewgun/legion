@@ -28,6 +28,20 @@ never places orders.
 Inspired by the geth gestalt in _Mass Effect_ ("Legion"): no single mind decides. Many
 narrow intelligences vote, and the agreement is the intelligence.
 
+## Dashboard
+
+**Signals** — the latest consensus call per ticker: band, conviction, and age. Click any row
+to replay how the panel got there.
+
+![Signals feed](docs/screenshots/signals.png)
+
+**Debate** — how the agents argued their way to consensus. Here round 1 splits: the Contrarian
+fades a euphoric crowd with a `STRONG_SELL`. Forced to confront each other's dissent, the panel
+re-votes and converges to **BUY** in round 2. Each round shows the aggregate stance `S`,
+dispersion `V`, and directional quorum `κ`, with every agent's rationale.
+
+![Debate viewer](docs/screenshots/debate.png)
+
 ## Documentation
 
 | Doc                                                                              | What's in it                                                                                                                            |
