@@ -2,8 +2,8 @@
 
 <!-- BADGES:START -->
 [![CI](https://github.com/givewgun/legion/actions/workflows/ci.yml/badge.svg)](https://github.com/givewgun/legion/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-693%20passing-brightgreen?style=flat-square&logo=vitest&logoColor=white)
-![coverage](https://img.shields.io/badge/coverage-87%25-green?style=flat-square&logo=vitest&logoColor=white)
+![tests](https://img.shields.io/badge/tests-688%20passing-brightgreen?style=flat-square&logo=vitest&logoColor=white)
+![coverage](https://img.shields.io/badge/coverage-80%25-green?style=flat-square&logo=vitest&logoColor=white)
 ![node](https://img.shields.io/badge/node-%3E%3D18-339933?style=flat-square&logo=node.js&logoColor=white)
 ![dashboard](https://img.shields.io/badge/dashboard-React%2018%20%2B%20Vite-61DAFB?style=flat-square&logo=react&logoColor=black)
 ![bus](https://img.shields.io/badge/bus-NATS-27AAE1?style=flat-square&logo=natsdotio&logoColor=white)
@@ -11,9 +11,9 @@
 [![Code style: Prettier](https://img.shields.io/badge/code_style-prettier-ff69b4?style=flat-square&logo=prettier&logoColor=white)](https://prettier.io)
 <!-- BADGES:END -->
 
-<!-- The badges above and the "at a glance" table below are auto-maintained by
-     scripts/update-badges.mjs (CI rewrites them on every push to main). Do not
-     edit them by hand — your changes will be overwritten on the next push. -->
+<!-- The badges above are auto-maintained by scripts/update-badges.mjs (CI
+     rewrites the BADGES block on every push to main). Do not edit them by
+     hand — your changes will be overwritten on the next push. -->
 
 <div align="center">
   <img src="legion_gpt.png" alt="Legion Mascot" width="300" />
@@ -238,11 +238,11 @@ push/PR to `main`: `verify` (lint + `db:migrate` + tests), `web` (build + tests)
 `docker` image build. A `deploy` job to the Oracle Cloud VM is chained on the end but is
 **manual** (`workflow_dispatch`) for now — one `if:` line flips it to auto.
 
-The badges and the **[At a glance](#at-a-glance)** table at the top of this README are
-**auto-maintained**: on every push to `main` the `badges` job feeds the verify/web test
-counts and coverage into [`scripts/update-badges.mjs`](scripts/update-badges.mjs), which
-rewrites the marked blocks and commits the result (`[skip ci]`, so it never re-triggers
-itself). They can't go stale — don't hand-edit them. Run the script locally to preview:
+The badges at the top of this README are **auto-maintained**: on every push to `main` the
+`badges` job feeds the verify/web test counts and coverage into
+[`scripts/update-badges.mjs`](scripts/update-badges.mjs), which rewrites the marked block
+and commits the result (`[skip ci]`, so it never re-triggers itself). They can't go stale —
+don't hand-edit them. Run the script locally to preview:
 `COV_BACKEND=80 COV_WEB=64 TESTS_BACKEND=618 TESTS_WEB=70 node scripts/update-badges.mjs`.
 
 Production runs on the shared gunvest VM via

@@ -136,16 +136,20 @@ const stats = [
   .filter(Boolean)
   .join('\n');
 
-/** Replace the content between `<!-- KEY:START -->` and `<!-- KEY:END -->`. */
-const replaceBlock = (text, key, body) => {
+// `required` blocks throw if their markers are gone (a real regression); optional
+// ones are simply skipped, so removing a section from the README is a no-op here.
+const replaceBlock = (text, key, body, { required = true } = {}) => {
   const re = new RegExp(`(<!-- ${key}:START -->)[\\s\\S]*?(<!-- ${key}:END -->)`);
-  if (!re.test(text)) throw new Error(`README is missing the ${key} markers`);
+  if (!re.test(text)) {
+    if (required) throw new Error(`README is missing the ${key} markers`);
+    return text;
+  }
   return text.replace(re, `$1\n${body}\n$2`);
 };
 
 let readme = readFileSync(ReadmePath, 'utf8');
 readme = replaceBlock(readme, 'BADGES', badges);
-readme = replaceBlock(readme, 'STATS', stats);
+readme = replaceBlock(readme, 'STATS', stats, { required: false });
 writeFileSync(ReadmePath, readme);
 
 console.log(
