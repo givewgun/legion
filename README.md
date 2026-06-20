@@ -1,11 +1,32 @@
 # Legion
 
+<!-- BADGES:START -->
 [![CI](https://github.com/givewgun/legion/actions/workflows/ci.yml/badge.svg)](https://github.com/givewgun/legion/actions/workflows/ci.yml)
-![Node](https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-181%20passing-brightgreen?logo=vitest&logoColor=white)
-![Dashboard](https://img.shields.io/badge/dashboard-React%2018%20%2B%20Vite-61DAFB?logo=react&logoColor=black)
-![Bus](https://img.shields.io/badge/bus-NATS-27AAE1?logo=natsdotio&logoColor=white)
-[![Code style: Prettier](https://img.shields.io/badge/code_style-prettier-ff69b4?logo=prettier&logoColor=white)](https://prettier.io)
+![tests](https://img.shields.io/badge/tests-688%20passing-brightgreen?style=flat-square&logo=vitest&logoColor=white)
+![coverage](https://img.shields.io/badge/coverage-80%25-green?style=flat-square&logo=vitest&logoColor=white)
+![node](https://img.shields.io/badge/node-%3E%3D18-339933?style=flat-square&logo=node.js&logoColor=white)
+![dashboard](https://img.shields.io/badge/dashboard-React%2018%20%2B%20Vite-61DAFB?style=flat-square&logo=react&logoColor=black)
+![bus](https://img.shields.io/badge/bus-NATS-27AAE1?style=flat-square&logo=natsdotio&logoColor=white)
+![license](https://img.shields.io/badge/license-CC%20BY--NC--ND%204.0-lightgrey?style=flat-square)
+[![Code style: Prettier](https://img.shields.io/badge/code_style-prettier-ff69b4?style=flat-square&logo=prettier&logoColor=white)](https://prettier.io)
+<!-- BADGES:END -->
+
+<!-- The badges above and the "at a glance" table below are auto-maintained by
+     scripts/update-badges.mjs (CI rewrites them on every push to main). Do not
+     edit them by hand — your changes will be overwritten on the next push. -->
+
+### At a glance
+
+<!-- STATS:START -->
+| Metric | Value |
+| --- | --- |
+| 🧪 Tests | **688** (618 backend · 70 web) |
+| 📊 Backend coverage | **80.48%** lines |
+| 📊 Dashboard coverage | **64.46%** lines |
+| 🤖 Agents | **4 voting** + 1 risk constraint |
+| 📐 ADRs | **30** decision records |
+| 📦 Source | **96** files · **5,795** lines (`src/`) |
+<!-- STATS:END -->
 
 <div align="center">
   <img src="legion_gpt.png" alt="Legion Mascot" width="300" />
@@ -13,22 +34,22 @@
 
 **A leaderless, multi-agent stock-signal engine.** Independent expert agents each look at a
 ticker, cast a structured vote, are forced to confront each other's dissent, and iterate
-until a *deterministic* consensus emerges — or they honestly agree to disagree. The result
+until a _deterministic_ consensus emerges — or they honestly agree to disagree. The result
 is delivered as a trade plan to Telegram and a dashboard. It is **advisory only** — Legion
 never places orders.
 
-Inspired by the geth gestalt in *Mass Effect* ("Legion"): no single mind decides. Many
+Inspired by the geth gestalt in _Mass Effect_ ("Legion"): no single mind decides. Many
 narrow intelligences vote, and the agreement is the intelligence.
 
 ## Documentation
 
-| Doc | What's in it |
-|---|---|
-| 🧭 **[How it works](docs/HOW-IT-WORKS.md)** | **Start here.** The whole machine in plain English (concept-first ELI5), then the exact algorithm — consensus → reliability → backtest. |
-| 🏗️ [Architecture](docs/ARCHITECTURE.md) | Runtime components, message flow, data model, Mermaid diagrams. |
-| 📐 [Design decisions](docs/adr/) | ADR 0001–0017 — the *why* behind each choice. |
-| ▶️ [Running locally](docs/RUNNING.md) | Full local-stack walkthrough: infra, migrate, seed, run, verify, troubleshoot. |
-| 🚀 [Deployment](docs/DEPLOYMENT.md) · [Adding an agent](docs/adding-an-agent.md) | Production topology · how to drop in a new agent. |
+| Doc                                                                              | What's in it                                                                                                                            |
+| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 🧭 **[How it works](docs/HOW-IT-WORKS.md)**                                      | **Start here.** The whole machine in plain English (concept-first ELI5), then the exact algorithm — consensus → reliability → backtest. |
+| 🏗️ [Architecture](docs/ARCHITECTURE.md)                                          | Runtime components, message flow, data model, Mermaid diagrams.                                                                         |
+| 📐 [Design decisions](docs/adr/)                                                 | ADRs — the _why_ behind each choice.                                                                                                    |
+| ▶️ [Running locally](docs/RUNNING.md)                                            | Full local-stack walkthrough: infra, migrate, seed, run, verify, troubleshoot.                                                          |
+| 🚀 [Deployment](docs/DEPLOYMENT.md) · [Adding an agent](docs/adding-an-agent.md) | Production topology · how to drop in a new agent.                                                                                       |
 
 This README is the operational overview — what it is, how the pieces run, and how to start it.
 For any formula, threshold, or worked example, the [How it works](docs/HOW-IT-WORKS.md) doc is
@@ -42,9 +63,9 @@ A single LLM asked "should I buy NVDA?" gives you one opinion with one set of bl
 Legion's bet is that a **diverse panel that argues** is more honest than any one model:
 
 - **Holistic** — price action, breaking news/macro, social mood, and a dedicated
-  contrarian are weighed *together*, not cherry-picked.
+  contrarian are weighed _together_, not cherry-picked.
 - **Leaderless / verifiable** — there is **no prime decider**. Every node receives the same
-  votes over the message bus and runs the *same* aggregation math, so the consensus is
+  votes over the message bus and runs the _same_ aggregation math, so the consensus is
   emergent and reproducible (state-machine-replication style), not handed down by an arbiter.
 - **Self-tuning** — each agent carries a reliability weight that rises or falls with its
   track record. The gestalt learns which voices to trust.
@@ -90,13 +111,13 @@ Resolved signals feed a reliability loop that re-weights each agent for the next
 
 ## Agent roster
 
-| Agent | Prior `w_i` | Looks at | Votes? | Why this weight |
-|---|---|---|---|---|
-| **Technical** (+Quant) | 1.0 | price action, trend, momentum, volatility | ✅ | baseline |
-| **News / Catalyst** (+Macro) | 1.2 | headlines, earnings/guidance, rates, VIX | ✅ | catalysts move price hard |
-| **Social Sentiment** | 0.8 | StockTwits / Reddit mood & volume | ✅ | informative but herd-prone |
-| **Contrarian** | 0.9 | crowd positioning, VIX; fades extremes | ✅ | a deliberate counterweight |
-| **Risk Manager** | — | volatility, downside, sizing | ❌ | deterministic safety constraint |
+| Agent                        | Prior `w_i` | Looks at                                  | Votes? | Why this weight                 |
+| ---------------------------- | ----------- | ----------------------------------------- | ------ | ------------------------------- |
+| **Technical** (+Quant)       | 1.0         | price action, trend, momentum, volatility | ✅     | baseline                        |
+| **News / Catalyst** (+Macro) | 1.2         | headlines, earnings/guidance, rates, VIX  | ✅     | catalysts move price hard       |
+| **Social Sentiment**         | 0.8         | StockTwits / Reddit mood & volume         | ✅     | informative but herd-prone      |
+| **Contrarian**               | 0.9         | crowd positioning, VIX; fades extremes    | ✅     | a deliberate counterweight      |
+| **Risk Manager**             | —           | volatility, downside, sizing              | ❌     | deterministic safety constraint |
 
 Adding an agent is config + a `gather` function + a persona prompt — every voting agent
 shares one runner ([docs/adding-an-agent.md](docs/adding-an-agent.md)). The contrarian pulls a
@@ -108,14 +129,14 @@ Each source is isolated and degrades to `null` on failure, so a dead upstream ne
 
 ## Status
 
-| Phase | Deliverable | State |
-|---|---|---|
-| **0 Foundation** | repo, Docker, NATS, `legion` schema, consensus + vote libs, LLM provider, GunVest client | ✅ done |
-| **1 Single agent E2E** | Technical agent → vote → emitter → Telegram, one ticker | ✅ done |
-| **2 Consensus** | News / Social / Contrarian + Risk constraint, multi-round iteration, multi-ticker | ✅ done |
-| **3 Dashboard** | debate viewer, ticker config, signal feed | ✅ done |
-| **4 Backtest + reliability** | forward paper-test, index compare, `ρ_i` loop | ✅ done |
-| **5 Summary + polish** | 6h Telegram summary, provider-switch UI, docs | ✅ done |
+| Phase                        | Deliverable                                                                              | State   |
+| ---------------------------- | ---------------------------------------------------------------------------------------- | ------- |
+| **0 Foundation**             | repo, Docker, NATS, `legion` schema, consensus + vote libs, LLM provider, GunVest client | ✅ done |
+| **1 Single agent E2E**       | Technical agent → vote → emitter → Telegram, one ticker                                  | ✅ done |
+| **2 Consensus**              | News / Social / Contrarian + Risk constraint, multi-round iteration, multi-ticker        | ✅ done |
+| **3 Dashboard**              | debate viewer, ticker config, signal feed                                                | ✅ done |
+| **4 Backtest + reliability** | forward paper-test, index compare, `ρ_i` loop                                            | ✅ done |
+| **5 Summary + polish**       | 6h Telegram summary, provider-switch UI, docs                                            | ✅ done |
 
 Phase plans live in [`docs/superpowers/plans/`](docs/superpowers/plans/); per-milestone
 handover notes in [`docs/superpowers/handovers/`](docs/superpowers/handovers/).
@@ -195,23 +216,23 @@ does in the algorithm are detailed in
 
 **Consensus**
 
-| Var | Default | Meaning |
-|---|---|---|
-| `CONSENSUS_THETA_V` | `0.5` | max dispersion `V` allowed for convergence |
-| `CONSENSUS_QUORUM` | `0.6667` | min directional quorum `κ` (2/3 supermajority) |
-| `CONSENSUS_MAX_ROUNDS` | `3` | round cap before `NO_CONSENSUS` |
-| `CONSENSUS_HOLD_BAND` | `0.5` | neutral half-width: `|S| < this` ⇒ HOLD |
+| Var                    | Default  | Meaning                                        |
+| ---------------------- | -------- | ---------------------------------------------- | --- | -------------- |
+| `CONSENSUS_THETA_V`    | `0.5`    | max dispersion `V` allowed for convergence     |
+| `CONSENSUS_QUORUM`     | `0.6667` | min directional quorum `κ` (2/3 supermajority) |
+| `CONSENSUS_MAX_ROUNDS` | `3`      | round cap before `NO_CONSENSUS`                |
+| `CONSENSUS_HOLD_BAND`  | `0.5`    | neutral half-width: `                          | S   | < this` ⇒ HOLD |
 
 **Delivery / pipeline**
 
-| Var | Meaning |
-|---|---|
-| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | signal delivery (reuses GunVest's bot) |
-| `LEGION_EXPECTED_AGENTS` | votes the emitter waits for before evaluating (4) |
-| `LEGION_RISK_ENABLED` | require the risk constraint before finalizing (`true` by default) |
-| `LEGION_CRON` / `LEGION_CRON_TZ` | scheduler cadence (default `0 11,17 * * 1-5` in `America/New_York` — twice per US trading day; see [ADR 0029](docs/adr/0029-market-aware-cron.md)) |
-| `LEGION_SUMMARY_CRON` / `LEGION_SUMMARY_WINDOW_HOURS` | digest schedule (`0 18 * * 1-5`, after the post-close sweep) / look-back (`24`) |
-| `FINNHUB_API_KEY` | enables the Contrarian short-interest feed only; the other feeds are live without it (short interest returns `null` when unset) |
+| Var                                                   | Meaning                                                                                                                                            |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`              | signal delivery (reuses GunVest's bot)                                                                                                             |
+| `LEGION_EXPECTED_AGENTS`                              | votes the emitter waits for before evaluating (4)                                                                                                  |
+| `LEGION_RISK_ENABLED`                                 | require the risk constraint before finalizing (`true` by default)                                                                                  |
+| `LEGION_CRON` / `LEGION_CRON_TZ`                      | scheduler cadence (default `0 11,17 * * 1-5` in `America/New_York` — twice per US trading day; see [ADR 0029](docs/adr/0029-market-aware-cron.md)) |
+| `LEGION_SUMMARY_CRON` / `LEGION_SUMMARY_WINDOW_HOURS` | digest schedule (`0 18 * * 1-5`, after the post-close sweep) / look-back (`24`)                                                                    |
+| `FINNHUB_API_KEY`                                     | enables the Contrarian short-interest feed only; the other feeds are live without it (short interest returns `null` when unset)                    |
 
 **Ollama** (app side — `OLLAMA_TIMEOUT_MS`=`300000`, `OLLAMA_MAX_CONCURRENT`=`1`; container
 side — `OLLAMA_NUM_PARALLEL`=`1`, `OLLAMA_KEEP_ALIVE`=`30m` to keep the model resident for a
@@ -229,6 +250,13 @@ GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on 
 push/PR to `main`: `verify` (lint + `db:migrate` + tests), `web` (build + tests), and a
 `docker` image build. A `deploy` job to the Oracle Cloud VM is chained on the end but is
 **manual** (`workflow_dispatch`) for now — one `if:` line flips it to auto.
+
+The badges and the **[At a glance](#at-a-glance)** table at the top of this README are
+**auto-maintained**: on every push to `main` the `badges` job feeds the verify/web test
+counts and coverage into [`scripts/update-badges.mjs`](scripts/update-badges.mjs), which
+rewrites the marked blocks and commits the result (`[skip ci]`, so it never re-triggers
+itself). They can't go stale — don't hand-edit them. Run the script locally to preview:
+`COV_BACKEND=80 COV_WEB=64 TESTS_BACKEND=618 TESTS_WEB=70 node scripts/update-badges.mjs`.
 
 Production runs on the shared gunvest VM via
 [`docker-compose.prod.yml`](docker-compose.prod.yml): all containers are named `legion-*`,
