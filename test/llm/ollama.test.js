@@ -192,6 +192,22 @@ describe('createOllamaProvider (official client, streaming)', () => {
     expect(calls).toBe(1);
   });
 
+  it('treats UND_ERR_HEADERS_TIMEOUT cause as a non-retried timeout', async () => {
+    let calls = 0;
+    const factory = fakeClientFactory(async () => {
+      calls += 1;
+      throw Object.assign(new TypeError('fetch failed'), {
+        cause: { code: 'UND_ERR_HEADERS_TIMEOUT' },
+      });
+    });
+    const provider = createOllamaProvider(
+      { url: 'http://o:11434', model: 'm', retries: 3, maxConcurrent: 1 },
+      factory,
+    );
+    await expect(provider.generate({ system: 's', prompt: 'p' })).rejects.toThrow(/timed out/i);
+    expect(calls).toBe(1);
+  });
+
   it('caps concurrency: peak in-flight <= maxConcurrent', async () => {
     let inFlight = 0;
     let peak = 0;

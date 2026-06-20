@@ -11,8 +11,13 @@ import { ollamaRequest, ollamaThinkingChars } from '../instrumentation/metrics.j
 // HTTP status carried by the lib's ResponseError; 5xx/429 are worth a retry.
 const isRetryableStatus = (s) => s === 429 || (s >= 500 && s <= 599);
 
+// undici reports header/body read timeouts as `TypeError: fetch failed` with these
+// cause codes — the same saturation timeout our abort guards. Treat as timeout
+// (not retried; would re-load a saturated box), never as a retryable transport drop.
+const TimeoutCauseCodes = new Set(['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']);
+
 // An abort is our own timeout firing — the box is saturated, so never retry.
-const isAbort = (err) => err.name === 'AbortError';
+const isAbort = (err) => err.name === 'AbortError' || TimeoutCauseCodes.has(err.cause?.code);
 
 // Classify errors for retry decisions.
 const isTransient = (err) => {
