@@ -32,7 +32,15 @@ describe('createRepo', () => {
     const id = await repo.addRound(42, 1, { S: 1.8, V: 0, kappa: 1, A: 0.85, converged: true });
     expect(id).toBe(5);
     expect(pool.calls[0].text).toMatch(/INSERT INTO legion\.rounds/);
+    expect(pool.calls[0].text).toMatch(/ON CONFLICT \(cycle_id, round_no\) DO NOTHING/);
     expect(pool.calls[0].params).toEqual([42, 1, 1.8, 0, 1, 0.85, true]);
+  });
+
+  it('returns null from addRound when the round already exists (ON CONFLICT)', async () => {
+    const pool = poolReturning([[]]); // conflict -> no row returned
+    const repo = createRepo(createDb(pool));
+    const id = await repo.addRound(42, 1, { S: 1.8, V: 0, kappa: 1, A: 0.85, converged: true });
+    expect(id).toBeNull();
   });
 
   it('adds a vote', async () => {

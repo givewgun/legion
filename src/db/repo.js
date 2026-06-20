@@ -28,13 +28,19 @@ export function createRepo(db) {
       return row.id;
     },
 
+    // ON CONFLICT DO NOTHING makes the round insert idempotent against the
+    // UNIQUE (cycle_id, round_no) constraint: a duplicate returns no row, so the
+    // caller (emitter.process) gets null and skips re-emitting rather than
+    // crashing on a 23505 (a crash-recovery vs. live-vote race — ADR 0024).
     async addRound(cycleId, roundNo, { S, V, kappa, A = null, converged }) {
       const row = await db.queryOne(
         `INSERT INTO legion.rounds (cycle_id, round_no, s_score, dispersion, quorum, agreement, converged)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (cycle_id, round_no) DO NOTHING
+         RETURNING id`,
         [cycleId, roundNo, S, V, kappa, A, converged],
       );
-      return row.id;
+      return row?.id ?? null;
     },
 
     async addVote(roundId, vote) {
