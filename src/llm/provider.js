@@ -7,10 +7,12 @@ const CFG_BLOCK = { local: 'ollama', openai: 'openai', gemini: 'gemini' };
 
 // Factory selecting an LLM provider by name. The interface
 // (generate({ system, prompt }) → string) stays stable across families.
-export function createProvider(name, cfg, fetchImpl = fetch) {
+// fetchImpl is used by openai/gemini providers and the tiered-local probe.
+// clientFactory (injectable for tests) overrides the Ollama client constructor.
+export function createProvider(name, cfg, fetchImpl = fetch, clientFactory = undefined) {
   switch (name) {
     case 'local':
-      return buildLocalProvider(cfg, fetchImpl);
+      return buildLocalProvider(cfg, fetchImpl, clientFactory);
     case 'openai':
       return createOpenAICompatProvider({ name: 'openai', ...cfg.openai }, fetchImpl);
     case 'gemini':
@@ -62,14 +64,14 @@ function defaultFactory({ type, model }) {
 // The `local` provider is tiered when a home PC URL is configured AND not disabled:
 // primary = PC Ollama (cfg.home), fallback = Oracle Ollama (cfg.ollama). Otherwise it
 // is the plain Oracle Ollama provider — byte-identical to before this feature.
-function buildLocalProvider(cfg, fetchImpl) {
-  const oracle = createOllamaProvider(cfg.ollama, fetchImpl);
+function buildLocalProvider(cfg, fetchImpl, clientFactory) {
+  const oracle = createOllamaProvider(cfg.ollama, clientFactory);
   const home = cfg.home;
   if (!home?.url || home.enabled === false) return oracle;
 
   const pc = createOllamaProvider(
     { ...cfg.ollama, url: home.url, model: home.model, think: home.think },
-    fetchImpl,
+    clientFactory,
   );
   const probe = async () => {
     const controller = new AbortController();

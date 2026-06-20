@@ -59,6 +59,23 @@ describe('resolveProvider', () => {
   });
 });
 
+// Build a fake Ollama clientFactory that returns a scripted streaming response.
+function fakeOllamaClientFactory(responseText) {
+  return (_opts) => ({
+    generate: async () => {
+      let done = false;
+      const iterator = (async function* () {
+        if (!done) {
+          done = true;
+          yield { response: responseText };
+        }
+      })();
+      iterator.abort = () => {};
+      return iterator;
+    },
+  });
+}
+
 describe('tiered local wiring', () => {
   const baseCfg = {
     ollama: { url: 'http://oracle:11434', model: 'qwen2.5:7b-instruct' },
@@ -66,8 +83,8 @@ describe('tiered local wiring', () => {
   };
 
   it('returns a plain ollama provider (string generate) when home url is empty', async () => {
-    const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ response: 'hi' }) }));
-    const p = createProvider('local', baseCfg, fetchImpl);
+    const clientFactory = fakeOllamaClientFactory('hi');
+    const p = createProvider('local', baseCfg, fetch, clientFactory);
     const out = await p.generate({ system: 's', prompt: 'p' });
     expect(out).toBe('hi'); // plain string contract preserved
     expect(p.model).toBe('qwen2.5:7b-instruct');
@@ -75,20 +92,21 @@ describe('tiered local wiring', () => {
 
   it('returns a tiered provider when home url is set and enabled', async () => {
     const cfg = { ...baseCfg, home: { ...baseCfg.home, url: 'http://pc:11434' } };
-    // probe (GET /api/tags) ready, primary generate returns text
+    // probe (GET /api/tags) is checked via fetchImpl; generate goes through clientFactory
     const fetchImpl = vi.fn(async (url) => {
-      if (url.endsWith('/api/tags')) return { ok: true, json: async () => ({}) };
-      return { ok: true, json: async () => ({ response: 'from-pc' }) };
+      if (url.endsWith('/api/tags')) return { ok: true };
+      return { ok: true };
     });
-    const p = createProvider('local', cfg, fetchImpl);
+    const clientFactory = fakeOllamaClientFactory('from-pc');
+    const p = createProvider('local', cfg, fetchImpl, clientFactory);
     const out = await p.generate({ system: 's', prompt: 'p' });
     expect(out).toEqual({ text: 'from-pc', model: 'gpt-oss:20b' });
   });
 
   it('stays pure-Oracle when home.enabled is false even if url set', async () => {
     const cfg = { ...baseCfg, home: { ...baseCfg.home, url: 'http://pc:11434', enabled: false } };
-    const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ response: 'oracle' }) }));
-    const p = createProvider('local', cfg, fetchImpl);
+    const clientFactory = fakeOllamaClientFactory('oracle');
+    const p = createProvider('local', cfg, fetch, clientFactory);
     await p.generate({ system: 's', prompt: 'p' });
     expect(p.model).toBe('qwen2.5:7b-instruct');
   });

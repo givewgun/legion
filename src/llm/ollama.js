@@ -1,72 +1,76 @@
-// Local LLM provider backed by the Ollama HTTP API.
-// fetchImpl is injectable for testing; defaults to global fetch (Node >=18).
+// Local LLM provider backed by the official `ollama` client, streaming.
+// clientFactory is injectable for testing; defaults to a real Ollama client.
+// Streaming makes the first chunk arrive quickly, so a long thinking-mode phase
+// no longer trips undici's 300s headers timeout — our abort timer bounds total
+// generation instead. thinking is captured for metrics/debug; generate still
+// returns only the final answer string (unchanged contract).
+import { Ollama } from 'ollama';
 import { createLimiter, retryAsync } from '../util/resilient.js';
-import { ollamaRequest } from '../instrumentation/metrics.js';
+import { ollamaRequest, ollamaThinkingChars } from '../instrumentation/metrics.js';
 
-// no custom dispatcher: NUM_PARALLEL=1 + shallow queue keeps waits < undici's 300s headers-timeout
+// HTTP status carried by the lib's ResponseError; 5xx/429 are worth a retry.
+const isRetryableStatus = (s) => s === 429 || (s >= 500 && s <= 599);
 
-// undici reports header/body read timeouts as `TypeError: fetch failed` with these
-// cause codes. They are the same saturation timeout our AbortController guards (and
-// undici's default 300s can win the race), so they must NOT be retried.
-const TimeoutCauseCodes = new Set(['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']);
-
-// A saturation timeout: our own AbortController abort, or undici's read timeout.
-const isTimeout = (err) => err.name === 'AbortError' || TimeoutCauseCodes.has(err.cause?.code);
+// An abort is our own timeout firing — the box is saturated, so never retry.
+const isAbort = (err) => err.name === 'AbortError';
 
 // Classify errors for retry decisions.
 const isTransient = (err) => {
-  if (isTimeout(err)) return false; // timeout = box saturated; do NOT retry (would re-load it)
-  if (/Ollama request failed: (5\d\d|429)/.test(err.message)) return true; // 5xx or 429
+  if (isAbort(err)) return false; // timeout = saturated; retry would re-load it
+  if (err.status_code != null) return isRetryableStatus(err.status_code);
+  if (/Ollama request failed: (5\d\d|429)/.test(err.message)) return true;
   if (err.cause != null) return true; // transport drop with cause
-  if (/fetch failed|ECONNRESET|ECONNREFUSED|socket/i.test(err.message)) return true; // transport drop
+  if (/fetch failed|ECONNRESET|ECONNREFUSED|socket/i.test(err.message)) return true;
   return false; // 4xx and other non-transient errors
 };
 
-// Wrap raw error into an informative error for callers.
+// Wrap raw error into an informative error for callers (stable messages).
 const wrapError = (err, timeoutMs) => {
-  if (isTimeout(err)) {
-    return new Error(`Ollama request timed out after ${timeoutMs}ms`);
-  }
+  if (isAbort(err)) return new Error(`Ollama request timed out after ${timeoutMs}ms`);
+  if (err.status_code != null) return new Error(`Ollama request failed: ${err.status_code}`);
   if (err.cause != null || /fetch failed|ECONNRESET|ECONNREFUSED|socket/i.test(err.message)) {
     return new Error(
       `Ollama request failed: ${err.cause?.code ?? err.cause?.message ?? err.message}`,
     );
   }
-  return err; // HTTP-status error already has the right message
+  return err; // already has the right message
 };
 
 export function createOllamaProvider(
   { url, model, timeoutMs = 300000, maxConcurrent = 1, retries = 1, options = null, think = null },
-  fetchImpl = fetch,
+  clientFactory = (opts) => new Ollama(opts),
 ) {
+  const client = clientFactory({ host: url });
   const limit = createLimiter(maxConcurrent);
 
   const doRequest = async ({ system, prompt }) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    // `options` carries per-agent sampling (temperature, seed) so agents sharing
+    // one base model still sample decorrelated outputs. `think` is omitted when
+    // null so a non-thinking model (qwen2.5) sees an unchanged request.
+    const iterator = await client.generate({
+      model,
+      system,
+      prompt,
+      stream: true,
+      ...(options && { options }),
+      ...(think != null && { think }),
+    });
+    const timer = setTimeout(() => iterator.abort(), timeoutMs);
+    let answer = '';
+    let thinking = '';
     try {
-      const res = await fetchImpl(`${url}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // `options` carries per-agent sampling settings (temperature, seed) so
-        // agents sharing one base model still sample decorrelated outputs.
-        // `think` is omitted entirely when null, so qwen2.5 (no thinking mode)
-        // sees a byte-identical body to before this field existed.
-        body: JSON.stringify({
-          model,
-          system,
-          prompt,
-          stream: false,
-          ...(options && { options }),
-          ...(think != null && { think }),
-        }),
-        signal: controller.signal,
-      });
-      if (!res.ok) throw new Error(`Ollama request failed: ${res.status}`);
-      return (await res.json()).response;
+      for await (const chunk of iterator) {
+        if (chunk.response) answer += chunk.response;
+        if (chunk.thinking) thinking += chunk.thinking;
+      }
     } finally {
       clearTimeout(timer);
     }
+    if (thinking) {
+      ollamaThinkingChars.observe(thinking.length);
+      console.debug(`[ollama] ${model} thinking: ${thinking.length} chars`);
+    }
+    return answer;
   };
 
   return {

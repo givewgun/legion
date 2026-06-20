@@ -1,203 +1,215 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { createOllamaProvider } from '../../src/llm/ollama.js';
 import { createProvider } from '../../src/llm/provider.js';
 
-describe('createOllamaProvider', () => {
-  it('posts system+prompt to the Ollama generate endpoint and returns the text', async () => {
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ response: 'BUY: trend up' }),
-    }));
+// Build a fake streaming iterator from a list of chunks. abort() makes the
+// in-progress `for await` reject with an AbortError on the next tick.
+function makeStream(chunks) {
+  let aborted = false;
+  const iterator = (async function* () {
+    for (const chunk of chunks) {
+      if (aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+      yield chunk;
+    }
+  })();
+  iterator.abort = () => {
+    aborted = true;
+  };
+  return iterator;
+}
+
+// A stream that never yields until aborted, then throws AbortError.
+function makeHangingStream() {
+  let abort;
+  const gate = new Promise((_, reject) => {
+    abort = () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+  });
+  const iterator = (async function* () {
+    await gate; // never resolves; only rejects on abort
+  })();
+  iterator.abort = abort;
+  return iterator;
+}
+
+// Factory that records the generate options and returns a scripted stream.
+function fakeClientFactory(impl) {
+  const calls = [];
+  const factory = (opts) => ({
+    init: opts,
+    generate: (genOpts) => {
+      calls.push(genOpts);
+      return impl(genOpts, calls.length);
+    },
+  });
+  factory.calls = calls;
+  return factory;
+}
+
+describe('createOllamaProvider (official client, streaming)', () => {
+  it('accumulates multi-chunk response and returns the final answer string', async () => {
+    const factory = fakeClientFactory(async () =>
+      makeStream([{ response: 'BUY: ' }, { response: 'trend ' }, { response: 'up' }]),
+    );
     const provider = createOllamaProvider(
-      { url: 'http://ollama:11434', model: 'qwen2.5:7b-instruct' },
-      fetchMock,
+      { url: 'http://o:11434', model: 'qwen2.5:7b-instruct' },
+      factory,
     );
     const out = await provider.generate({ system: 'You are a trader', prompt: 'Rate NVDA' });
     expect(out).toBe('BUY: trend up');
-    const [url, opts] = fetchMock.mock.calls[0];
-    expect(url).toBe('http://ollama:11434/api/generate');
-    const body = JSON.parse(opts.body);
-    expect(body.model).toBe('qwen2.5:7b-instruct');
-    expect(body.system).toBe('You are a trader');
-    expect(body.prompt).toBe('Rate NVDA');
-    expect(body.stream).toBe(false);
-    // no sampling options configured -> none sent
-    expect(body.options).toBeUndefined();
-    // new options: signal must be present; dispatcher optional
-    expect(opts.signal).toBeDefined();
+    const gen = factory.calls[0];
+    expect(gen.model).toBe('qwen2.5:7b-instruct');
+    expect(gen.system).toBe('You are a trader');
+    expect(gen.prompt).toBe('Rate NVDA');
+    expect(gen.stream).toBe(true);
+    expect(gen.options).toBeUndefined();
+    expect(gen).not.toHaveProperty('think');
+  });
+
+  it('captures thinking chunks but still returns only the answer', async () => {
+    const factory = fakeClientFactory(async () =>
+      makeStream([
+        { thinking: 'let me reason' },
+        { thinking: ' some more' },
+        { response: 'HOLD' },
+      ]),
+    );
+    const provider = createOllamaProvider(
+      { url: 'http://o:11434', model: 'gpt-oss:20b', think: true },
+      factory,
+    );
+    const out = await provider.generate({ system: 's', prompt: 'p' });
+    expect(out).toBe('HOLD');
+    expect(factory.calls[0].think).toBe(true);
   });
 
   it('omits the think field when not configured', async () => {
-    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ response: 'ok' }) }));
-    const provider = createOllamaProvider({ url: 'http://o:11434', model: 'm' }, fetchMock);
+    const factory = fakeClientFactory(async () => makeStream([{ response: 'ok' }]));
+    const provider = createOllamaProvider({ url: 'http://o:11434', model: 'm' }, factory);
     await provider.generate({ system: 's', prompt: 'p' });
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body).not.toHaveProperty('think');
+    expect(factory.calls[0]).not.toHaveProperty('think');
   });
 
-  it('includes think: false in the request body when configured', async () => {
-    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ response: 'ok' }) }));
+  it('includes think: false when configured', async () => {
+    const factory = fakeClientFactory(async () => makeStream([{ response: 'ok' }]));
     const provider = createOllamaProvider(
       { url: 'http://o:11434', model: 'm', think: false },
-      fetchMock,
+      factory,
     );
     await provider.generate({ system: 's', prompt: 'p' });
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.think).toBe(false);
+    expect(factory.calls[0].think).toBe(false);
   });
 
-  it('includes think: true in the request body when configured', async () => {
-    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ response: 'ok' }) }));
-    const provider = createOllamaProvider(
-      { url: 'http://o:11434', model: 'm', think: true },
-      fetchMock,
-    );
-    await provider.generate({ system: 's', prompt: 'p' });
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.think).toBe(true);
-  });
-
-  it('passes per-agent sampling options (temperature, seed) to the API', async () => {
-    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ response: 'ok' }) }));
+  it('passes per-agent sampling options (temperature, seed)', async () => {
+    const factory = fakeClientFactory(async () => makeStream([{ response: 'ok' }]));
     const provider = createOllamaProvider(
       { url: 'http://o:11434', model: 'm', options: { temperature: 0.2, seed: 11 } },
-      fetchMock,
+      factory,
     );
     await provider.generate({ system: 's', prompt: 'p' });
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.options).toEqual({ temperature: 0.2, seed: 11 });
+    expect(factory.calls[0].options).toEqual({ temperature: 0.2, seed: 11 });
   });
 
-  it('throws on a non-ok response', async () => {
-    const fetchMock = vi.fn(async () => ({ ok: false, status: 500 }));
+  it('maps a ResponseError status to "Ollama request failed: <status>"', async () => {
+    const factory = fakeClientFactory(async () => {
+      throw Object.assign(new Error('server error'), {
+        name: 'ResponseError',
+        status_code: 500,
+      });
+    });
     const provider = createOllamaProvider(
       { url: 'http://o:11434', model: 'm', retries: 0 },
-      fetchMock,
+      factory,
     );
     await expect(provider.generate({ system: 's', prompt: 'p' })).rejects.toThrow(
       'Ollama request failed: 500',
     );
   });
 
-  it('caps concurrency: peak in-flight ≤ maxConcurrent', async () => {
+  it('does NOT retry a 400 ResponseError', async () => {
+    let calls = 0;
+    const factory = fakeClientFactory(async () => {
+      calls += 1;
+      throw Object.assign(new Error('bad request'), { name: 'ResponseError', status_code: 400 });
+    });
+    const provider = createOllamaProvider(
+      { url: 'http://o:11434', model: 'm', retries: 3 },
+      factory,
+    );
+    await expect(provider.generate({ system: 's', prompt: 'p' })).rejects.toThrow(
+      'Ollama request failed: 400',
+    );
+    expect(calls).toBe(1);
+  });
+
+  it('retries a 503 ResponseError then succeeds', async () => {
+    let calls = 0;
+    const factory = fakeClientFactory(async () => {
+      calls += 1;
+      if (calls === 1) {
+        throw Object.assign(new Error('unavailable'), {
+          name: 'ResponseError',
+          status_code: 503,
+        });
+      }
+      return makeStream([{ response: 'ok after retry' }]);
+    });
+    const provider = createOllamaProvider(
+      { url: 'http://o:11434', model: 'm', retries: 2, maxConcurrent: 1 },
+      factory,
+    );
+    const out = await provider.generate({ system: 's', prompt: 'p' });
+    expect(out).toBe('ok after retry');
+    expect(calls).toBe(2);
+  });
+
+  it('retries a transient transport error then succeeds', async () => {
+    let calls = 0;
+    const factory = fakeClientFactory(async () => {
+      calls += 1;
+      if (calls < 3) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+      return makeStream([{ response: 'recovered' }]);
+    });
+    const provider = createOllamaProvider(
+      { url: 'http://o:11434', model: 'm', retries: 2, maxConcurrent: 1 },
+      factory,
+    );
+    const out = await provider.generate({ system: 's', prompt: 'p' });
+    expect(out).toBe('recovered');
+    expect(calls).toBe(3);
+  });
+
+  it('times out a hung stream and does NOT retry', async () => {
+    let calls = 0;
+    const factory = fakeClientFactory(() => {
+      calls += 1;
+      return makeHangingStream();
+    });
+    const provider = createOllamaProvider(
+      { url: 'http://o:11434', model: 'm', timeoutMs: 10, retries: 3, maxConcurrent: 1 },
+      factory,
+    );
+    await expect(provider.generate({ system: 's', prompt: 'p' })).rejects.toThrow(/timed out/i);
+    expect(calls).toBe(1);
+  });
+
+  it('caps concurrency: peak in-flight <= maxConcurrent', async () => {
     let inFlight = 0;
     let peak = 0;
-    const fetchMock = vi.fn(
-      () =>
-        new Promise((resolve) => {
-          inFlight += 1;
-          peak = Math.max(peak, inFlight);
-          // resolve on next microtask to let others pile up
-          setTimeout(() => {
-            inFlight -= 1;
-            resolve({ ok: true, json: async () => ({ response: 'ok' }) });
-          }, 0);
-        }),
-    );
+    const factory = fakeClientFactory(async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 0));
+      inFlight -= 1;
+      return makeStream([{ response: 'ok' }]);
+    });
     const provider = createOllamaProvider(
       { url: 'http://o:11434', model: 'm', maxConcurrent: 1, retries: 0 },
-      fetchMock,
+      factory,
     );
     await Promise.all(
       Array.from({ length: 8 }, () => provider.generate({ system: 's', prompt: 'p' })),
     );
     expect(peak).toBeLessThanOrEqual(1);
-  });
-
-  it('retries a transient fetch-failed error then succeeds', async () => {
-    const transportErr = Object.assign(new TypeError('fetch failed'), {
-      cause: { code: 'ECONNRESET' },
-    });
-    let calls = 0;
-    const fetchMock = vi.fn(() => {
-      calls += 1;
-      if (calls < 3) throw transportErr;
-      return Promise.resolve({ ok: true, json: async () => ({ response: 'recovered' }) });
-    });
-    const provider = createOllamaProvider(
-      { url: 'http://o:11434', model: 'm', retries: 2, maxConcurrent: 1 },
-      fetchMock,
-    );
-    const out = await provider.generate({ system: 's', prompt: 'p' });
-    expect(out).toBe('recovered');
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-  });
-
-  it('retries a 503 then succeeds', async () => {
-    let calls = 0;
-    const fetchMock = vi.fn(() => {
-      calls += 1;
-      if (calls === 1) return Promise.resolve({ ok: false, status: 503 });
-      return Promise.resolve({ ok: true, json: async () => ({ response: 'ok after retry' }) });
-    });
-    const provider = createOllamaProvider(
-      { url: 'http://o:11434', model: 'm', retries: 2, maxConcurrent: 1 },
-      fetchMock,
-    );
-    const out = await provider.generate({ system: 's', prompt: 'p' });
-    expect(out).toBe('ok after retry');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it('does NOT retry a 400 error', async () => {
-    const fetchMock = vi.fn(async () => ({ ok: false, status: 400 }));
-    const provider = createOllamaProvider(
-      { url: 'http://o:11434', model: 'm', retries: 3, maxConcurrent: 1 },
-      fetchMock,
-    );
-    await expect(provider.generate({ system: 's', prompt: 'p' })).rejects.toThrow(
-      'Ollama request failed: 400',
-    );
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('times out a hung request and does NOT retry', async () => {
-    const fetchMock = vi.fn(
-      (_url, opts) =>
-        new Promise((_resolve, reject) => {
-          opts.signal.addEventListener('abort', () => {
-            const err = Object.assign(new Error('aborted'), { name: 'AbortError' });
-            reject(err);
-          });
-        }),
-    );
-    const provider = createOllamaProvider(
-      { url: 'http://o:11434', model: 'm', timeoutMs: 10, retries: 3, maxConcurrent: 1 },
-      fetchMock,
-    );
-    await expect(provider.generate({ system: 's', prompt: 'p' })).rejects.toThrow(/timed out/i);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('does NOT retry an undici headers timeout (saturation), surfaces it as a timeout', async () => {
-    // Node global fetch reports a headers timeout as TypeError fetch failed with
-    // cause.code UND_ERR_HEADERS_TIMEOUT — same 300s saturation our AbortController guards.
-    const headersTimeout = Object.assign(new TypeError('fetch failed'), {
-      cause: { code: 'UND_ERR_HEADERS_TIMEOUT' },
-    });
-    const fetchMock = vi.fn(() => {
-      throw headersTimeout;
-    });
-    const provider = createOllamaProvider(
-      { url: 'http://o:11434', model: 'm', retries: 3, maxConcurrent: 1 },
-      fetchMock,
-    );
-    await expect(provider.generate({ system: 's', prompt: 'p' })).rejects.toThrow(/timed out/i);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('surfaces the cause code on exhausted transport errors', async () => {
-    const transportErr = Object.assign(new TypeError('fetch failed'), {
-      cause: { code: 'ECONNRESET' },
-    });
-    const fetchMock = vi.fn(() => {
-      throw transportErr;
-    });
-    const provider = createOllamaProvider(
-      { url: 'http://o:11434', model: 'm', retries: 2, maxConcurrent: 1 },
-      fetchMock,
-    );
-    await expect(provider.generate({ system: 's', prompt: 'p' })).rejects.toThrow(/ECONNRESET/);
   });
 });
 
