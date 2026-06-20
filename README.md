@@ -2,8 +2,8 @@
 
 <!-- BADGES:START -->
 [![CI](https://github.com/givewgun/legion/actions/workflows/ci.yml/badge.svg)](https://github.com/givewgun/legion/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-688%20passing-brightgreen?style=flat-square&logo=vitest&logoColor=white)
-![coverage](https://img.shields.io/badge/coverage-80%25-green?style=flat-square&logo=vitest&logoColor=white)
+![tests](https://img.shields.io/badge/tests-693%20passing-brightgreen?style=flat-square&logo=vitest&logoColor=white)
+![coverage](https://img.shields.io/badge/coverage-87%25-green?style=flat-square&logo=vitest&logoColor=white)
 ![node](https://img.shields.io/badge/node-%3E%3D18-339933?style=flat-square&logo=node.js&logoColor=white)
 ![dashboard](https://img.shields.io/badge/dashboard-React%2018%20%2B%20Vite-61DAFB?style=flat-square&logo=react&logoColor=black)
 ![bus](https://img.shields.io/badge/bus-NATS-27AAE1?style=flat-square&logo=natsdotio&logoColor=white)
