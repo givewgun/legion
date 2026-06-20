@@ -15,19 +15,6 @@
      scripts/update-badges.mjs (CI rewrites them on every push to main). Do not
      edit them by hand — your changes will be overwritten on the next push. -->
 
-### At a glance
-
-<!-- STATS:START -->
-| Metric | Value |
-| --- | --- |
-| 🧪 Tests | **693** (623 backend · 70 web) |
-| 📊 Backend coverage | **86.77%** lines |
-| 📊 Dashboard coverage | **96.9%** lines |
-| 🤖 Agents | **4 voting** + 1 risk constraint |
-| 📐 ADRs | **31** decision records |
-| 📦 Source | **96** files · **5,831** lines (`src/`) |
-<!-- STATS:END -->
-
 <div align="center">
   <img src="legion_gpt.png" alt="Legion Mascot" width="300" />
 </div>
