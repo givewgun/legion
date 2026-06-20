@@ -26,6 +26,9 @@ next evaluation with no redeploy; a disabled agent abstains (HOLD/0) without an 
 without constructing a provider). When an agent has no persisted row, `getProvider` returns
 `null` and the factory keeps its static injected provider, preserving earlier behaviour.
 
+The `local` provider's transport is documented in ADR 0005 (serial inference) and
+ADR 0031 (official `ollama` client + streaming).
+
 ## Alternatives considered
 
 - **Hard-code Ollama** — simplest, but blocks any future quality/cost trade-off and couples
