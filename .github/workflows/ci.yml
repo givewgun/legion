@@ -22,6 +22,11 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Exposed to the `badges` job so it can rewrite the README without re-running
+    # the suite. tests = <testcase> count in the JUnit report; cov = line %.
+    outputs:
+      tests: ${{ steps.stats.outputs.tests }}
+      cov: ${{ steps.stats.outputs.cov }}
 
     # Legion's unit tests are infra-free, but db:migrate needs a real Postgres to
     # validate schema.sql against. Reuse the same gunvest database name the app
@@ -71,10 +76,19 @@ jobs:
         uses: davelosert/vitest-coverage-report-action@v2
         with:
           name: Backend
+      - name: Collect badge stats
+        id: stats
+        if: always()
+        run: |
+          echo "tests=$(grep -c '<testcase' reports/junit.xml)" >> "$GITHUB_OUTPUT"
+          echo "cov=$(node -p "require('./coverage/coverage-summary.json').total.lines.pct")" >> "$GITHUB_OUTPUT"
 
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      tests: ${{ steps.stats.outputs.tests }}
+      cov: ${{ steps.stats.outputs.cov }}
     defaults:
       run:
         working-directory: web
@@ -105,6 +119,45 @@ jobs:
           name: Dashboard
           json-summary-path: ./web/coverage/coverage-summary.json
           json-final-path: ./web/coverage/coverage-final.json
+      - name: Collect badge stats
+        id: stats
+        if: always()
+        run: |
+          echo "tests=$(grep -c '<testcase' reports/junit.xml)" >> "$GITHUB_OUTPUT"
+          echo "cov=$(node -p "require('./coverage/coverage-summary.json').total.lines.pct")" >> "$GITHUB_OUTPUT"
+
+  # Rewrites the auto-maintained README badge + stats blocks from the test/coverage
+  # numbers the verify and web jobs just produced, and commits the result. Runs only
+  # on direct pushes to main (not PRs/forks) where contents:write + push are allowed.
+  badges:
+    runs-on: ubuntu-latest
+    needs: [verify, web]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Regenerate README badges
+        env:
+          TESTS_BACKEND: ${{ needs.verify.outputs.tests }}
+          TESTS_WEB: ${{ needs.web.outputs.tests }}
+          COV_BACKEND: ${{ needs.verify.outputs.cov }}
+          COV_WEB: ${{ needs.web.outputs.cov }}
+        run: node scripts/update-badges.mjs
+      - name: Commit if changed
+        run: |
+          if git diff --quiet -- README.md; then
+            echo "Badges already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs: auto-update README badges [skip ci]"
+          git push
 
   docker:
     runs-on: ubuntu-latest
