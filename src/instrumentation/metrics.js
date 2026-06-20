@@ -58,6 +58,12 @@ export const ollamaRequest = new client.Histogram({
   buckets: [0.5, 1, 2, 5, 10, 20, 40, 80, 160],
 });
 
+export const ollamaThinkingChars = new client.Histogram({
+  name: 'legion_ollama_thinking_chars',
+  help: 'Characters of thinking-mode reasoning emitted per Ollama generate',
+  buckets: [0, 100, 500, 1000, 2000, 5000, 10000, 20000],
+});
+
 export function httpMetricsMiddleware(req, res, next) {
   if (req.path === '/metrics') return next();
   const end = httpDuration.startTimer();
