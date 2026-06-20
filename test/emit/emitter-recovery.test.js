@@ -282,6 +282,60 @@ describe('emitter crash recovery (ADR 0024)', () => {
       expect(repo.calls.deletedCycles).toEqual([7]);
     });
 
+    it('does not re-kick a round whose successor already persisted', async () => {
+      // Pre-crash the cycle reached round 2: rounds 1 AND 2 are persisted (both
+      // non-final), pending votes survive for both. recover() walks every ready
+      // entry, so the round-1 resume must NOT re-publish round 2 (it already
+      // happened) — only the round-2 resume re-publishes round 3. Re-kicking a
+      // closed round makes agents re-vote it and collide on the rounds UNIQUE.
+      const split = [
+        mkVote('technical', 1),
+        mkVote('news', -1),
+        mkVote('social', -1),
+        mkVote('contrarian', -1),
+      ];
+      const repo = recoveryRepo({
+        pendingVotes: [
+          ...split.map((v) => pendingRow(7, 1, v)),
+          ...split.map((v) => pendingRow(7, 2, v)),
+        ],
+        existingRounds: [
+          [7, 1],
+          [7, 2],
+        ],
+        cycle: { id: 7, status: 'running' },
+        persistedRounds: [
+          { id: 11, round_no: 1, converged: false },
+          { id: 12, round_no: 2, converged: false },
+        ],
+      });
+      const { bus, emitter } = build(repo);
+      const kicks = [];
+      bus.subscribeJSON(cycleSubject('NVDA'), (m) => kicks.push(m));
+      await emitter.start();
+
+      expect(kicks.map((k) => k.round)).toEqual([3]);
+      expect(repo.calls.rounds).toHaveLength(0); // resumed, never re-aggregated
+    });
+
+    it('skips re-emitting when a live vote completes an already-persisted round', async () => {
+      // The crash-recovery republish and a live re-vote can race onto the same
+      // round; the loser's addRound returns null (ON CONFLICT DO NOTHING). The
+      // emitter must bail — no double vote write, no second signal — not crash.
+      const repo = recoveryRepo();
+      repo.addRound = async () => null; // round already owned by the racing path
+      const { bus, emitter } = build(repo);
+      await emitter.start();
+
+      for (const vote of bullVotes) {
+        bus.publishJSON(voteSubject('NVDA', 1), { cycleId: 7, symbol: 'NVDA', round: 1, vote });
+      }
+      // Give the (would-be) finalize a chance to run, then assert it was skipped.
+      await vi.waitFor(() => expect(repo.calls.savedVotes).toHaveLength(4));
+      expect(repo.calls.signals).toHaveLength(0);
+      expect(repo.calls.finished).toHaveLength(0);
+    });
+
     it('just tidies pending rows when the cycle already finalized', async () => {
       const repo = recoveryRepo({
         pendingVotes: bullVotes.map((v) => pendingRow(7, 1, v)),

@@ -164,6 +164,13 @@ export function createEmitter({
     const isFinal = converged || round >= consensus.maxRounds;
 
     if (!isFinal) {
+      // If round+1 already persisted, the cycle advanced past this round before
+      // the crash — a later pending entry (or the live subscription) drives the
+      // real resume. Re-kicking here would make agents re-vote an already-closed
+      // round and collide on rounds' UNIQUE (cycle_id, round_no) when those votes
+      // land. recover() walks EVERY ready pending round, so without this guard a
+      // multi-round cycle re-publishes each completed round, not just the last.
+      if (await repo.roundExists?.(cycleId, round + 1)) return;
       // The missing action was the round+1 republish. Even if it DID go out,
       // the agents' replies were published into a dead subscription and are
       // gone — re-kicking the round is correct in both cases. Drop any partial
@@ -367,7 +374,13 @@ export function createEmitter({
       }
     }
 
+    // Idempotent insert (ON CONFLICT DO NOTHING): a null id means this round was
+    // already persisted — a late/duplicate vote re-created the buffer (ADR 0024,
+    // see the staleEntry note), or recovery and the live subscription raced. The
+    // round (and its signal or republish) is already owned by the path that won
+    // the insert, so bail without double-writing votes or re-emitting.
     const roundId = await repo.addRound(cycleId, entry.round, result);
+    if (roundId == null) return;
     for (const v of calibrated) await repo.addVote(roundId, v);
 
     const isFinal = result.converged || entry.round >= consensus.maxRounds;
