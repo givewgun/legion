@@ -2,9 +2,14 @@
 # Shared configuration + busy-detection used by the readiness sidecar and the
 # prime task. Dot-source this file: `. "$PSScriptRoot\legion-pc-common.ps1"`.
 #
-# Busy = "Gun is using the PC, do not steal the GPU / interrupt him." When busy,
-# the sidecar returns 503 so Legion fails the health probe fast and routes the
-# cycle to the Oracle VM instead.
+# Busy = "Gun is doing something GPU-heavy, do not steal the GPU / interrupt him."
+# When busy, the sidecar returns 503 so Legion fails the health probe fast and
+# routes the cycle to the Oracle VM instead.
+#
+# Policy: light desktop use (browsing, typing) is NOT busy — Legion is welcome to
+# run then. Only real GPU contention blocks it: an exclusive-fullscreen app, a lot
+# of non-Ollama VRAM in use (a game/render), or a named heavy process running.
+# Keyboard/mouse input is reported for diagnostics but never marks the box busy.
 
 # ---- Configuration (override via environment variables) ---------------------
 
@@ -19,12 +24,19 @@ $script:GatePort = if ($env:LEGION_GATE_PORT) { [int]$env:LEGION_GATE_PORT } els
 # Model to keep warm / advertise.
 $script:Model = if ($env:LEGION_HOME_MODEL) { $env:LEGION_HOME_MODEL } else { 'gpt-oss:20b' }
 
-# BUSY if the user touched the keyboard/mouse within this many seconds.
-$script:IdleThresholdSec = if ($env:LEGION_IDLE_THRESHOLD_SEC) { [int]$env:LEGION_IDLE_THRESHOLD_SEC } else { 300 }
+# BUSY if non-Ollama processes hold more than this much VRAM (a running game, a
+# render, etc.). MiB. Set high enough to clear ordinary desktop/browser GPU use
+# (DWM + a browser's hardware acceleration is typically 1-2 GiB) while still
+# catching a real game (4 GiB+).
+$script:VramThresholdMiB = if ($env:LEGION_VRAM_THRESHOLD_MIB) { [int]$env:LEGION_VRAM_THRESHOLD_MIB } else { 4000 }
 
-# BUSY if non-Ollama processes hold more than this much VRAM (a running game,
-# a render, etc.). MiB.
-$script:VramThresholdMiB = if ($env:LEGION_VRAM_THRESHOLD_MIB) { [int]$env:LEGION_VRAM_THRESHOLD_MIB } else { 2000 }
+# BUSY if any of these processes are running, regardless of VRAM/fullscreen — a
+# belt-and-suspenders allowlist for heavy apps to keep off the GPU. Comma-separated
+# process names without the .exe suffix (as Get-Process reports them), e.g.
+# LEGION_BUSY_PROCESSES="Cyberpunk2077,obs64,Blender". Empty by default (off).
+$script:BusyProcesses = if ($env:LEGION_BUSY_PROCESSES) {
+  $env:LEGION_BUSY_PROCESSES -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+} else { @() }
 
 # How long Ollama keeps the model resident after the last call. Covers a whole
 # back-to-back sweep, then unloads to free VRAM between the 11:00 and 17:00 cycles.
@@ -106,15 +118,27 @@ function Get-NonOllamaVramMiB {
   } catch { return 0 }
 }
 
+# First configured process that is currently running, or $null. Used to keep the
+# GPU clear of named heavy apps even when they are windowed / below the VRAM bar.
+function Get-RunningBusyProcess {
+  foreach ($name in $script:BusyProcesses) {
+    if (Get-Process -Name $name -ErrorAction SilentlyContinue) { return $name }
+  }
+  return $null
+}
+
 # Returns a PSCustomObject: Busy (bool), Reason (string), IdleSec, Fullscreen, NonOllamaVramMiB.
+# Input idle time is measured for diagnostics only — light desktop use does not
+# mark the box busy; only GPU contention (fullscreen / VRAM / a named process) does.
 function Get-BusyState {
   $idle = Get-IdleSeconds
   $full = Test-ForegroundFullscreen
   $vram = Get-NonOllamaVramMiB
+  $proc = Get-RunningBusyProcess
   $reasons = @()
-  if ($idle -lt $script:IdleThresholdSec) { $reasons += "recent-input(${idle}s)" }
   if ($full) { $reasons += 'fullscreen-app' }
   if ($vram -gt $script:VramThresholdMiB) { $reasons += "non-ollama-vram(${vram}MiB)" }
+  if ($proc) { $reasons += "process(${proc})" }
   return [pscustomobject]@{
     Busy             = ($reasons.Count -gt 0)
     Reason           = if ($reasons.Count) { $reasons -join ',' } else { 'ready' }

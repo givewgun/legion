@@ -48,14 +48,15 @@ binding + keep-alive take effect.
 
 ## Verify it works
 
-On this PC (should report `ready=true` when you're not touching it):
+On this PC (should report `ready=true` unless a game/render is using the GPU —
+ordinary browsing/typing still reports `ready=true`):
 
 ```powershell
 Invoke-RestMethod http://localhost:11435/ready
 ```
 
-From the Oracle VM (on the tailnet) — lists models when idle, returns 503 when you're
-gaming / actively using the PC:
+From the Oracle VM (on the tailnet) — lists models when free, returns 503 when the
+GPU is busy (fullscreen app, high non-Ollama VRAM, or a `-BusyProcesses` match):
 
 ```bash
 curl http://<this-pc-tailscale-ip>:11435/api/tags
@@ -64,10 +65,11 @@ curl http://<this-pc-tailscale-ip>:11435/api/tags
 Behaviour checklist:
 
 - **PC asleep** → VM's probe fails fast (~1.5s) → cycle runs on Oracle. No hang.
-- **PC awake + idle** → cycle runs on `gpt-oss:20b`. Confirm on the VM:
+- **PC awake, GPU free** → cycle runs on `gpt-oss:20b`, even while you browse/type.
+  Confirm on the VM:
   `psql "$DATABASE_URL" -c "SELECT DISTINCT model FROM legion.signal_votes;"`
-- **You're gaming / working** → sidecar returns 503 → cycle runs on Oracle. You're
-  never interrupted, even if you forget the dashboard toggle.
+- **You're gaming / GPU-heavy work** → sidecar returns 503 → cycle runs on Oracle.
+  Detected by fullscreen, non-Ollama VRAM > threshold, or a named busy process.
 - **Dashboard toggle OFF** ("Use home PC model") → cycle runs on Oracle regardless.
 
 ## Stopping / decommissioning
@@ -121,12 +123,14 @@ and `ollama` itself if you don't use it for anything else.
 Re-run `setup.ps1` with parameters to change behaviour:
 
 ```powershell
-# wider "busy" guard, sleep sooner, different model
-powershell -ExecutionPolicy Bypass -File .\setup.ps1 -IdleThresholdSec 600 -SleepTimeoutMin 30 -Model qwen3:14b
+# tighter "busy" guard, sleep sooner, different model, block while a game runs
+powershell -ExecutionPolicy Bypass -File .\setup.ps1 -VramThresholdMiB 3000 -SleepTimeoutMin 30 -Model qwen3:14b -BusyProcesses Cyberpunk2077,obs64
 ```
 
-- `-IdleThresholdSec` — seconds of no input before "not busy" (default 300).
-- `-VramThresholdMiB` — non-Ollama VRAM that counts as busy (default 2000).
+- `-VramThresholdMiB` — non-Ollama VRAM that counts as busy (default 4000). Light
+  desktop/browser use sits well under this; a game/render trips it.
+- `-BusyProcesses` — process names (no `.exe`) that mark the box busy whenever they
+  run, regardless of VRAM/fullscreen (default none).
 - `-SleepTimeoutMin` — idle minutes before sleep (default 60; raise toward 90 if
   you want the wake to absorb a full ±1h US-DST drift without re-running setup).
 - `-CycleTimesEt` — ET cycle times; must match Legion's `LEGION_CRON`
