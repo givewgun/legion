@@ -121,10 +121,10 @@ starts automatically and listens on `localhost:11434`.
 ### 3.2 Pull the Model
 
 ```powershell
-ollama pull gpt-oss:20b
+ollama pull qwen3:14b
 ```
 
-This downloads the `gpt-oss:20b` model. Verify it is listed:
+This downloads the `qwen3:14b` model. Verify it is listed:
 
 ```powershell
 ollama list
@@ -132,9 +132,11 @@ ollama list
 
 ### 3.3 VRAM Headroom
 
-The 16 GB GPU card should provide adequate headroom for `gpt-oss:20b` alongside
-idle driver overhead (~1–2 GB). If other applications consume significant VRAM
-the readiness sidecar (section 4) will detect this and hold the PC as BUSY.
+`qwen3:14b` (~9 GB) still leaves room on the 16 GB card for idle driver overhead
+(~1–2 GB) and two parallel KV-cache slots — that headroom is what lets
+`OLLAMA_NUM_PARALLEL` (section 3.5) serve two agents at once instead of one slow
+20B call at a time. If other applications consume significant VRAM the readiness
+sidecar (section 4) will detect this and hold the PC as BUSY.
 
 ### 3.4 Set OLLAMA_KEEP_ALIVE
 
@@ -150,6 +152,23 @@ OLLAMA_KEEP_ALIVE=90m
 Alternatively, the prime task (section 6) sends a warmup generate with
 `keep_alive: "90m"` in the request body, which overrides the global setting
 for that session.
+
+### 3.5 Set OLLAMA_NUM_PARALLEL
+
+Unlike the CPU-only Oracle box (which runs `OLLAMA_NUM_PARALLEL=1` so each
+inference gets all cores), the PC GPU has the VRAM to serve two agents at once.
+`setup.ps1` sets this to `2` in the Ollama machine environment:
+
+```powershell
+OLLAMA_NUM_PARALLEL=2
+```
+
+With `qwen3:14b` two of a ticker's agents generate concurrently; the rest queue
+behind these slots. Legion is PC-preferred, so a busy PC queues rather than
+spilling the sweep to Oracle — `HOME_TIMEOUT_MS` (default 60 min) is sized to
+outlast a deep queue. Raise `NUM_PARALLEL` only if you free VRAM (smaller model);
+a larger model that crowds VRAM risks KV-cache eviction or OOM (watch the Ollama
+log).
 
 ---
 
@@ -296,7 +315,7 @@ $ready = (Invoke-RestMethod http://100.x.x.x:11434/ready).ready
 if (-not $ready) { exit 0 }  # Gaming or active — skip; Legion will fall back to Oracle
 
 $body = @{
-  model      = "gpt-oss:20b"
+  model      = "qwen3:14b"
   prompt     = "Hello"
   keep_alive = "90m"
   stream     = $false
@@ -343,12 +362,15 @@ and emitter services:
 | Variable | Example | Effect |
 |---|---|---|
 | `HOME_OLLAMA_URL` | `http://pc.tail1234.ts.net:11434` | URL of the sidecar-fronted Ollama on the PC. **Leave unset to disable the feature entirely.** |
-| `HOME_MODEL` | `gpt-oss:20b` | Model name passed to Ollama on the PC. |
-| `HOME_THINK` | `false` | Set `true` to enable chain-of-thought (if the model supports it). `false` disables thinking tokens for faster inference. |
-| `HOME_PROBE_TIMEOUT_MS` | `3000` | Timeout for the `/api/tags` probe (default 3 s). Tune up if the PC wakes slowly. |
+| `HOME_MODEL` | `qwen3:14b` | Model name passed to Ollama on the PC. |
+| `HOME_THINK` | `true` | `qwen3` is a reasoning model — keep `true`; its `<think>` tokens are stripped before parsing. Set `false` only for a non-thinking model. |
+| `HOME_PROBE_TIMEOUT_MS` | `1500` | Timeout for the `/api/tags` probe (default 1.5 s). Tune up if the PC wakes slowly. |
+| `HOME_TIMEOUT_MS` | `3600000` | Per-call PC inference deadline (default 60 min). PC-preferred commits to the PC and queues, so this must outlast a deep `NUM_PARALLEL` queue rather than aborting into an abstain. |
 
-When `HOME_OLLAMA_URL` is absent, the tiered provider skips the PC path and
-uses the Oracle model exclusively.
+When `HOME_OLLAMA_URL` is absent, the provider skips the PC path and uses the
+Oracle model exclusively. When the PC is configured and available the provider
+**commits** to it (queuing if busy); Oracle serves only when the probe reports the
+PC unavailable — there is no mid-call failover.
 
 ---
 
@@ -363,9 +385,9 @@ Run these checks in order after deploying.
 3. Confirm the probe times out quickly (within `HOME_PROBE_TIMEOUT_MS` ms) and
    does not stall the cycle.
 4. Confirm the signal is produced using the Oracle model (check agent logs for
-   the Oracle model name, not `gpt-oss:20b`).
+   the Oracle model name, not `qwen3:14b`).
 
-### 9.2 PC Awake + Idle → Votes Tagged `gpt-oss:20b`
+### 9.2 PC Awake + Idle → Votes Tagged `qwen3:14b`
 
 1. Ensure the PC is awake and no user is active (wait for idle timeout or use
    the prime task to confirm readiness).
@@ -377,7 +399,7 @@ Run these checks in order after deploying.
    ORDER BY 1;
    ```
 
-   Expected output includes `gpt-oss:20b`.
+   Expected output includes `qwen3:14b`.
 
 ### 9.3 Gaming / Active → BUSY → Oracle
 
@@ -386,7 +408,7 @@ Run these checks in order after deploying.
 3. Confirm the sidecar returns `503` (check the sidecar logs or run
    `curl http://<pc-tailnet>:11434/api/tags` from the Oracle VM).
 4. Confirm Legion falls through to the Oracle model (votes show the Oracle
-   model name, not `gpt-oss:20b`).
+   model name, not `qwen3:14b`).
 
 ### 9.4 Dashboard Toggle OFF → Oracle Even When PC Is Ready
 
@@ -398,14 +420,14 @@ Run these checks in order after deploying.
 
 ### 9.5 New (Agent, Model) ρ Starts at 1.0 and Moves After MIN_RESOLVED
 
-1. Switch `HOME_MODEL` to a new model name (e.g. `gpt-oss:20b-q4`).
+1. Switch `HOME_MODEL` to a new model name (e.g. `qwen3:14b`).
 2. Trigger several cycles; confirm votes are tagged with the new model.
 3. Before `MIN_RESOLVED` (= 5) forecasts resolve, query:
 
    ```sql
    SELECT agent_id, model, rho, sample_size
    FROM legion.agent_reliability
-   WHERE model = 'gpt-oss:20b-q4';
+   WHERE model = 'qwen3:14b';
    ```
 
    `rho` should be `1.0` and `sample_size` should be `0` (no resolved

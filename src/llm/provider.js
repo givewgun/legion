@@ -61,16 +61,26 @@ function defaultFactory({ type, model }) {
   return createProvider(type, withModel({}, type, model));
 }
 
-// The `local` provider is tiered when a home PC URL is configured AND not disabled:
-// primary = PC Ollama (cfg.home), fallback = Oracle Ollama (cfg.ollama). Otherwise it
+// The `local` provider is PC-preferred when a home PC URL is configured AND not
+// disabled: primary = PC Ollama (cfg.home, committed to when the probe passes),
+// fallback = Oracle Ollama (cfg.ollama, only when the PC is unavailable). Otherwise it
 // is the plain Oracle Ollama provider — byte-identical to before this feature.
 function buildLocalProvider(cfg, fetchImpl, clientFactory) {
-  const oracle = createOllamaProvider(cfg.ollama, clientFactory);
+  const oracle = createOllamaProvider({ ...cfg.ollama, source: 'oracle' }, clientFactory);
   const home = cfg.home;
   if (!home?.url || home.enabled === false) return oracle;
 
   const pc = createOllamaProvider(
-    { ...cfg.ollama, url: home.url, model: home.model, think: home.think },
+    {
+      ...cfg.ollama,
+      url: home.url,
+      model: home.model,
+      think: home.think,
+      // PC-preferred: commit and queue, so the PC call needs a longer deadline than
+      // the Oracle box to outlast a deep NUM_PARALLEL queue instead of aborting.
+      timeoutMs: home.timeoutMs ?? cfg.ollama.timeoutMs,
+      source: 'pc',
+    },
     clientFactory,
   );
   const probe = async () => {
@@ -89,11 +99,13 @@ function buildLocalProvider(cfg, fetchImpl, clientFactory) {
 }
 
 // Normalizes the provider generate contract: plain providers return a string,
-// the tiered provider returns { text, model }. Callers that need the served model
-// (the agent runner) use this; text-only callers read `.text`.
+// the tiered provider returns { text, model, source }. Callers that need the served
+// model and source (the agent runner) use this; text-only callers read `.text`.
 export async function normalizeGenerate(provider, args) {
   const out = await provider.generate(args);
-  if (typeof out === 'string') return { text: out, model: provider.model ?? null };
+  if (typeof out === 'string') {
+    return { text: out, model: provider.model ?? null, source: provider.source ?? null };
+  }
   return out;
 }
 

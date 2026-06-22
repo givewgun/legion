@@ -45,9 +45,9 @@ export function createRepo(db) {
 
     async addVote(roundId, vote) {
       const row = await db.queryOne(
-        `INSERT INTO legion.votes (round_id, agent_id, stance, conviction, weight, rationale)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        [roundId, vote.agentId, vote.stance, vote.conviction, vote.weight, vote.rationale],
+        `INSERT INTO legion.votes (round_id, agent_id, stance, conviction, weight, rationale, model, source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+        [roundId, vote.agentId, vote.stance, vote.conviction, vote.weight, vote.rationale, vote.model ?? null, vote.source ?? null],
       );
       return row.id;
     },
@@ -602,7 +602,7 @@ export function createRepo(db) {
 
     async getVotes(roundId) {
       const rows = await db.query(
-        `SELECT agent_id, stance, conviction, weight, rationale
+        `SELECT agent_id, stance, conviction, weight, rationale, model, source
          FROM legion.votes WHERE round_id = $1 ORDER BY agent_id`,
         [roundId],
       );

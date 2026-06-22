@@ -74,9 +74,18 @@ export function loadConfig(env = process.env) {
     // sleeping PC fails fast to Oracle instead of hanging the cycle.
     home: {
       url: env.HOME_OLLAMA_URL || '',
-      model: env.HOME_MODEL || 'gpt-oss:20b',
+      // qwen3:14b — a capable reasoning ("thinking") model (~9 GB) that still fits
+      // the 16 GB card with room for OLLAMA_NUM_PARALLEL=2, so the home PC serves
+      // two agents at once instead of serializing one slow 20B call.
+      model: env.HOME_MODEL || 'qwen3:14b',
       think: bool(env, 'HOME_THINK'),
       probeTimeoutMs: num(env, 'HOME_PROBE_TIMEOUT_MS', 1500),
+      // PC-preferred routing commits to the PC and queues rather than failing over,
+      // so a call may wait behind the NUM_PARALLEL slots on a big sweep. Give it a
+      // generous deadline (60 min) so a deep queue completes instead of aborting into
+      // an abstain. The emitter's 90-min stale window resets on each arriving vote, so
+      // a steady trickle keeps the round alive even past any single call's wait.
+      timeoutMs: num(env, 'HOME_TIMEOUT_MS', 3600000),
       enabled: true,
     },
     // Resilience knobs for the GunVest read client. Defaults live in

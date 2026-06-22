@@ -51,4 +51,12 @@ describe('debate derivation', () => {
     expect(tech2.delta).toBe(2);
     expect(tech2.peers).toContain('contrarian');
   });
+
+  it('surfaces model, source, and derived location per message', () => {
+    const rounds = [
+      { round_no: 1, votes: [{ agent_id: 'news', stance: 1, conviction: 0.5, rationale: 'r', model: 'gpt-oss:20b', source: 'pc' }] },
+    ];
+    const [round] = threadModel(rounds);
+    expect(round.messages[0]).toMatchObject({ model: 'gpt-oss:20b', source: 'pc', location: 'onprem' });
+  });
 });

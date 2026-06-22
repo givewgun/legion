@@ -100,3 +100,10 @@ describe('createProvider routing', () => {
     expect(() => createProvider('bogus', {})).toThrow('Unknown LLM provider: bogus');
   });
 });
+
+describe('createOpenAICompatProvider source', () => {
+  it('exposes source equal to its name', () => {
+    const p = createOpenAICompatProvider({ name: 'gemini', url: 'http://x', apiKey: 'k', model: 'm' });
+    expect(p.source).toBe('gemini');
+  });
+});

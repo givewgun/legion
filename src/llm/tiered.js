@@ -1,8 +1,12 @@
-// Tiered `local` provider: prefer the home PC's Ollama (primary) when the global
-// toggle is on AND a fast readiness probe passes, else use the Oracle VM's Ollama
-// (fallback). Any primary error fails over to the fallback so a PC that sleeps
-// mid-sweep degrades gracefully. generate returns { text, model } so the served
-// model can be tagged onto the vote for per-(agent, model) reliability.
+// PC-preferred `local` provider: when the global toggle is on AND a fast readiness
+// probe passes, the home PC's Ollama (primary) serves the call — and we COMMIT to it,
+// queuing behind its NUM_PARALLEL slots rather than load-shedding to Oracle. The PC is
+// faster than the Oracle VM, so we'd rather wait than spill a sweep onto the slow box.
+// Oracle (fallback) is used only when the PC is unavailable (toggle off, asleep, busy,
+// or the probe fails) — NOT as a mid-call escape hatch. A PC error therefore propagates
+// (the agent abstains) and the next call re-probes, so a PC that dies mid-sweep self-
+// corrects to Oracle within one probe. generate returns { text, model, source } so the
+// served model/source can be tagged onto the vote for per-(agent, model) reliability.
 export function createTieredProvider({
   primary,
   fallback,
@@ -24,17 +28,14 @@ export function createTieredProvider({
       return primary.model;
     },
     async generate({ system, prompt }) {
+      // PC available → commit to it (queue, don't fail over). Error propagates.
       if (await usePrimary()) {
-        try {
-          const text = await primary.generate({ system, prompt });
-          return { text, model: primary.model };
-        } catch {
-          // primary errored (timeout / transport / 5xx after its own retries) —
-          // fail this call over to the always-available fallback.
-        }
+        const text = await primary.generate({ system, prompt });
+        return { text, model: primary.model, source: primary.source };
       }
+      // PC unavailable → Oracle.
       const text = await fallback.generate({ system, prompt });
-      return { text, model: fallback.model };
+      return { text, model: fallback.model, source: fallback.source };
     },
   };
 }

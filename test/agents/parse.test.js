@@ -14,6 +14,7 @@ describe('shared parseVote', () => {
       weight: 1.0,
       rationale: 'guidance raise',
       model: null,
+      source: null,
     });
   });
 
@@ -75,5 +76,12 @@ describe('shared parseVote', () => {
       weight: 1,
     });
     expect(vote.model).toBeNull();
+  });
+
+  it('threads source onto the parsed vote', () => {
+    const text = '{"stance":1,"conviction":0.6,"rationale":"ok"}';
+    const { vote } = parseVote(text, { agentId: 'news', weight: 1, model: 'm', source: 'pc' });
+    expect(vote.source).toBe('pc');
+    expect(vote.model).toBe('m');
   });
 });

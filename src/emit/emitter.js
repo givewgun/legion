@@ -209,6 +209,10 @@ export function createEmitter({
       conviction: Number(v.conviction),
       weight: Number(v.weight),
       rationale: v.rationale ?? '',
+      // Carry the served model/source so a crash-recovered final round emits the
+      // same model+location tag on the Telegram signal as the live path.
+      model: v.model ?? null,
+      source: v.source ?? null,
     }));
     if (calibrated.length === 0) return;
     const result = evaluateRound(calibrated, { ...consensus, corr });

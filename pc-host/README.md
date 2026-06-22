@@ -1,9 +1,17 @@
 # Legion home-PC model server
 
-Turn this Windows PC (RTX 5060 Ti) into Legion's preferred model server: it serves
-a big model (`gpt-oss:20b`) over Tailscale when it's awake and you're not using it,
-self-wakes ~10 min before each market cycle, and sleeps back when idle. Legion falls
-back to the Oracle VM's `qwen2.5:7b` whenever this PC is asleep, busy, or off.
+Turn this Windows PC (RTX 5060 Ti) into Legion's model server: it serves a capable
+reasoning model (`qwen3:14b`) over Tailscale when it's awake and you're not using it,
+self-wakes ~10 min before each market cycle, and sleeps back when idle. Legion is
+**PC-preferred** — whenever the PC is available it commits to it (queuing if busy),
+and only falls back to the Oracle VM's `qwen2.5:7b` when the PC is asleep, busy, or
+off. The PC is faster than the VM, so a loaded PC queues rather than spilling the
+sweep to Oracle.
+
+`qwen3:14b` (~9 GB) fits the 16 GB card with room for two KV-cache slots, so
+`setup.ps1` sets `OLLAMA_NUM_PARALLEL` (default 2) and the GPU serves two agents
+**concurrently** instead of serializing one slow 20B call. Tune `-Model` /
+`-NumParallel` if you change cards.
 
 These four scripts are the whole PC side. You run **one** of them.
 
@@ -39,7 +47,7 @@ When it finishes it prints the three env vars to put on the **Legion** side (`.e
 
 ```
 HOME_OLLAMA_URL=http://<this-pc-tailscale-ip>:11435
-HOME_MODEL=gpt-oss:20b
+HOME_MODEL=qwen3:14b
 HOME_THINK=true
 ```
 
@@ -48,14 +56,15 @@ binding + keep-alive take effect.
 
 ## Verify it works
 
-On this PC (should report `ready=true` when you're not touching it):
+On this PC (should report `ready=true` unless a game/render is using the GPU —
+ordinary browsing/typing still reports `ready=true`):
 
 ```powershell
 Invoke-RestMethod http://localhost:11435/ready
 ```
 
-From the Oracle VM (on the tailnet) — lists models when idle, returns 503 when you're
-gaming / actively using the PC:
+From the Oracle VM (on the tailnet) — lists models when free, returns 503 when the
+GPU is busy (fullscreen app, high non-Ollama VRAM, or a `-BusyProcesses` match):
 
 ```bash
 curl http://<this-pc-tailscale-ip>:11435/api/tags
@@ -64,10 +73,11 @@ curl http://<this-pc-tailscale-ip>:11435/api/tags
 Behaviour checklist:
 
 - **PC asleep** → VM's probe fails fast (~1.5s) → cycle runs on Oracle. No hang.
-- **PC awake + idle** → cycle runs on `gpt-oss:20b`. Confirm on the VM:
+- **PC awake, GPU free** → cycle runs on `qwen3:14b`, even while you browse/type.
+  Confirm on the VM:
   `psql "$DATABASE_URL" -c "SELECT DISTINCT model FROM legion.signal_votes;"`
-- **You're gaming / working** → sidecar returns 503 → cycle runs on Oracle. You're
-  never interrupted, even if you forget the dashboard toggle.
+- **You're gaming / GPU-heavy work** → sidecar returns 503 → cycle runs on Oracle.
+  Detected by fullscreen, non-Ollama VRAM > threshold, or a named busy process.
 - **Dashboard toggle OFF** ("Use home PC model") → cycle runs on Oracle regardless.
 
 ## Stopping / decommissioning
@@ -99,12 +109,13 @@ task). Or just leave the dashboard toggle OFF (level 1) — simpler.
 # elevated
 powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 # add -RevertPower to also disable wake timers + reset the sleep timeout
-# add -RemoveModel to also delete gpt-oss:20b (~12 GB)
+# add -RemoveModel to also delete qwen3:14b (~9 GB)
 ```
 
 It stops + removes the sidecar and wake/prime tasks, deletes the firewall rule,
-clears the `OLLAMA_HOST` / `OLLAMA_KEEP_ALIVE` env (Ollama returns to defaults after a
-restart), and deletes the generated config. By default it leaves your power settings
+clears the `OLLAMA_HOST` / `OLLAMA_KEEP_ALIVE` / `OLLAMA_NUM_PARALLEL` env (Ollama
+returns to defaults after a restart), and deletes the generated config. By default it
+leaves your power settings
 and the model alone (they're shared / a big re-download) — use the flags above to also
 revert those.
 
@@ -121,12 +132,14 @@ and `ollama` itself if you don't use it for anything else.
 Re-run `setup.ps1` with parameters to change behaviour:
 
 ```powershell
-# wider "busy" guard, sleep sooner, different model
-powershell -ExecutionPolicy Bypass -File .\setup.ps1 -IdleThresholdSec 600 -SleepTimeoutMin 30 -Model qwen3:14b
+# tighter "busy" guard, sleep sooner, different model, block while a game runs
+powershell -ExecutionPolicy Bypass -File .\setup.ps1 -VramThresholdMiB 3000 -SleepTimeoutMin 30 -Model qwen3:14b -BusyProcesses Cyberpunk2077,obs64
 ```
 
-- `-IdleThresholdSec` — seconds of no input before "not busy" (default 300).
-- `-VramThresholdMiB` — non-Ollama VRAM that counts as busy (default 2000).
+- `-VramThresholdMiB` — non-Ollama VRAM that counts as busy (default 4000). Light
+  desktop/browser use sits well under this; a game/render trips it.
+- `-BusyProcesses` — process names (no `.exe`) that mark the box busy whenever they
+  run, regardless of VRAM/fullscreen (default none).
 - `-SleepTimeoutMin` — idle minutes before sleep (default 60; raise toward 90 if
   you want the wake to absorb a full ±1h US-DST drift without re-running setup).
 - `-CycleTimesEt` — ET cycle times; must match Legion's `LEGION_CRON`

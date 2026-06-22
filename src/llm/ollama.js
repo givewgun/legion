@@ -42,7 +42,7 @@ const wrapError = (err, timeoutMs) => {
 };
 
 export function createOllamaProvider(
-  { url, model, timeoutMs = 300000, maxConcurrent = 1, retries = 1, options = null, think = null },
+  { url, model, timeoutMs = 300000, maxConcurrent = 1, retries = 1, options = null, think = null, source = 'oracle' },
   clientFactory = (opts) => new Ollama(opts),
 ) {
   const client = clientFactory({ host: url });
@@ -81,6 +81,7 @@ export function createOllamaProvider(
   return {
     name: 'local',
     model,
+    source,
     async generate({ system, prompt }) {
       // Measure end-to-end generate latency (incl. queue wait + retries).
       const stop = ollamaRequest.startTimer();

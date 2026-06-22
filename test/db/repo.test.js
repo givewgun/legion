@@ -54,7 +54,25 @@ describe('createRepo', () => {
       rationale: 'breakout',
     });
     expect(pool.calls[0].text).toMatch(/INSERT INTO legion\.votes/);
-    expect(pool.calls[0].params).toEqual([5, 'technical', 2, 0.9, 1, 'breakout']);
+    expect(pool.calls[0].params).toEqual([5, 'technical', 2, 0.9, 1, 'breakout', null, null]);
+  });
+
+  it('addVote includes model and source in INSERT params', async () => {
+    const pool = poolReturning([[{ id: 2 }]]);
+    const repo = createRepo(createDb(pool));
+    await repo.addVote(5, {
+      agentId: 'news',
+      stance: 1,
+      conviction: 0.5,
+      weight: 1,
+      rationale: 'r',
+      model: 'gpt-oss:20b',
+      source: 'pc',
+    });
+    expect(pool.calls[0].text).toMatch(/INSERT INTO legion\.votes/);
+    expect(pool.calls[0].text).toContain('model');
+    expect(pool.calls[0].text).toContain('source');
+    expect(pool.calls[0].params).toEqual([5, 'news', 1, 0.5, 1, 'r', 'gpt-oss:20b', 'pc']);
   });
 
   it('adds a signal with a JSONB plan', async () => {

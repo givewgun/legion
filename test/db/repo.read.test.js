@@ -119,6 +119,28 @@ describe('repo read + config methods', () => {
     expect(pool.calls[0].params).toEqual([1]);
   });
 
+  it('getVotes SELECT includes model and source columns', async () => {
+    const pool = poolReturning([
+      [
+        {
+          agent_id: 'news',
+          stance: 1,
+          conviction: 0.5,
+          weight: 1,
+          rationale: 'r',
+          model: 'gpt-oss:20b',
+          source: 'pc',
+        },
+      ],
+    ]);
+    const repo = createRepo(createDb(pool));
+    const rows = await repo.getVotes(7);
+    expect(pool.calls[0].text).toContain('model');
+    expect(pool.calls[0].text).toContain('source');
+    expect(rows[0].model).toBe('gpt-oss:20b');
+    expect(rows[0].source).toBe('pc');
+  });
+
   it('lists recent signals optionally filtered by symbol', async () => {
     const pool = poolReturning([
       [{ id: 3, symbol: 'NVDA', band: 'STRONG_BUY', conviction: 0.9, plan: {} }],

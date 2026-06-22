@@ -50,4 +50,13 @@ describe('DebateThread', () => {
     expect(screen.getByText(/Round 1/i)).toBeInTheDocument();
     expect(screen.getByText(/Round 2/i)).toBeInTheDocument();
   });
+
+  it('renders a model · location badge', () => {
+    const rounds = [
+      { round_no: 1, converged: true, s_score: 2, dispersion: 0, quorum: 1,
+        votes: [{ agent_id: 'news', stance: 1, conviction: 0.5, rationale: 'r', model: 'gpt-oss:20b', source: 'pc' }] },
+    ];
+    render(<DebateThread rounds={rounds} />);
+    expect(screen.getByText(/gpt-oss:20b · onprem/)).toBeInTheDocument();
+  });
 });
