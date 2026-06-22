@@ -95,7 +95,7 @@ function buildLocalProvider(cfg, fetchImpl, clientFactory) {
       clearTimeout(timer);
     }
   };
-  return createTieredProvider({ primary: pc, fallback: oracle, probe });
+  return createTieredProvider({ primary: pc, fallback: oracle, probe, allowFallback: home.fallback });
 }
 
 // Normalizes the provider generate contract: plain providers return a string,

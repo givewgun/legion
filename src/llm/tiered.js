@@ -7,11 +7,17 @@
 // (the agent abstains) and the next call re-probes, so a PC that dies mid-sweep self-
 // corrects to Oracle within one probe. generate returns { text, model, source } so the
 // served model/source can be tagged onto the vote for per-(agent, model) reliability.
+//
+// `allowFallback` is the tiering switch. When false the PC is PINNED: every call goes to
+// it unconditionally (no probe, no Oracle ever) — the operator wants the home PC or
+// nothing, so a PC error propagates rather than silently degrading to the slow VM. Flip
+// it true (HOME_FALLBACK=true) to restore the tiered probe-gated Oracle fallback.
 export function createTieredProvider({
   primary,
   fallback,
   probe = async () => false,
   isEnabled = () => true,
+  allowFallback = true,
 }) {
   async function usePrimary() {
     if (!(await isEnabled())) return false;
@@ -28,6 +34,11 @@ export function createTieredProvider({
       return primary.model;
     },
     async generate({ system, prompt }) {
+      // PC pinned (tiering off): always the PC, never Oracle. Error propagates.
+      if (!allowFallback) {
+        const text = await primary.generate({ system, prompt });
+        return { text, model: primary.model, source: primary.source };
+      }
       // PC available → commit to it (queue, don't fail over). Error propagates.
       if (await usePrimary()) {
         const text = await primary.generate({ system, prompt });

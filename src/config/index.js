@@ -87,6 +87,10 @@ export function loadConfig(env = process.env) {
       // a steady trickle keeps the round alive even past any single call's wait.
       timeoutMs: num(env, 'HOME_TIMEOUT_MS', 3600000),
       enabled: true,
+      // Tiering switch. Default true = probe-gated Oracle fallback when the PC is
+      // unavailable. Set HOME_FALLBACK=false to PIN the PC: every cycle runs on the
+      // home PC and never spills to the slow Oracle VM (a PC error abstains instead).
+      fallback: bool(env, 'HOME_FALLBACK') !== false,
     },
     // Resilience knobs for the GunVest read client. Defaults live in
     // src/data/gunvest.js; these env overrides let operators raise the timeout or
