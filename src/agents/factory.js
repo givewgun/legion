@@ -83,6 +83,7 @@ export function createAgent({
       const stopInference = agentInference.startTimer({ agent: id });
       let text;
       let servedModel = null;
+      let servedSource = null;
       try {
         const out = await normalizeGenerate(activeProvider, {
           system,
@@ -90,15 +91,16 @@ export function createAgent({
         });
         text = out.text;
         servedModel = out.model;
+        servedSource = out.source;
       } finally {
         stopInference();
       }
-      const parsed = parseVote(text, { agentId: id, weight, model: servedModel });
+      const parsed = parseVote(text, { agentId: id, weight, model: servedModel, source: servedSource });
       if (parsed.ok) {
         vote = parsed.vote;
       } else {
         logger.warn(`[${id}] parse failed: ${parsed.errors.join('; ')}`);
-        vote = abstain(id, weight, 'unparseable vote', servedModel);
+        vote = abstain(id, weight, 'unparseable vote', servedModel, servedSource);
       }
     } catch (err) {
       logger.error(`[${id}] cycle error: ${err.message}`);
@@ -116,7 +118,7 @@ export function createAgent({
   };
 }
 
-function abstain(id, weight, reason, model = null) {
+function abstain(id, weight, reason, model = null, source = null) {
   return createVote({
     agentId: id,
     stance: 0,
@@ -124,5 +126,6 @@ function abstain(id, weight, reason, model = null) {
     weight,
     rationale: `abstain (${reason})`,
     model,
+    source,
   });
 }

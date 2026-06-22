@@ -15,6 +15,7 @@ describe('parseVote', () => {
       weight: 1.0,
       rationale: 'uptrend',
       model: null,
+      source: null,
     });
   });
 

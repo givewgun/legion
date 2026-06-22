@@ -17,6 +17,7 @@ describe('vote', () => {
       weight: 1.2,
       rationale: 'uptrend intact',
       model: null,
+      source: null,
     });
   });
 
@@ -51,5 +52,12 @@ describe('vote', () => {
     const res = validateVote(v);
     expect(res.ok).toBe(false);
     expect(res.errors).toContain('agentId must be a non-empty string');
+  });
+
+  it('carries source, defaulting to null', () => {
+    expect(createVote({ agentId: 'a', stance: 1, conviction: 0.5, weight: 1 }).source).toBeNull();
+    expect(
+      createVote({ agentId: 'a', stance: 1, conviction: 0.5, weight: 1, source: 'pc' }).source,
+    ).toBe('pc');
   });
 });

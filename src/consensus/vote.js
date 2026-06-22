@@ -1,7 +1,7 @@
 import { isValidStance } from './stance.js';
 
-export function createVote({ agentId, stance, conviction, weight, rationale, model = null }) {
-  return { agentId, stance, conviction, weight, rationale, model };
+export function createVote({ agentId, stance, conviction, weight, rationale, model = null, source = null }) {
+  return { agentId, stance, conviction, weight, rationale, model, source };
 }
 
 export function validateVote(vote) {

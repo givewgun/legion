@@ -56,4 +56,26 @@ describe('factory per-cycle provider', () => {
     expect(generated).toBe(false);
     expect(published[0].vote.stance).toBe(0);
   });
+
+  it('tags the published vote with the served model and source', async () => {
+    const provider = {
+      generate: async () => ({
+        text: '{"stance":1,"conviction":0.5,"rationale":"x"}',
+        model: 'gpt-oss:20b',
+        source: 'pc',
+      }),
+    };
+    const deps = baseDeps({
+      getProvider: async ({ agentId }) => ({ provider, enabled: true }),
+    });
+    const published = [];
+    deps.bus.subscribeJSON(voteSubject('NVDA', 1), (m) => published.push(m));
+    const agent = createAgent(deps);
+    agent.start();
+    deps.bus.publishJSON(cycleSubject('NVDA'), { cycleId: 1, symbol: 'NVDA', round: 1 });
+    await vi.waitFor(() => expect(published).toHaveLength(1));
+    const publishedVote = published[0].vote;
+    expect(publishedVote.model).toBe('gpt-oss:20b');
+    expect(publishedVote.source).toBe('pc');
+  });
 });
