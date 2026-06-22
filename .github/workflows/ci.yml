@@ -203,12 +203,14 @@ jobs:
           HOME_OLLAMA_URL: ${{ secrets.HOME_OLLAMA_URL }}
           HOME_MODEL: ${{ secrets.HOME_MODEL }}
           HOME_THINK: ${{ secrets.HOME_THINK }}
+          # HOME_FALLBACK=false pins the PC (no Oracle fallback); unset/true = tiered.
+          HOME_FALLBACK: ${{ secrets.HOME_FALLBACK }}
         with:
           host: ${{ secrets.ORACLE_VM_HOST }}
           username: ubuntu
           key: ${{ secrets.ORACLE_VM_SSH_KEY }}
           port: 22
-          envs: DATABASE_URL,FINNHUB_API_KEY,TELEGRAM_BOT_TOKEN,TELEGRAM_CHAT_ID,REPO_CLONE_TOKEN,GH_REPO,GOOGLE_OAUTH_CLIENT_ID,GOOGLE_OAUTH_CLIENT_SECRET,SESSION_SECRET,LEGION_ALLOWED_EMAILS,LEGION_PUBLIC_URL,HOME_OLLAMA_URL,HOME_MODEL,HOME_THINK
+          envs: DATABASE_URL,FINNHUB_API_KEY,TELEGRAM_BOT_TOKEN,TELEGRAM_CHAT_ID,REPO_CLONE_TOKEN,GH_REPO,GOOGLE_OAUTH_CLIENT_ID,GOOGLE_OAUTH_CLIENT_SECRET,SESSION_SECRET,LEGION_ALLOWED_EMAILS,LEGION_PUBLIC_URL,HOME_OLLAMA_URL,HOME_MODEL,HOME_THINK,HOME_FALLBACK
           script: |
             set -euo pipefail
             APP_DIR=/opt/legion/app
@@ -256,6 +258,7 @@ jobs:
             HOME_OLLAMA_URL=${HOME_OLLAMA_URL}
             HOME_MODEL=${HOME_MODEL}
             HOME_THINK=${HOME_THINK}
+            HOME_FALLBACK=${HOME_FALLBACK}
             DATABASE_URL=${DATABASE_URL}
             GUNVEST_API_URL=http://gunvest-app:3001
             FINNHUB_API_KEY=${FINNHUB_API_KEY}

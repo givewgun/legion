@@ -54,6 +54,27 @@ describe('createTieredProvider', () => {
     expect(fallback.generate).not.toHaveBeenCalled();
   });
 
+  it('pins the PC (never Oracle) when allowFallback is false, even if the probe is not ready', async () => {
+    const primary = stub('qwen3:14b', 'pc');
+    const fallback = stub('qwen2.5:7b-instruct', 'oracle');
+    const probe = vi.fn(async () => false);
+    const t = createTieredProvider({ primary, fallback, probe, allowFallback: false });
+    const out = await t.generate({ system: 's', prompt: 'p' });
+    expect(out).toEqual({ text: 'from-qwen3:14b', model: 'qwen3:14b', source: 'pc' });
+    expect(fallback.generate).not.toHaveBeenCalled();
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it('propagates a PC error when pinned (allowFallback false) — no Oracle rescue', async () => {
+    const primary = stub('qwen3:14b', 'pc', async () => {
+      throw new Error('Ollama request timed out after 3600000ms');
+    });
+    const fallback = stub('qwen2.5:7b-instruct', 'oracle');
+    const t = createTieredProvider({ primary, fallback, probe: async () => true, allowFallback: false });
+    await expect(t.generate({ system: 's', prompt: 'p' })).rejects.toThrow(/timed out/);
+    expect(fallback.generate).not.toHaveBeenCalled();
+  });
+
   it('advertises the primary model as .model', () => {
     const t = createTieredProvider({ primary: stub('gpt-oss:20b', 'oracle'), fallback: stub('x', 'oracle') });
     expect(t.model).toBe('gpt-oss:20b');

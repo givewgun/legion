@@ -110,6 +110,7 @@ describe('loadConfig', () => {
       probeTimeoutMs: 1500,
       timeoutMs: 3600000,
       enabled: true,
+      fallback: true,
     });
   });
 
@@ -128,6 +129,13 @@ describe('loadConfig', () => {
       probeTimeoutMs: 2000,
       timeoutMs: 600000,
       enabled: true,
+      fallback: true,
     });
+  });
+
+  it('reads HOME_FALLBACK=false to pin the PC (disable Oracle fallback)', () => {
+    expect(loadConfig({ HOME_FALLBACK: 'false' }).home.fallback).toBe(false);
+    expect(loadConfig({ HOME_FALLBACK: 'true' }).home.fallback).toBe(true);
+    expect(loadConfig({}).home.fallback).toBe(true);
   });
 });
