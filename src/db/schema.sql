@@ -304,3 +304,8 @@ CREATE TABLE IF NOT EXISTS legion.runtime_config (
   value      TEXT NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ── Debate display: served model + run source on per-round votes ──────────────
+-- Served model + run source on the per-round audit table (debate display).
+ALTER TABLE legion.votes ADD COLUMN IF NOT EXISTS model  TEXT;
+ALTER TABLE legion.votes ADD COLUMN IF NOT EXISTS source TEXT;
