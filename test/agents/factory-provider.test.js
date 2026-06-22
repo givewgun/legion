@@ -66,7 +66,7 @@ describe('factory per-cycle provider', () => {
       }),
     };
     const deps = baseDeps({
-      getProvider: async ({ agentId }) => ({ provider, enabled: true }),
+      getProvider: async () => ({ provider, enabled: true }),
     });
     const published = [];
     deps.bus.subscribeJSON(voteSubject('NVDA', 1), (m) => published.push(m));
