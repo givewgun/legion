@@ -42,24 +42,16 @@ describe('createTieredProvider', () => {
     expect(probe).not.toHaveBeenCalled();
   });
 
-  it('fails over to the fallback when the primary throws mid-call', async () => {
+  it('does NOT fail over to Oracle when the PC is available and the call throws', async () => {
+    // PC-preferred: once the probe says the PC is available we commit to it and
+    // queue. A PC error propagates (agent abstains) — we never load-shed to Oracle.
     const primary = stub('gpt-oss:20b', 'pc', async () => {
-      throw new Error('Ollama request timed out after 1500ms');
+      throw new Error('Ollama request timed out after 1800000ms');
     });
     const fallback = stub('qwen2.5:7b-instruct', 'oracle');
     const t = createTieredProvider({ primary, fallback, probe: async () => true });
-    const out = await t.generate({ system: 's', prompt: 'p' });
-    expect(out).toEqual({ text: 'from-qwen2.5:7b-instruct', model: 'qwen2.5:7b-instruct', source: 'oracle' });
-  });
-
-  it('reports the fallback source on mid-call primary failover', async () => {
-    const primary = stub('gpt-oss:20b', 'pc', async () => {
-      throw new Error('timed out');
-    });
-    const fallback = stub('qwen2.5:7b-instruct', 'oracle');
-    const t = createTieredProvider({ primary, fallback, probe: async () => true });
-    const out = await t.generate({ system: 's', prompt: 'p' });
-    expect(out.source).toBe('oracle');
+    await expect(t.generate({ system: 's', prompt: 'p' })).rejects.toThrow(/timed out/);
+    expect(fallback.generate).not.toHaveBeenCalled();
   });
 
   it('advertises the primary model as .model', () => {

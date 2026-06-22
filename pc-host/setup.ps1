@@ -18,7 +18,8 @@
 
 [CmdletBinding()]
 param(
-  [string]   $Model            = 'gpt-oss:20b',
+  [string]   $Model            = 'qwen3:14b', # capable reasoning model: still fits 2 parallel slots on 16 GB
+  [int]      $NumParallel      = 2,     # concurrent inferences on the GPU — needs VRAM headroom
   [int]      $GatePort         = 11435,
   [int]      $SleepTimeoutMin  = 60,    # idle minutes before the PC sleeps
   [int]      $IdleThresholdSec = 300,   # "busy" if input within this many seconds
@@ -54,10 +55,16 @@ Write-Host "[1/7] Pulling $Model (this can take a while)..."
 & ollama pull $Model
 if ($LASTEXITCODE -ne 0) { Write-Error "ollama pull $Model failed."; exit 1 }
 
-# ---- 2. bind Ollama to localhost + keep-alive (machine env) ------------------
-Write-Host "[2/7] Setting OLLAMA_HOST=127.0.0.1:11434 and OLLAMA_KEEP_ALIVE=$KeepAlive (machine)..."
+# ---- 2. bind Ollama to localhost + keep-alive + parallelism (machine env) ----
+Write-Host "[2/7] Setting OLLAMA_HOST=127.0.0.1:11434, OLLAMA_KEEP_ALIVE=$KeepAlive, OLLAMA_NUM_PARALLEL=$NumParallel (machine)..."
 [Environment]::SetEnvironmentVariable('OLLAMA_HOST', '127.0.0.1:11434', 'Machine')
 [Environment]::SetEnvironmentVariable('OLLAMA_KEEP_ALIVE', $KeepAlive, 'Machine')
+# NUM_PARALLEL=2 lets the GPU serve two agents at once (the 16 GB card fits
+# qwen3:14b weights ~9 GB + two KV-cache slots). Unlike the CPU-only Oracle box
+# (which stays NUM_PARALLEL=1), the PC has the VRAM to parallelize a ticker's panel.
+# Legion is PC-preferred: a busy PC queues behind these slots rather than spilling
+# the sweep to the slower Oracle box.
+[Environment]::SetEnvironmentVariable('OLLAMA_NUM_PARALLEL', "$NumParallel", 'Machine')
 Write-Host "      -> RESTART Ollama (quit the tray app and relaunch, or reboot) for this to take effect." -ForegroundColor Yellow
 
 # ---- 3. power: wake timers + sleep timeout ----------------------------------

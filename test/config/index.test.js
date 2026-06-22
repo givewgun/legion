@@ -101,13 +101,14 @@ describe('loadConfig', () => {
     expect(loadConfig({ OLLAMA_THINK: '' }).ollama.think).toBeNull();
   });
 
-  it('defaults the home block to disabled (empty url) and gpt-oss:20b', () => {
+  it('defaults the home block to disabled (empty url) and qwen3:14b', () => {
     const cfg = loadConfig({});
     expect(cfg.home).toEqual({
       url: '',
-      model: 'gpt-oss:20b',
+      model: 'qwen3:14b',
       think: null,
       probeTimeoutMs: 1500,
+      timeoutMs: 3600000,
       enabled: true,
     });
   });
@@ -115,15 +116,17 @@ describe('loadConfig', () => {
   it('reads home overrides from env', () => {
     const cfg = loadConfig({
       HOME_OLLAMA_URL: 'http://100.64.0.2:11434',
-      HOME_MODEL: 'qwen3:14b',
+      HOME_MODEL: 'qwen3:32b',
       HOME_THINK: 'false',
       HOME_PROBE_TIMEOUT_MS: '2000',
+      HOME_TIMEOUT_MS: '600000',
     });
     expect(cfg.home).toEqual({
       url: 'http://100.64.0.2:11434',
-      model: 'qwen3:14b',
+      model: 'qwen3:32b',
       think: false,
       probeTimeoutMs: 2000,
+      timeoutMs: 600000,
       enabled: true,
     });
   });

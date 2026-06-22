@@ -10,8 +10,8 @@
 #
 #   -RevertPower    also disable wake timers + reset the sleep timeout (-SleepTimeoutMin, default 30).
 #                   NOTE: disabling wake timers is system-wide (affects e.g. scheduled Windows Update wake).
-#   -RemoveModel    also run `ollama rm` for the model (frees ~12 GB; you'd re-pull to reinstall).
-#   -Model          model name for -RemoveModel (default gpt-oss:20b).
+#   -RemoveModel    also run `ollama rm` for the model (frees ~9 GB; you'd re-pull to reinstall).
+#   -Model          model name for -RemoveModel (default qwen3:14b).
 #   -GatePort       firewall port to remove (default 11435).
 #   -SleepTimeoutMin sleep timeout to restore with -RevertPower (default 30).
 
@@ -19,7 +19,7 @@
 param(
   [switch] $RevertPower,
   [switch] $RemoveModel,
-  [string] $Model           = 'gpt-oss:20b',
+  [string] $Model           = 'qwen3:14b',
   [int]    $GatePort        = 11435,
   [int]    $SleepTimeoutMin = 30
 )
@@ -49,9 +49,10 @@ Write-Host "[3/6] Removing the firewall rule..."
 Get-NetFirewallRule -DisplayName 'Legion PC sidecar (tailnet)' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
 
 # 4. clear the Ollama env overrides (back to Ollama defaults)
-Write-Host "[4/6] Clearing OLLAMA_HOST / OLLAMA_KEEP_ALIVE machine env..."
+Write-Host "[4/6] Clearing OLLAMA_HOST / OLLAMA_KEEP_ALIVE / OLLAMA_NUM_PARALLEL machine env..."
 [Environment]::SetEnvironmentVariable('OLLAMA_HOST', $null, 'Machine')
 [Environment]::SetEnvironmentVariable('OLLAMA_KEEP_ALIVE', $null, 'Machine')
+[Environment]::SetEnvironmentVariable('OLLAMA_NUM_PARALLEL', $null, 'Machine')
 Write-Host "      Restart Ollama (or reboot) for this to take effect." -ForegroundColor Yellow
 
 # 5. delete the generated config
