@@ -35,6 +35,18 @@ function Message({ msg }) {
           <Badge band={stanceLabel(msg.stance)}>{stanceLabel(msg.stance)}</Badge>
           <span className="text-xs text-slate-500">conv {pct(msg.conviction)}</span>
           <DeltaPill delta={msg.delta} />
+          {msg.model && (
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
+                msg.location === 'onprem'
+                  ? 'bg-violet-100 text-violet-700'
+                  : 'bg-sky-100 text-sky-700'
+              }`}
+            >
+              {msg.model}
+              {msg.location ? ` · ${msg.location}` : ''}
+            </span>
+          )}
         </div>
         <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
           {msg.rationale}

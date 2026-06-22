@@ -1,3 +1,5 @@
+import { locationForSource } from './source.js';
+
 // Pivots rounds -> a recharts-friendly series: one numeric key per agent.
 export function stanceSeries(rounds = []) {
   const agentSet = new Set();
@@ -29,6 +31,9 @@ export function threadModel(rounds = []) {
         stance: v.stance,
         conviction: v.conviction,
         rationale: v.rationale,
+        model: v.model ?? null,
+        source: v.source ?? null,
+        location: locationForSource(v.source ?? null),
         delta,
         peers,
       };
