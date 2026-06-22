@@ -27,14 +27,14 @@ export function createTieredProvider({
       if (await usePrimary()) {
         try {
           const text = await primary.generate({ system, prompt });
-          return { text, model: primary.model };
+          return { text, model: primary.model, source: primary.source };
         } catch {
           // primary errored (timeout / transport / 5xx after its own retries) —
           // fail this call over to the always-available fallback.
         }
       }
       const text = await fallback.generate({ system, prompt });
-      return { text, model: fallback.model };
+      return { text, model: fallback.model, source: fallback.source };
     },
   };
 }

@@ -67,6 +67,7 @@ export function createOpenAICompatProvider(
   return {
     name,
     model,
+    source: name,
     async generate({ system, prompt }) {
       try {
         return await limit(() =>

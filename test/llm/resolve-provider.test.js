@@ -100,7 +100,7 @@ describe('tiered local wiring', () => {
     const clientFactory = fakeOllamaClientFactory('from-pc');
     const p = createProvider('local', cfg, fetchImpl, clientFactory);
     const out = await p.generate({ system: 's', prompt: 'p' });
-    expect(out).toEqual({ text: 'from-pc', model: 'gpt-oss:20b' });
+    expect(out).toEqual({ text: 'from-pc', model: 'gpt-oss:20b', source: 'pc' });
   });
 
   it('stays pure-Oracle when home.enabled is false even if url set', async () => {
@@ -115,11 +115,22 @@ describe('tiered local wiring', () => {
 describe('normalizeGenerate', () => {
   it('wraps a string result with the provider model', async () => {
     const provider = { model: 'm', generate: async () => 'txt' };
-    expect(await normalizeGenerate(provider, {})).toEqual({ text: 'txt', model: 'm' });
+    expect(await normalizeGenerate(provider, {})).toEqual({ text: 'txt', model: 'm', source: null });
   });
   it('passes through an object result', async () => {
     const provider = { model: 'm', generate: async () => ({ text: 't', model: 'pc' }) };
     expect(await normalizeGenerate(provider, {})).toEqual({ text: 't', model: 'pc' });
+  });
+});
+
+describe('normalizeGenerate source', () => {
+  it('passes a tiered object source through unchanged', async () => {
+    const provider = { generate: async () => ({ text: 't', model: 'm', source: 'pc' }) };
+    expect(await normalizeGenerate(provider, {})).toEqual({ text: 't', model: 'm', source: 'pc' });
+  });
+  it('reads source off a string-returning provider', async () => {
+    const provider = { model: 'm', source: 'oracle', generate: async () => 'hi' };
+    expect(await normalizeGenerate(provider, {})).toEqual({ text: 'hi', model: 'm', source: 'oracle' });
   });
 });
 
