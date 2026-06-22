@@ -1,3 +1,5 @@
+import { locationForSource } from '../llm/source.js';
+
 export async function sendTelegram(token, chatId, text, fetchImpl = fetch) {
   const res = await fetchImpl(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST',
@@ -27,9 +29,13 @@ export function formatSignal(signal) {
   }
   lines.push(
     '',
-    ...signal.plan.rationales.map(
-      (r) => `• _${escapeMarkdown(r.agentId)}_: ${escapeMarkdown(r.rationale)}`,
-    ),
+    ...signal.plan.rationales.map((r) => {
+      const loc = locationForSource(r.source);
+      const tag = r.model
+        ? escapeMarkdown(` (${r.model}${loc ? `, ${loc}` : ''})`)
+        : '';
+      return `• _${escapeMarkdown(r.agentId)}_: ${escapeMarkdown(r.rationale)}${tag}`;
+    }),
   );
   return lines.join('\n');
 }

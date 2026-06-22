@@ -12,7 +12,9 @@ describe('buildSignal', () => {
     expect(sig.symbol).toBe('NVDA');
     expect(sig.band).toBe('STRONG_BUY');
     expect(sig.conviction).toBeCloseTo(0.9, 6); // |S|/2 capped at 1
-    expect(sig.plan.rationales).toEqual([{ agentId: 'technical', rationale: 'breakout' }]);
+    expect(sig.plan.rationales).toEqual([
+      { agentId: 'technical', rationale: 'breakout', model: null, source: null },
+    ]);
   });
 
   it('emits NO_CONSENSUS when the round did not converge', () => {
@@ -35,6 +37,12 @@ describe('buildSignal', () => {
     const sig = buildSignal(evalResult, { symbol: 'NVDA', votes });
     expect(sig.plan.degradedQuorum).toBe(true);
     expect(sig.plan.nEff).toBe(2);
+  });
+
+  it('carries served model and source onto each rationale', () => {
+    const votes = [{ agentId: 'news', rationale: 'r', model: 'gpt-oss:20b', source: 'pc' }];
+    const sig = buildSignal({ converged: true, band: 'BUY', S: 2, kappa: 1 }, { symbol: 'AAA', votes });
+    expect(sig.plan.rationales[0]).toMatchObject({ agentId: 'news', model: 'gpt-oss:20b', source: 'pc' });
   });
 
   it('omits the degraded tag on a full panel', () => {

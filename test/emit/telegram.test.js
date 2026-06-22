@@ -65,4 +65,26 @@ describe('formatSignal', () => {
     });
     expect(text).not.toContain('degraded');
   });
+
+  it('appends served model and location to each agent line', () => {
+    const signal = {
+      symbol: 'AAA', band: 'BUY', conviction: 1,
+      plan: { rationales: [{ agentId: 'news', rationale: 'up', model: 'gpt-oss:20b', source: 'pc' }] },
+    };
+    const out = formatSignal(signal);
+    // hyphens are MarkdownV2-escaped in the model tag
+    expect(out).toContain('gpt\\-oss:20b');
+    expect(out).toContain('onprem');
+  });
+
+  it('omits the tag when model is null', () => {
+    const signal = {
+      symbol: 'AAA', band: 'BUY', conviction: 1,
+      plan: { rationales: [{ agentId: 'news', rationale: 'up', model: null, source: null }] },
+    };
+    // rationale line should have no model tag — no extra parens beyond the conviction line
+    const lines = formatSignal(signal).split('\n');
+    const rationaleLines = lines.filter((l) => l.startsWith('•'));
+    expect(rationaleLines.every((l) => !l.includes('('))).toBe(true);
+  });
 });

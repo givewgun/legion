@@ -4,7 +4,12 @@
 // is tagged on the plan so the dashboard and Telegram can show the weakened
 // single-outlier guarantee instead of presenting the call as full-panel.
 export function buildSignal(evalResult, { symbol, votes }) {
-  const rationales = votes.map((v) => ({ agentId: v.agentId, rationale: v.rationale }));
+  const rationales = votes.map((v) => ({
+    agentId: v.agentId,
+    rationale: v.rationale,
+    model: v.model ?? null,
+    source: v.source ?? null,
+  }));
   const degraded = evalResult.degraded ? { degradedQuorum: true, nEff: evalResult.nEff } : {};
   if (!evalResult.converged) {
     return {
