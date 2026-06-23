@@ -67,20 +67,51 @@ namespace Legion {
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
     [DllImport("user32.dll")] static extern IntPtr GetDesktopWindow();
     [DllImport("user32.dll")] static extern IntPtr GetShellWindow();
+    [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+    [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr hWnd, uint flags);
+    [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO mi);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; }
-    // True when the foreground window covers (or exceeds) the full virtual
-    // screen and is not the desktop/shell - i.e. an exclusive-fullscreen game
-    // or video. screenW/H are passed in from PowerShell (System.Windows.Forms).
-    public static bool ForegroundIsFullscreen(int screenW, int screenH) {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MONITORINFO { public int cbSize; public RECT rcMonitor; public RECT rcWork; public uint dwFlags; }
+    const int GWL_STYLE = -16;
+    const int WS_CAPTION = 0x00C00000;       // title bar = WS_BORDER | WS_DLGFRAME
+    const uint MONITOR_DEFAULTTONEAREST = 2;
+
+    // Process name owning the foreground window, or "" when there is no accessible
+    // foreground window - which is what the default desktop sees while the box is
+    // locked / on the secure (logon) desktop. Lets the busy check tell a locked or
+    // asleep machine (free for Legion) apart from someone actively using it.
+    public static string ForegroundProcessName() {
+      IntPtr fg = GetForegroundWindow();
+      if (fg == IntPtr.Zero) return "";
+      uint pid;
+      GetWindowThreadProcessId(fg, out pid);
+      try { return System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; }
+      catch { return ""; }
+    }
+
+    // True only for a real exclusive/borderless full-screen app (a game or a
+    // full-screen video): the foreground window must cover its OWN monitor (not the
+    // primary one - multi-monitor safe) AND have no title bar. A normal maximized
+    // editor/browser keeps WS_CAPTION and is never treated as full-screen, so it no
+    // longer falsely marks the box busy.
+    public static bool ForegroundIsFullscreen() {
       IntPtr fg = GetForegroundWindow();
       if (fg == IntPtr.Zero) return false;
       if (fg == GetDesktopWindow() || fg == GetShellWindow()) return false;
+      if ((GetWindowLong(fg, GWL_STYLE) & WS_CAPTION) == WS_CAPTION) return false;
       RECT r;
       if (!GetWindowRect(fg, out r)) return false;
-      int w = r.Right - r.Left;
-      int h = r.Bottom - r.Top;
-      return w >= screenW && h >= screenH;
+      IntPtr mon = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
+      MONITORINFO mi = new MONITORINFO();
+      mi.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+      if (!GetMonitorInfo(mon, ref mi)) return false;
+      int w = r.Right - r.Left, h = r.Bottom - r.Top;
+      int mw = mi.rcMonitor.Right - mi.rcMonitor.Left;
+      int mh = mi.rcMonitor.Bottom - mi.rcMonitor.Top;
+      return w >= mw && h >= mh;
     }
   }
 }
@@ -92,10 +123,21 @@ function Get-IdleSeconds {
 }
 
 function Test-ForegroundFullscreen {
+  try { return [Legion.IdleInfo]::ForegroundIsFullscreen() } catch { return $false }
+}
+
+# Foreground-owning processes that mean the workstation is locked or showing the
+# logon UI. The lock screen is itself a borderless, monitor-covering window, so
+# without this it would read as a full-screen app — exactly backwards, since a
+# locked / asleep box is the BEST time for Legion to use the GPU.
+$script:LockScreenProcesses = @('LockApp', 'LogonUI', 'Winlogon')
+
+# True when the session is locked / asleep: either the lock-screen process owns the
+# foreground, or there is no accessible foreground window (secure desktop).
+function Test-SessionLocked {
   try {
-    Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
-    $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-    return [Legion.IdleInfo]::ForegroundIsFullscreen($b.Width, $b.Height)
+    $name = [Legion.IdleInfo]::ForegroundProcessName()
+    return ([string]::IsNullOrEmpty($name) -or $script:LockScreenProcesses -contains $name)
   } catch { return $false }
 }
 
@@ -127,12 +169,17 @@ function Get-RunningBusyProcess {
   return $null
 }
 
-# Returns a PSCustomObject: Busy (bool), Reason (string), IdleSec, Fullscreen, NonOllamaVramMiB.
+# Returns a PSCustomObject: Busy (bool), Reason (string), IdleSec, Locked, Fullscreen, NonOllamaVramMiB.
 # Input idle time is measured for diagnostics only — light desktop use does not
 # mark the box busy; only GPU contention (fullscreen / VRAM / a named process) does.
+# A locked / asleep box is treated as FREE: its lock screen is a borderless
+# full-screen window, so the fullscreen reason is suppressed while locked. A named
+# busy process or real non-Ollama VRAM use still counts even when locked (e.g. a
+# background render the user left running).
 function Get-BusyState {
   $idle = Get-IdleSeconds
-  $full = Test-ForegroundFullscreen
+  $locked = Test-SessionLocked
+  $full = if ($locked) { $false } else { Test-ForegroundFullscreen }
   $vram = Get-NonOllamaVramMiB
   $proc = Get-RunningBusyProcess
   $reasons = @()
@@ -141,8 +188,9 @@ function Get-BusyState {
   if ($proc) { $reasons += "process(${proc})" }
   return [pscustomobject]@{
     Busy             = ($reasons.Count -gt 0)
-    Reason           = if ($reasons.Count) { $reasons -join ',' } else { 'ready' }
+    Reason           = if ($reasons.Count) { $reasons -join ',' } else { if ($locked) { 'ready(locked)' } else { 'ready' } }
     IdleSec          = [math]::Round($idle)
+    Locked           = $locked
     Fullscreen       = $full
     NonOllamaVramMiB = $vram
   }
