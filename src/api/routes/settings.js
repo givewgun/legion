@@ -68,7 +68,7 @@ export function settingsRoutes(repo, cfg = {}, fetchImpl = fetch) {
   // Models pulled on the home PC, for the model dropdown. Proxies the sidecar's
   // /api/tags. Fail-soft: no URL / unreachable / asleep / busy 503 → empty list, so the
   // UI degrades to free-text rather than erroring.
-  router.get('/pc-models', async (req, res, next) => {
+  router.get('/pc-models', async (req, res) => {
     const url = cfg.home?.url;
     if (!url) return res.json({ models: [] });
     const controller = new AbortController();
