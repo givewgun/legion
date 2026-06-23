@@ -105,7 +105,7 @@ describe('loadConfig', () => {
     const cfg = loadConfig({});
     expect(cfg.home).toEqual({
       url: '',
-      model: 'qwen3:14b',
+      model: 'qwen3:8b',
       think: null,
       probeTimeoutMs: 1500,
       timeoutMs: 3600000,

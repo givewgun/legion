@@ -18,8 +18,8 @@
 
 [CmdletBinding()]
 param(
-  [string]   $Model            = 'qwen3:14b', # capable reasoning model: still fits 2 parallel slots on 16 GB
-  [int]      $NumParallel      = 2,     # concurrent inferences on the GPU — needs VRAM headroom
+  [string]   $Model            = 'qwen3:8b',  # capable reasoning model (~5 GB): leaves headroom for several parallel slots on 16 GB
+  [int]      $NumParallel      = 4,     # concurrent inferences on the GPU — needs VRAM headroom
   [int]      $GatePort         = 11435,
   [int]      $SleepTimeoutMin  = 60,    # idle minutes before the PC sleeps
   [int]      $VramThresholdMiB = 4000,  # "busy" if non-Ollama VRAM exceeds this

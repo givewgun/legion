@@ -22,7 +22,7 @@ $script:OllamaUrl = if ($env:LEGION_OLLAMA_URL) { $env:LEGION_OLLAMA_URL } else 
 $script:GatePort = if ($env:LEGION_GATE_PORT) { [int]$env:LEGION_GATE_PORT } else { 11435 }
 
 # Model to keep warm / advertise.
-$script:Model = if ($env:LEGION_HOME_MODEL) { $env:LEGION_HOME_MODEL } else { 'qwen3:14b' }
+$script:Model = if ($env:LEGION_HOME_MODEL) { $env:LEGION_HOME_MODEL } else { 'qwen3:8b' }
 
 # BUSY if non-Ollama processes hold more than this much VRAM (a running game, a
 # render, etc.). MiB. Set high enough to clear ordinary desktop/browser GPU use
