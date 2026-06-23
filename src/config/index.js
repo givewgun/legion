@@ -74,10 +74,10 @@ export function loadConfig(env = process.env) {
     // sleeping PC fails fast to Oracle instead of hanging the cycle.
     home: {
       url: env.HOME_OLLAMA_URL || '',
-      // qwen3:14b — a capable reasoning ("thinking") model (~9 GB) that still fits
-      // the 16 GB card with room for OLLAMA_NUM_PARALLEL=2, so the home PC serves
-      // two agents at once instead of serializing one slow 20B call.
-      model: env.HOME_MODEL || 'qwen3:14b',
+      // qwen3:8b — a capable reasoning ("thinking") model (~5 GB) that leaves plenty
+      // of the 16 GB card free for OLLAMA_NUM_PARALLEL slots, so the home PC serves
+      // several agents at once and finishes a sweep far faster than the larger 14b/20b.
+      model: env.HOME_MODEL || 'qwen3:8b',
       think: bool(env, 'HOME_THINK'),
       probeTimeoutMs: num(env, 'HOME_PROBE_TIMEOUT_MS', 1500),
       // PC-preferred routing commits to the PC and queues rather than failing over,

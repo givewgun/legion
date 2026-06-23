@@ -1,16 +1,16 @@
 # Legion home-PC model server
 
 Turn this Windows PC (RTX 5060 Ti) into Legion's model server: it serves a capable
-reasoning model (`qwen3:14b`) over Tailscale when it's awake and you're not using it,
+reasoning model (`qwen3:8b`) over Tailscale when it's awake and you're not using it,
 self-wakes ~10 min before each market cycle, and sleeps back when idle. Legion is
 **PC-preferred** — whenever the PC is available it commits to it (queuing if busy),
 and only falls back to the Oracle VM's `qwen2.5:7b` when the PC is asleep, busy, or
-off. The PC is faster than the VM, so a loaded PC queues rather than spilling the
-sweep to Oracle.
+off (set `HOME_FALLBACK=false` to pin the PC and never spill to Oracle). The PC is
+faster than the VM, so a loaded PC queues rather than spilling the sweep to Oracle.
 
-`qwen3:14b` (~9 GB) fits the 16 GB card with room for two KV-cache slots, so
-`setup.ps1` sets `OLLAMA_NUM_PARALLEL` (default 2) and the GPU serves two agents
-**concurrently** instead of serializing one slow 20B call. Tune `-Model` /
+`qwen3:8b` (~5 GB) leaves the 16 GB card with room for several KV-cache slots, so
+`setup.ps1` sets `OLLAMA_NUM_PARALLEL` (default 4) and the GPU serves several agents
+**concurrently** instead of serializing one slow large-model call. Tune `-Model` /
 `-NumParallel` if you change cards.
 
 These four scripts are the whole PC side. You run **one** of them.
@@ -47,7 +47,7 @@ When it finishes it prints the three env vars to put on the **Legion** side (`.e
 
 ```
 HOME_OLLAMA_URL=http://<this-pc-tailscale-ip>:11435
-HOME_MODEL=qwen3:14b
+HOME_MODEL=qwen3:8b
 HOME_THINK=true
 ```
 
@@ -73,7 +73,7 @@ curl http://<this-pc-tailscale-ip>:11435/api/tags
 Behaviour checklist:
 
 - **PC asleep** → VM's probe fails fast (~1.5s) → cycle runs on Oracle. No hang.
-- **PC awake, GPU free** → cycle runs on `qwen3:14b`, even while you browse/type.
+- **PC awake, GPU free** → cycle runs on `qwen3:8b`, even while you browse/type.
   Confirm on the VM:
   `psql "$DATABASE_URL" -c "SELECT DISTINCT model FROM legion.signal_votes;"`
 - **You're gaming / GPU-heavy work** → sidecar returns 503 → cycle runs on Oracle.
@@ -109,7 +109,7 @@ task). Or just leave the dashboard toggle OFF (level 1) — simpler.
 # elevated
 powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 # add -RevertPower to also disable wake timers + reset the sleep timeout
-# add -RemoveModel to also delete qwen3:14b (~9 GB)
+# add -RemoveModel to also delete qwen3:8b (~5 GB)
 ```
 
 It stops + removes the sidecar and wake/prime tasks, deletes the firewall rule,
@@ -133,7 +133,7 @@ Re-run `setup.ps1` with parameters to change behaviour:
 
 ```powershell
 # tighter "busy" guard, sleep sooner, different model, block while a game runs
-powershell -ExecutionPolicy Bypass -File .\setup.ps1 -VramThresholdMiB 3000 -SleepTimeoutMin 30 -Model qwen3:14b -BusyProcesses Cyberpunk2077,obs64
+powershell -ExecutionPolicy Bypass -File .\setup.ps1 -VramThresholdMiB 3000 -SleepTimeoutMin 30 -Model qwen3:14b -NumParallel 2 -BusyProcesses Cyberpunk2077,obs64
 ```
 
 - `-VramThresholdMiB` — non-Ollama VRAM that counts as busy (default 4000). Light
