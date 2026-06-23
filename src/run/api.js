@@ -42,5 +42,5 @@ const auth = {
   repo,
 };
 
-const app = createApp({ repo, orchestrator, gunvest, horizonDays: cfg.horizonDays, auth });
+const app = createApp({ repo, orchestrator, gunvest, horizonDays: cfg.horizonDays, auth, cfg });
 app.listen(cfg.apiPort, () => console.log(`[api] listening on :${cfg.apiPort}`));

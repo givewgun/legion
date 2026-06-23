@@ -179,29 +179,39 @@ describe('createRepo', () => {
     expect(leaderboard[0]).toMatchObject({ agentId: 'news', model: 'gpt-oss:20b', rho: 1.3 });
   });
 
-  it('getHomePcEnabled returns true when no row exists', async () => {
-    const pool = poolReturning([[]]); // queryOne returns undefined
-    const repo = createRepo(createDb(pool));
-    expect(await repo.getHomePcEnabled()).toBe(true);
-  });
-
-  it('getHomePcEnabled returns false when the row value is "false"', async () => {
-    const pool = poolReturning([[{ value: 'false' }]]);
-    const repo = createRepo(createDb(pool));
-    expect(await repo.getHomePcEnabled()).toBe(false);
-  });
-
-  it('getHomePcEnabled returns true when the row value is "true"', async () => {
-    const pool = poolReturning([[{ value: 'true' }]]);
-    const repo = createRepo(createDb(pool));
-    expect(await repo.getHomePcEnabled()).toBe(true);
-  });
-
-  it('setHomePcEnabled upserts the key with the string value', async () => {
+  it('getRuntimeConfig returns an empty map when no rows exist', async () => {
     const pool = poolReturning([[]]);
     const repo = createRepo(createDb(pool));
-    await repo.setHomePcEnabled(false);
+    expect(await repo.getRuntimeConfig()).toEqual({});
+  });
+
+  it('getRuntimeConfig maps key/value rows', async () => {
+    const pool = poolReturning([
+      [
+        { key: 'home_pc_enabled', value: 'false' },
+        { key: 'home_model', value: 'qwen3:8b' },
+      ],
+    ]);
+    const repo = createRepo(createDb(pool));
+    expect(await repo.getRuntimeConfig()).toEqual({
+      home_pc_enabled: 'false',
+      home_model: 'qwen3:8b',
+    });
+  });
+
+  it('setRuntimeConfig upserts the key with the stringified value', async () => {
+    const pool = poolReturning([[]]);
+    const repo = createRepo(createDb(pool));
+    await repo.setRuntimeConfig('home_timeout_ms', 600000);
     expect(pool.calls[0].text).toMatch(/INSERT INTO legion\.runtime_config/);
-    expect(pool.calls[0].params).toEqual(['false']);
+    expect(pool.calls[0].params).toEqual(['home_timeout_ms', '600000']);
+  });
+
+  it('deleteRuntimeConfig removes the key', async () => {
+    const pool = poolReturning([[]]);
+    const repo = createRepo(createDb(pool));
+    await repo.deleteRuntimeConfig('home_model');
+    expect(pool.calls[0].text).toMatch(/DELETE FROM legion\.runtime_config/);
+    expect(pool.calls[0].params).toEqual(['home_model']);
   });
 });

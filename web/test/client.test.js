@@ -29,9 +29,16 @@ describe('api client auth helpers', () => {
   });
 
   it('setSettings PUTs /api/settings with body', async () => {
-    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({ homePcEnabled: false }) });
-    const out = await api.setSettings({ homePcEnabled: false });
-    expect(out).toEqual({ homePcEnabled: false });
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({ settings: {} }) });
+    const out = await api.setSettings({ home_model: 'qwen3:8b' });
+    expect(out).toEqual({ settings: {} });
     expect(fetchMock).toHaveBeenCalledWith('/api/settings', expect.objectContaining({ method: 'PUT' }));
+  });
+
+  it('getPcModels GETs /api/settings/pc-models', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({ models: ['qwen3:8b'] }) });
+    const out = await api.getPcModels();
+    expect(out).toEqual({ models: ['qwen3:8b'] });
+    expect(fetchMock).toHaveBeenCalledWith('/api/settings/pc-models');
   });
 });

@@ -748,22 +748,27 @@ export function createRepo(db) {
       return { startingCash: Number(row.starting_cash), horizonDays: row.horizon_days };
     },
 
-    // ── Global runtime flags (ADR 0031) ────────────────────────────────────────
+    // ── Global runtime config (ADR 0031) ───────────────────────────────────────
+    // Generic key/value overrides, read per cycle and overlaid on the env-derived
+    // config (see src/config/runtime-keys.js + runtime-overrides.js). Values are stored
+    // as text; coercion lives in the overlay so the repo stays schema-agnostic.
 
-    async getHomePcEnabled() {
-      const row = await db.queryOne(
-        `SELECT value FROM legion.runtime_config WHERE key = 'home_pc_enabled'`,
-      );
-      return row ? row.value === 'true' : true; // default ON when unset
+    async getRuntimeConfig() {
+      const rows = await db.query(`SELECT key, value FROM legion.runtime_config`);
+      return Object.fromEntries(rows.map((r) => [r.key, r.value]));
     },
 
-    async setHomePcEnabled(enabled) {
+    async setRuntimeConfig(key, value) {
       await db.query(
         `INSERT INTO legion.runtime_config (key, value, updated_at)
-         VALUES ('home_pc_enabled', $1, now())
+         VALUES ($1, $2, now())
          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
-        [enabled ? 'true' : 'false'],
+        [key, String(value)],
       );
+    },
+
+    async deleteRuntimeConfig(key) {
+      await db.query(`DELETE FROM legion.runtime_config WHERE key = $1`, [key]);
     },
   };
 }
