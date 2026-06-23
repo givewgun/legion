@@ -2,10 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { buildGetProvider } from '../../src/agents/get-provider.js';
 import { DEFAULT_MODELS } from '../../src/llm/provider.js';
 
-function repoStub(map, homePcEnabled = true) {
+function repoStub(map, runtimeConfig = {}) {
   return {
     getAgentConfig: async (id) => map[id] ?? null,
-    getHomePcEnabled: async () => homePcEnabled,
+    getRuntimeConfig: async () => runtimeConfig,
   };
 }
 
@@ -66,12 +66,28 @@ describe('buildGetProvider', () => {
     };
     const repo = {
       getAgentConfig: async () => ({ provider: 'local', model: null, enabled: true }),
-      getHomePcEnabled: async () => false,
+      getRuntimeConfig: async () => ({ home_pc_enabled: 'false' }),
     };
     const cfg = { ollama: { url: 'o' }, home: { url: 'http://pc:11434', enabled: true, model: 'gpt-oss:20b' } };
     const getProvider = buildGetProvider({ repo, cfg, factory });
     await getProvider({ agentId: 'news' });
     expect(receivedCfgs).toHaveLength(1);
     expect(receivedCfgs[0].cfg.home.enabled).toBe(false);
+  });
+
+  it('overlays a runtime home_model override onto the home tier', async () => {
+    const receivedCfgs = [];
+    const factory = (opts, cfg) => {
+      receivedCfgs.push(cfg);
+      return { name: opts.type, model: opts.model, generate: async () => 'x' };
+    };
+    const repo = {
+      getAgentConfig: async () => ({ provider: 'local', model: null, enabled: true }),
+      getRuntimeConfig: async () => ({ home_model: 'qwen3:8b' }),
+    };
+    const cfg = { ollama: { url: 'o' }, home: { url: 'http://pc:11434', enabled: true, model: 'qwen3:14b' } };
+    const getProvider = buildGetProvider({ repo, cfg, factory });
+    await getProvider({ agentId: 'news' });
+    expect(receivedCfgs[0].home.model).toBe('qwen3:8b');
   });
 });

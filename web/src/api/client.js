@@ -46,4 +46,5 @@ export const api = {
   removeFromWatchlist: (symbol) => send('DELETE', `/api/watchlist/${symbol}`),
   getSettings: () => get('/api/settings'),
   setSettings: (body) => send('PUT', '/api/settings', body),
+  getPcModels: () => get('/api/settings/pc-models'),
 };

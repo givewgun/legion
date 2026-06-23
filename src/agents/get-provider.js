@@ -1,4 +1,5 @@
 import { resolveProvider, createProvider, withAgentOptions, withModel } from '../llm/provider.js';
+import { applyRuntimeOverrides } from '../config/runtime-overrides.js';
 
 // Builds the per-cycle getProvider({ agentId }) callback the agent factory uses to
 // honor runtime config in legion.agent_config. Resolution per cycle means a change
@@ -22,19 +23,20 @@ export function buildGetProvider({ repo, cfg = {}, factory, options = null }) {
     if (!c) return null;
     if (c.enabled === false) return { enabled: false };
 
-    // Global kill switch: a per-cycle DB read so a dashboard flip takes effect
-    // next cycle with no redeploy. Defaults ON when unset.
-    const homeEnabled = (await repo.getHomePcEnabled?.()) ?? true;
-    const cfgWithToggle = { ...cfg, home: { ...cfg.home, enabled: homeEnabled } };
+    // Runtime config: a per-cycle DB read of legion.runtime_config overlaid on the
+    // env-derived cfg, so a dashboard change to the model / fallback / toggle / timeouts
+    // takes effect next cycle with no redeploy. Absent rows keep the env defaults.
+    const overrides = (await repo.getRuntimeConfig?.()) ?? {};
+    const cfgWithOverrides = applyRuntimeOverrides(cfg, overrides);
 
-    // Wrap factory to forward cfgWithToggle as a second argument so tests can
-    // assert the toggle overlay without needing a live provider.
+    // Wrap factory to forward cfgWithOverrides as a second argument so tests can
+    // assert the overlay without needing a live provider.
     const buildWithCfg = (opts) =>
       factory
-        ? factory(opts, cfgWithToggle)
+        ? factory(opts, cfgWithOverrides)
         : createProvider(
             opts.type,
-            withModel(withAgentOptions(cfgWithToggle, options), opts.type, opts.model),
+            withModel(withAgentOptions(cfgWithOverrides, options), opts.type, opts.model),
           );
 
     return {

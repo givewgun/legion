@@ -18,7 +18,14 @@ import { httpMetricsMiddleware } from '../instrumentation/metrics.js';
 // /health) is gated by requireUser; per-user routes (watchlist, portfolio) read
 // req.user. Without `auth`, gating is skipped — used by route unit tests that
 // exercise business logic directly.
-export function createApp({ repo, orchestrator = null, gunvest = null, horizonDays = 5, auth = null }) {
+export function createApp({
+  repo,
+  orchestrator = null,
+  gunvest = null,
+  horizonDays = 5,
+  auth = null,
+  cfg = {},
+}) {
   const app = express();
   app.use(express.json());
   app.use(httpMetricsMiddleware);
@@ -46,7 +53,7 @@ export function createApp({ repo, orchestrator = null, gunvest = null, horizonDa
   app.use('/api/agents', agentRoutes(repo));
   app.use('/api/watchlist', watchlistRoutes(repo));
   app.use('/api/portfolio', portfolioRoutes(repo, gunvest, { horizonDays }));
-  app.use('/api/settings', settingsRoutes(repo));
+  app.use('/api/settings', settingsRoutes(repo, cfg));
 
   app.use((err, req, res, _next) => {
     res.status(500).json({ error: err.message });
