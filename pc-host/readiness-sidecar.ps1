@@ -80,6 +80,7 @@ $worker = {
           ready            = (-not $b.Busy)
           reason           = $b.Reason
           idleSec          = $b.IdleSec
+          locked           = $b.Locked
           fullscreen       = $b.Fullscreen
           nonOllamaVramMiB = $b.NonOllamaVramMiB
           gpuFreeMiB       = (Get-GpuFreeMiB)
