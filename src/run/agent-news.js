@@ -17,7 +17,12 @@ const provider = createProvider(newsConfig.provider, withAgentOptions(cfg, newsC
 // Honor runtime per-agent config (provider/model/enabled) from legion.agent_config,
 // resolved per cycle so dashboard changes apply on the next evaluation.
 const repo = createRepo(connectDb(cfg.databaseUrl));
-const getProvider = buildGetProvider({ repo, cfg, options: newsConfig.options });
+const getProvider = buildGetProvider({
+  repo,
+  cfg,
+  options: newsConfig.options,
+  defaultProvider: newsConfig.provider,
+});
 // Outcome-grounded memory (ADR 0025): the agent sees its own graded record.
 const getMemory = buildGetMemory({ repo, agentId: newsConfig.id });
 

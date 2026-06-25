@@ -17,7 +17,12 @@ const provider = createProvider(socialConfig.provider, withAgentOptions(cfg, soc
 // Honor runtime per-agent config (provider/model/enabled) from legion.agent_config,
 // resolved per cycle so dashboard changes apply on the next evaluation.
 const repo = createRepo(connectDb(cfg.databaseUrl));
-const getProvider = buildGetProvider({ repo, cfg, options: socialConfig.options });
+const getProvider = buildGetProvider({
+  repo,
+  cfg,
+  options: socialConfig.options,
+  defaultProvider: socialConfig.provider,
+});
 // Outcome-grounded memory (ADR 0025): the agent sees its own graded record.
 const getMemory = buildGetMemory({ repo, agentId: socialConfig.id });
 

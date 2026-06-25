@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { buildGetProvider } from '../../src/agents/get-provider.js';
-import { DEFAULT_MODELS } from '../../src/llm/provider.js';
 
 function repoStub(map, runtimeConfig = {}) {
   return {
@@ -10,13 +9,23 @@ function repoStub(map, runtimeConfig = {}) {
 }
 
 describe('buildGetProvider', () => {
-  it('returns null when the agent has no persisted config (keep static provider)', async () => {
+  it('builds the default provider (not null) when the agent has no persisted row', async () => {
+    // No per-agent row must still produce a provider so the GLOBAL runtime overrides
+    // apply; the model is left to cfg (null = no per-agent override).
+    const calls = [];
+    const factory = (opts) => {
+      calls.push(opts);
+      return { generate: async () => '' };
+    };
     const getProvider = buildGetProvider({
       repo: repoStub({}),
       cfg: {},
-      factory: () => ({ generate: async () => '' }),
+      factory,
+      defaultProvider: 'local',
     });
-    expect(await getProvider({ agentId: 'technical' })).toBeNull();
+    const out = await getProvider({ agentId: 'technical' });
+    expect(out).toEqual({ provider: { generate: expect.any(Function) }, enabled: true });
+    expect(calls[0]).toEqual({ type: 'local', model: null });
   });
 
   it('resolves the persisted provider/model and reports enabled', async () => {
@@ -33,7 +42,7 @@ describe('buildGetProvider', () => {
     expect(out).toEqual({ provider: sentinel, enabled: true });
   });
 
-  it('fills the default model when the row has none', async () => {
+  it('passes a null model through when the row has none (cfg supplies the model)', async () => {
     const calls = [];
     const factory = (opts) => {
       calls.push(opts);
@@ -42,7 +51,7 @@ describe('buildGetProvider', () => {
     const repo = repoStub({ news: { provider: 'local', model: null, enabled: true } });
     const getProvider = buildGetProvider({ repo, cfg: {}, factory });
     await getProvider({ agentId: 'news' });
-    expect(calls[0]).toEqual({ type: 'local', model: DEFAULT_MODELS.local });
+    expect(calls[0]).toEqual({ type: 'local', model: null });
   });
 
   it('short-circuits a disabled agent without constructing a provider', async () => {
@@ -73,6 +82,32 @@ describe('buildGetProvider', () => {
     await getProvider({ agentId: 'news' });
     expect(receivedCfgs).toHaveLength(1);
     expect(receivedCfgs[0].cfg.home.enabled).toBe(false);
+  });
+
+  it('applies global runtime overrides even when the agent has no per-agent row', async () => {
+    // The whole point of runtime_config is global, no-redeploy knobs (fallback, model,
+    // toggle). They must take effect for an agent that has never been saved on the
+    // per-agent Agents tab — otherwise the static env-built provider is used and the
+    // dashboard toggles are silently ignored.
+    const receivedCfgs = [];
+    const factory = (opts, cfg) => {
+      receivedCfgs.push(cfg);
+      return { name: opts.type, model: opts.model, generate: async () => 'x' };
+    };
+    const repo = {
+      getAgentConfig: async () => null, // never saved a per-agent row
+      getRuntimeConfig: async () => ({ home_fallback: 'true', home_model: 'qwen3:8b' }),
+    };
+    const cfg = {
+      ollama: { url: 'o', model: 'oracle-m' },
+      home: { url: 'http://pc:11434', enabled: true, fallback: false, model: 'qwen3:14b' },
+    };
+    const getProvider = buildGetProvider({ repo, cfg, factory, defaultProvider: 'local' });
+    const out = await getProvider({ agentId: 'news' });
+    expect(out.enabled).toBe(true);
+    expect(receivedCfgs).toHaveLength(1);
+    expect(receivedCfgs[0].home.fallback).toBe(true);
+    expect(receivedCfgs[0].home.model).toBe('qwen3:8b');
   });
 
   it('overlays a runtime home_model override onto the home tier', async () => {
