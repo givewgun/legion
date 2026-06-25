@@ -3,7 +3,7 @@
 # at this process (http://<pc-tailnet-ip>:11435). Behaviour:
 #
 #   GET  /ready          -> JSON { ready, reason, gpuFreeMiB, idleSec, ... } (never proxied)
-#   GET  /api/tags       -> 503 when busy (Legion's health probe), else proxied to Ollama
+#   GET  /api/tags       -> 503 when busy (model-list probe), else proxied to Ollama
 #   *    /api/*          -> 503 when busy, else reverse-proxied to the local Ollama
 #
 # When busy (a fullscreen app, non-Ollama VRAM in use, or a named busy process)
@@ -11,11 +11,21 @@
 # stealing the GPU. Ollama itself listens only on 127.0.0.1, so this gate is the
 # single network entry point.
 #
-# CONCURRENCY: a worker POOL services the shared HttpListener so a long-running
-# /api/generate (qwen3:14b can think for minutes) NEVER blocks the cheap /ready and
-# /api/tags health probes — a single-threaded loop did, which made every concurrent
-# agent's 1.5s probe time out and spill the sweep to Oracle. Multiple workers also let
-# Ollama's OLLAMA_NUM_PARALLEL slots actually serve more than one agent at a time.
+# CONCURRENCY — TWO ISOLATED LISTENER POOLS (the key to PC-preferred routing):
+# Legion's readiness probe is GET /ready; it must answer in ~1.5s or the agent
+# load-sheds to Oracle. A long /api/generate (qwen3 can think for minutes) holds its
+# worker the whole time. With a SINGLE shared pool, a full sweep occupies every
+# worker and the cheap /ready probe waits behind them, times out, and spills the
+# sweep to Oracle even though the PC is merely BUSY WITH OTHER VOTES (not offline).
+# To make "busy with votes" mean WAIT (not fall back), /ready gets its own dedicated
+# HttpListener + pool that NEVER proxies a generate, so it answers instantly under
+# any load. HTTP.sys routes by URL path prefix, so two listeners can share the port:
+#   - health listener  (prefix /ready/) : tiny pool, only the cheap busy-state check.
+#   - proxy  listener  (prefix /api/)   : main pool, generates + tags (queues behind
+#                                          OLLAMA_NUM_PARALLEL slots, the wanted wait).
+# Net: PC reachable+idle -> /ready 200 ready:true -> Legion commits & queues on the PC.
+#      PC busy-gated (you're gaming) -> /ready 200 ready:false -> Legion -> Oracle.
+#      PC offline -> /ready unreachable -> Legion -> Oracle.
 #
 # Runs forever; the setup registers it as an at-logon scheduled task that restarts
 # on failure. Run manually to test: powershell -ExecutionPolicy Bypass -File readiness-sidecar.ps1
@@ -25,46 +35,90 @@ $ErrorActionPreference = 'Stop'
 $cfgFile = Join-Path $PSScriptRoot 'legion-pc.config.ps1'
 if (Test-Path $cfgFile) { . $cfgFile }  # optional setup-written overrides
 
-$prefix = "http://+:$script:GatePort/"
-$listener = [System.Net.HttpListener]::new()
-$listener.Prefixes.Add($prefix)
+# Two listeners on the one port, split by URL path prefix so each owns an isolated
+# HTTP.sys request queue (and thus an isolated worker pool — see header).
+$healthPrefix = "http://+:$script:GatePort/ready/"
+$apiPrefix    = "http://+:$script:GatePort/api/"
+$healthListener = [System.Net.HttpListener]::new()
+$healthListener.Prefixes.Add($healthPrefix)
+$apiListener = [System.Net.HttpListener]::new()
+$apiListener.Prefixes.Add($apiPrefix)
 
 try {
-  $listener.Start()
+  $healthListener.Start()
+  $apiListener.Start()
 } catch {
-  Write-Error "Failed to bind $prefix. Run the setup script (it registers the sidecar elevated so HttpListener can bind '+'). $_"
+  Write-Error "Failed to bind on port $script:GatePort. Run the setup script (it registers the sidecar elevated so HttpListener can bind '+'). $_"
   exit 1
 }
 
-# How many requests can be in flight at once. Needs to cover OLLAMA_NUM_PARALLEL
-# concurrent generates PLUS headroom for the cheap probes that arrive meanwhile.
+# Proxy pool size: covers OLLAMA_NUM_PARALLEL concurrent generates PLUS headroom for
+# /api/tags. Health pool is small and dedicated — it only runs the cheap busy check,
+# never a generate, so a couple of workers keep /ready instant under any sweep.
 $workerCount = if ($env:LEGION_SIDECAR_WORKERS) { [int]$env:LEGION_SIDECAR_WORKERS } else { 6 }
-Write-Host "[sidecar] listening on $prefix -> $script:OllamaUrl (model $script:Model), $workerCount workers"
+$healthWorkerCount = if ($env:LEGION_HEALTH_WORKERS) { [int]$env:LEGION_HEALTH_WORKERS } else { 2 }
+Write-Host "[sidecar] /ready x$healthWorkerCount, /api x$workerCount on port $script:GatePort -> $script:OllamaUrl (model $script:Model)"
 
-# One worker's accept+handle loop. Dot-sources the shared module so it has the busy
-# helpers and config in its own runspace; owns its own HttpClient (HttpClient is
-# thread-safe, but a per-worker instance keeps the long generate timeout isolated).
-$worker = {
-  param($listener, $scriptRoot)
+# Shared response helper, dot-sourceable into either worker's runspace.
+$writeJson = @'
+function Write-Json($context, [int]$status, $obj) {
+  $json = $obj | ConvertTo-Json -Compress
+  $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+  $context.Response.StatusCode = $status
+  $context.Response.ContentType = 'application/json'
+  $context.Response.ContentLength64 = $bytes.Length
+  $context.Response.OutputStream.Write($bytes, 0, $bytes.Length)
+  $context.Response.OutputStream.Close()
+}
+'@
+
+# Health worker: serves ONLY /ready off the health listener. Never proxies, so it can
+# never be blocked by an in-flight generate — that isolation is the whole point.
+$healthWorker = {
+  param($listener, $scriptRoot, $writeJson)
 
   . "$scriptRoot\legion-pc-common.ps1"
   $cfg = Join-Path $scriptRoot 'legion-pc.config.ps1'
   if (Test-Path $cfg) { . $cfg }
+  Invoke-Expression $writeJson
+
+  while ($listener.IsListening) {
+    $context = $null
+    try {
+      $context = $listener.GetContext()
+      $b = Get-BusyState
+      Write-Json $context 200 @{
+        ready            = (-not $b.Busy)
+        reason           = $b.Reason
+        idleSec          = $b.IdleSec
+        locked           = $b.Locked
+        fullscreen       = $b.Fullscreen
+        nonOllamaVramMiB = $b.NonOllamaVramMiB
+        gpuFreeMiB       = (Get-GpuFreeMiB)
+        model            = $script:Model
+      }
+    } catch {
+      Write-Host "[sidecar] health error: $($_.Exception.Message)"
+      if ($context) { try { Write-Json $context 500 @{ error = 'health error' } } catch { } }
+    }
+  }
+}
+
+# Proxy worker: serves /api/* off the api listener. Dot-sources the shared module so it
+# has the busy helpers and config in its own runspace; owns its own HttpClient
+# (thread-safe, but a per-worker instance keeps the long generate timeout isolated).
+$worker = {
+  param($listener, $scriptRoot, $writeJson)
+
+  . "$scriptRoot\legion-pc-common.ps1"
+  $cfg = Join-Path $scriptRoot 'legion-pc.config.ps1'
+  if (Test-Path $cfg) { . $cfg }
+  Invoke-Expression $writeJson
 
   Add-Type -AssemblyName System.Net.Http
   # Generate calls can run for minutes; give the proxy client a generous timeout.
   $http = [System.Net.Http.HttpClient]::new()
   $http.Timeout = [TimeSpan]::FromMinutes(20)
-
-  function Write-Json($context, [int]$status, $obj) {
-    $json = $obj | ConvertTo-Json -Compress
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-    $context.Response.StatusCode = $status
-    $context.Response.ContentType = 'application/json'
-    $context.Response.ContentLength64 = $bytes.Length
-    $context.Response.OutputStream.Write($bytes, 0, $bytes.Length)
-    $context.Response.OutputStream.Close()
-  }
 
   while ($listener.IsListening) {
     $context = $null
@@ -73,29 +127,13 @@ $worker = {
       $path = $context.Request.Url.AbsolutePath
       $method = $context.Request.HttpMethod
 
-      # Diagnostic endpoint - never gated, never proxied.
-      if ($path -eq '/ready') {
-        $b = Get-BusyState
-        Write-Json $context 200 @{
-          ready            = (-not $b.Busy)
-          reason           = $b.Reason
-          idleSec          = $b.IdleSec
-          locked           = $b.Locked
-          fullscreen       = $b.Fullscreen
-          nonOllamaVramMiB = $b.NonOllamaVramMiB
-          gpuFreeMiB       = (Get-GpuFreeMiB)
-          model            = $script:Model
-        }
-        continue
-      }
-
-      # Only Ollama API paths are proxied; everything else is 404.
+      # Only Ollama API paths reach this listener; guard anything else as 404.
       if ($path -notlike '/api/*') {
         Write-Json $context 404 @{ error = 'not found' }
         continue
       }
 
-      # Busy gate: fail the probe (and any call) so Legion routes to Oracle.
+      # Busy gate: fail any call so Legion routes to Oracle.
       $busy = Get-BusyState
       if ($busy.Busy) {
         Write-Json $context 503 @{ ready = $false; reason = $busy.Reason }
@@ -128,21 +166,25 @@ $worker = {
   }
 }
 
-# Spin up the worker pool, all sharing the one listener, then park the main thread.
-$pool = [runspacefactory]::CreateRunspacePool(1, $workerCount)
+# Spin up both pools (each bound to its own listener), then park the main thread.
+$pool = [runspacefactory]::CreateRunspacePool(1, $workerCount + $healthWorkerCount)
 $pool.Open()
 $running = @()
-for ($i = 0; $i -lt $workerCount; $i++) {
+$spawn = {
+  param($script, $listener)
   $ps = [powershell]::Create()
   $ps.RunspacePool = $pool
-  [void]$ps.AddScript($worker).AddArgument($listener).AddArgument($PSScriptRoot)
-  $running += [pscustomobject]@{ PS = $ps; Handle = $ps.BeginInvoke() }
+  [void]$ps.AddScript($script).AddArgument($listener).AddArgument($PSScriptRoot).AddArgument($writeJson)
+  $script:running += [pscustomobject]@{ PS = $ps; Handle = $ps.BeginInvoke() }
 }
+for ($i = 0; $i -lt $healthWorkerCount; $i++) { & $spawn $healthWorker $healthListener }
+for ($i = 0; $i -lt $workerCount; $i++) { & $spawn $worker $apiListener }
 
 try {
-  while ($listener.IsListening) { Start-Sleep -Seconds 60 }
+  while ($healthListener.IsListening -and $apiListener.IsListening) { Start-Sleep -Seconds 60 }
 } finally {
-  $listener.Stop()
+  $healthListener.Stop()
+  $apiListener.Stop()
   foreach ($r in $running) { try { $r.PS.Dispose() } catch { } }
   $pool.Dispose()
 }

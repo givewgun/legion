@@ -115,15 +115,39 @@ describe('tiered local wiring', () => {
 
   it('returns a tiered provider when home url is set and enabled', async () => {
     const cfg = { ...baseCfg, home: { ...baseCfg.home, url: 'http://pc:11434' } };
-    // probe (GET /api/tags) is checked via fetchImpl; generate goes through clientFactory
+    // probe (GET /ready) is checked via fetchImpl; generate goes through clientFactory
     const fetchImpl = vi.fn(async (url) => {
-      if (url.endsWith('/api/tags')) return { ok: true };
+      if (url.endsWith('/ready')) return { ok: true, json: async () => ({ ready: true }) };
       return { ok: true };
     });
     const clientFactory = fakeOllamaClientFactory('from-pc');
     const p = createProvider('local', cfg, fetchImpl, clientFactory);
     const out = await p.generate({ system: 's', prompt: 'p' });
     expect(out).toEqual({ text: 'from-pc', model: 'gpt-oss:20b', source: 'pc' });
+  });
+
+  it('falls back to Oracle when /ready reports ready:false (PC busy-gated)', async () => {
+    const cfg = { ...baseCfg, home: { ...baseCfg.home, url: 'http://pc:11434' } };
+    // /ready answers (PC reachable) but busy-gated -> ready:false -> Oracle, not the PC.
+    const fetchImpl = vi.fn(async (url) => {
+      if (url.endsWith('/ready')) return { ok: true, json: async () => ({ ready: false }) };
+      return { ok: true };
+    });
+    const clientFactory = fakeOllamaClientFactory('from-oracle');
+    const p = createProvider('local', cfg, fetchImpl, clientFactory);
+    const out = await p.generate({ system: 's', prompt: 'p' });
+    expect(out).toEqual({ text: 'from-oracle', model: 'qwen2.5:7b-instruct', source: 'oracle' });
+  });
+
+  it('falls back to Oracle when the /ready probe errors (PC offline)', async () => {
+    const cfg = { ...baseCfg, home: { ...baseCfg.home, url: 'http://pc:11434' } };
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('ECONNREFUSED');
+    });
+    const clientFactory = fakeOllamaClientFactory('from-oracle');
+    const p = createProvider('local', cfg, fetchImpl, clientFactory);
+    const out = await p.generate({ system: 's', prompt: 'p' });
+    expect(out.source).toBe('oracle');
   });
 
   it('stays pure-Oracle when home.enabled is false even if url set', async () => {

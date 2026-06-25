@@ -93,12 +93,22 @@ function buildLocalProvider(cfg, fetchImpl, clientFactory) {
     },
     clientFactory,
   );
+  // Liveness probe hits the sidecar's dedicated /ready endpoint, NOT /api/tags. /ready
+  // has its own isolated worker pool on the PC, so it answers in ~ms even while every
+  // generate slot is busy with other votes — the probe no longer times out under a
+  // sweep and wrongly load-sheds to Oracle. We commit to the PC (queue, don't fail over)
+  // only when /ready reports ready:true. ready:false (the box is busy-gated because the
+  // operator is gaming) and any network/timeout error (PC offline) both fall through to
+  // Oracle — fallback happens only when the PC is unavailable, never when it is merely
+  // busy serving other votes.
   const probe = async () => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), home.probeTimeoutMs);
     try {
-      const res = await fetchImpl(`${home.url}/api/tags`, { signal: controller.signal });
-      return res.ok;
+      const res = await fetchImpl(`${home.url}/ready`, { signal: controller.signal });
+      if (!res.ok) return false;
+      const body = await res.json();
+      return body?.ready === true;
     } catch {
       return false;
     } finally {
