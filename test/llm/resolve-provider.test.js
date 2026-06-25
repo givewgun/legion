@@ -2,11 +2,29 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   resolveProvider,
   withAgentOptions,
+  withModel,
   DEFAULT_MODELS,
   createProvider,
   normalizeGenerate,
   modelKey,
 } from '../../src/llm/provider.js';
+
+describe('withModel', () => {
+  it('overlays an explicit local model onto both the oracle and home-PC tiers', () => {
+    const cfg = { ollama: { url: 'o', model: 'oracle-m' }, home: { url: 'pc', model: 'home-m' } };
+    const out = withModel(cfg, 'local', 'chosen');
+    expect(out.ollama.model).toBe('chosen');
+    expect(out.home.model).toBe('chosen'); // PC primary honors the per-agent model
+    expect(cfg.home.model).toBe('home-m'); // input not mutated
+  });
+
+  it('keeps the configured models when no model is given', () => {
+    const cfg = { ollama: { url: 'o', model: 'oracle-m' }, home: { url: 'pc', model: 'home-m' } };
+    const out = withModel(cfg, 'local', null);
+    expect(out.ollama.model).toBe('oracle-m'); // not clobbered by a hardcoded default
+    expect(out.home.model).toBe('home-m');
+  });
+});
 
 describe('withAgentOptions', () => {
   it('overlays sampling options onto the ollama config block', () => {
@@ -28,14 +46,19 @@ describe('withAgentOptions', () => {
 });
 
 describe('resolveProvider', () => {
-  it('fills the default model when none is given', () => {
+  it('passes a null model through to the factory (factory decides the default)', () => {
     const calls = [];
     const fakeFactory = (opts) => {
       calls.push(opts);
       return { generate: async () => '' };
     };
     resolveProvider({ provider: 'local', model: null }, fakeFactory);
-    expect(calls[0]).toEqual({ type: 'local', model: DEFAULT_MODELS.local });
+    expect(calls[0]).toEqual({ type: 'local', model: null });
+  });
+
+  it('fills the family default via the cfg-less default factory', () => {
+    const p = resolveProvider({ provider: 'local', model: null });
+    expect(p.model).toBe(DEFAULT_MODELS.local);
   });
 
   it('passes an explicit model through', () => {

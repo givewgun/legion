@@ -2,6 +2,11 @@ import { Router } from 'express';
 import { RUNTIME_KEYS, RUNTIME_KEY_BY_NAME } from '../../config/runtime-keys.js';
 import { coerceRuntimeValue } from '../../config/runtime-overrides.js';
 
+// The /pc-models list is a one-off UI fetch, not the per-cycle readiness probe, so it
+// gets its own, more generous deadline: a slow first /api/tags over Tailscale shouldn't
+// collapse the model dropdown to a free-text box. Overridable via cfg.home.pcModelsTimeoutMs.
+const PcModelsTimeoutMs = 5000;
+
 // Resolve a dotted cfgPath against the env-derived cfg (the default for each key).
 function cfgDefault(cfg, path) {
   return path.split('.').reduce((cur, p) => (cur == null ? undefined : cur[p]), cfg);
@@ -72,7 +77,7 @@ export function settingsRoutes(repo, cfg = {}, fetchImpl = fetch) {
     const url = cfg.home?.url;
     if (!url) return res.json({ models: [] });
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), cfg.home?.probeTimeoutMs ?? 1500);
+    const timer = setTimeout(() => controller.abort(), cfg.home?.pcModelsTimeoutMs ?? PcModelsTimeoutMs);
     try {
       const r = await fetchImpl(`${url}/api/tags`, { signal: controller.signal });
       if (!r.ok) return res.json({ models: [] });

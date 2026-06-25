@@ -41,10 +41,16 @@ export function withAgentOptions(cfg, options) {
   return out;
 }
 
-// Overlays a chosen model onto the config block the given provider type reads.
+// Overlays a chosen model onto the config block the given provider type reads. A null
+// model means "no override" — keep whatever the cfg block already has (the env default
+// or a runtime override), rather than clobbering it. For 'local' an explicit model must
+// also reach the PC-preferred provider, whose primary reads cfg.home.model — otherwise a
+// per-agent model change is silently ignored whenever the home PC is up.
 export function withModel(cfg, type, model) {
   const block = CFG_BLOCK[type];
-  return { ...cfg, [block]: { ...cfg[block], model: model ?? cfg[block]?.model } };
+  const next = { ...cfg, [block]: { ...cfg[block], model: model ?? cfg[block]?.model } };
+  if (type === 'local' && model) next.home = { ...next.home, model };
+  return next;
 }
 
 // Maps a stored { provider, model } config to a concrete provider instance.
@@ -52,13 +58,17 @@ export function withModel(cfg, type, model) {
 // createProvider, overlaying the chosen model onto the provider's config block.
 // Live callers should pass a cfg-aware factory so the provider gets full config
 // (e.g. the Ollama URL or an API key). Unknown provider names fall back to 'local'.
+//
+// A null model is passed through unchanged: a cfg-aware factory keeps the configured
+// model (so global/runtime model settings stand), and only the cfg-less defaultFactory
+// substitutes the family default for a bare provider switch.
 export function resolveProvider({ provider, model } = {}, factory = defaultFactory) {
   const type = DEFAULT_MODELS[provider] ? provider : 'local';
-  return factory({ type, model: model ?? DEFAULT_MODELS[type] });
+  return factory({ type, model: model ?? null });
 }
 
 function defaultFactory({ type, model }) {
-  return createProvider(type, withModel({}, type, model));
+  return createProvider(type, withModel({}, type, model ?? DEFAULT_MODELS[type]));
 }
 
 // The `local` provider is PC-preferred when a home PC URL is configured AND not
