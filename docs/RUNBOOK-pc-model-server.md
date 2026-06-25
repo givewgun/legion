@@ -175,10 +175,22 @@ log).
 ## 4. Readiness Sidecar
 
 The readiness sidecar is a small HTTP server running on the PC. The Legion
-probe issues `GET /api/tags` against `HOME_OLLAMA_URL`, which the sidecar
-proxies to the real Ollama endpoint — returning `503 Service Unavailable`
-when the PC is BUSY so Legion stays sidecar-agnostic (it probes the same
-URL it uses for inference; no special busy-check endpoint needed).
+probe issues `GET /ready` against `HOME_OLLAMA_URL`; the sidecar answers with
+`{ ready, reason, ... }` (it never proxies that path). Legion commits to the PC
+only on `ready: true`; `ready: false` (busy-gated) or any network/timeout error
+(PC offline) falls through to the Oracle model.
+
+**Two isolated listener pools (why `/ready` is fast under load).** `/ready` and
+`/api/*` are served by **separate** HttpListener + worker pools on the one port
+(HTTP.sys routes by path prefix). A long `/api/generate` holds a proxy worker for
+minutes, so during a full sweep every proxy worker can be busy — but the dedicated
+health pool keeps `/ready` answering in milliseconds. This is what makes "PC busy
+serving other votes" mean **wait/queue on the PC**, not fall back to Oracle:
+fallback now happens only when the PC is genuinely unavailable (offline or
+busy-gated), never when it is merely saturated with votes.
+
+`/api/tags` is still proxied (and busy-gated) for the model-list dropdown
+(`GET /api/settings/pc-models`), but it is no longer the routing probe.
 
 ### 4.1 Busy Criteria
 
@@ -218,18 +230,23 @@ When BUSY:
 Possible `reason` values: `"idle"`, `"active_user_input"`, `"fullscreen_app"`,
 `"gpu_busy"`.
 
-### 4.3 How `/api/tags` Is Gated
+### 4.3 How `/ready` (routing probe) and `/api/*` Are Gated
 
 ```
-GET /api/tags
+GET /ready  (health pool — never proxied, never blocked by a generate)
   → sidecar checks busy flags
-  → if BUSY:  HTTP 503 {"error":"pc busy","reason":"..."}
-  → if READY: proxy → http://127.0.0.1:11434/api/tags → return response
+  → always HTTP 200 { ready: <bool>, reason, ... }
+
+GET /api/tags | POST /api/generate  (proxy pool)
+  → sidecar checks busy flags
+  → if BUSY:  HTTP 503 {"ready":false,"reason":"..."}
+  → if READY: proxy → http://127.0.0.1:11434/... → return response
 ```
 
-Because Legion's `tieredProvider` treats a non-200 on the probe as "home
-unavailable" and falls through to the Oracle model, the sidecar is completely
-transparent to Legion's code.
+Legion's `tieredProvider` commits to the PC only when `/ready` returns
+`ready: true`; `ready: false` or a network/timeout error both fall through to
+the Oracle model. Because the health pool is isolated, a deep generate queue
+no longer times the probe out — a saturated PC is queued on, not abandoned.
 
 ### 4.4 Binding and Firewall
 
@@ -364,7 +381,7 @@ and emitter services:
 | `HOME_OLLAMA_URL` | `http://pc.tail1234.ts.net:11434` | URL of the sidecar-fronted Ollama on the PC. **Leave unset to disable the feature entirely.** |
 | `HOME_MODEL` | `qwen3:14b` | Model name passed to Ollama on the PC. |
 | `HOME_THINK` | `true` | `qwen3` is a reasoning model — keep `true`; its `<think>` tokens are stripped before parsing. Set `false` only for a non-thinking model. |
-| `HOME_PROBE_TIMEOUT_MS` | `1500` | Timeout for the `/api/tags` probe (default 1.5 s). Tune up if the PC wakes slowly. |
+| `HOME_PROBE_TIMEOUT_MS` | `1500` | Timeout for the `/ready` probe (default 1.5 s). Tune up if the PC wakes slowly. |
 | `HOME_TIMEOUT_MS` | `3600000` | Per-call PC inference deadline (default 60 min). PC-preferred commits to the PC and queues, so this must outlast a deep `NUM_PARALLEL` queue rather than aborting into an abstain. |
 
 When `HOME_OLLAMA_URL` is absent, the provider skips the PC path and uses the

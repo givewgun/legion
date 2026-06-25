@@ -43,14 +43,24 @@ export function withAgentOptions(cfg, options) {
 
 // Overlays a chosen model onto the config block the given provider type reads. A null
 // model means "no override" — keep whatever the cfg block already has (the env default
-// or a runtime override), rather than clobbering it. For 'local' an explicit model must
-// also reach the PC-preferred provider, whose primary reads cfg.home.model — otherwise a
-// per-agent model change is silently ignored whenever the home PC is up.
+// or a runtime override), rather than clobbering it.
+//
+// For 'local' the placement depends on whether the PC tier is active:
+//   - Tiered (home.url set and not disabled): the chosen model is the PC PRIMARY's
+//     (cfg.home.model). The Oracle FALLBACK keeps its own model (cfg.ollama.model, the
+//     env default / `oracle_model` runtime knob) — the CPU-only Oracle box can't run a
+//     PC-sized model (e.g. gpt-oss:20b) inside its timeout, so leaking the PC model onto
+//     the fallback makes every fail-over hit `Ollama request timed out after 300000ms`.
+//   - Non-tiered ('local' IS Oracle): the chosen model applies to cfg.ollama.model.
 export function withModel(cfg, type, model) {
+  if (type === 'local' && model) {
+    const tiered = cfg.home?.url && cfg.home?.enabled !== false;
+    return tiered
+      ? { ...cfg, home: { ...cfg.home, model } }
+      : { ...cfg, ollama: { ...cfg.ollama, model } };
+  }
   const block = CFG_BLOCK[type];
-  const next = { ...cfg, [block]: { ...cfg[block], model: model ?? cfg[block]?.model } };
-  if (type === 'local' && model) next.home = { ...next.home, model };
-  return next;
+  return { ...cfg, [block]: { ...cfg[block], model: model ?? cfg[block]?.model } };
 }
 
 // Maps a stored { provider, model } config to a concrete provider instance.
@@ -93,12 +103,22 @@ function buildLocalProvider(cfg, fetchImpl, clientFactory) {
     },
     clientFactory,
   );
+  // Liveness probe hits the sidecar's dedicated /ready endpoint, NOT /api/tags. /ready
+  // has its own isolated worker pool on the PC, so it answers in ~ms even while every
+  // generate slot is busy with other votes — the probe no longer times out under a
+  // sweep and wrongly load-sheds to Oracle. We commit to the PC (queue, don't fail over)
+  // only when /ready reports ready:true. ready:false (the box is busy-gated because the
+  // operator is gaming) and any network/timeout error (PC offline) both fall through to
+  // Oracle — fallback happens only when the PC is unavailable, never when it is merely
+  // busy serving other votes.
   const probe = async () => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), home.probeTimeoutMs);
     try {
-      const res = await fetchImpl(`${home.url}/api/tags`, { signal: controller.signal });
-      return res.ok;
+      const res = await fetchImpl(`${home.url}/ready`, { signal: controller.signal });
+      if (!res.ok) return false;
+      const body = await res.json();
+      return body?.ready === true;
     } catch {
       return false;
     } finally {

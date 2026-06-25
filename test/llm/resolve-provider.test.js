@@ -10,12 +10,29 @@ import {
 } from '../../src/llm/provider.js';
 
 describe('withModel', () => {
-  it('overlays an explicit local model onto both the oracle and home-PC tiers', () => {
+  it('routes an explicit local model to the PC tier only, leaving Oracle its own model', () => {
+    // Tiered (home.url set): the chosen model is the PC primary's. The Oracle fallback
+    // keeps its CPU-sized model so a fail-over does not try to run the big PC model.
     const cfg = { ollama: { url: 'o', model: 'oracle-m' }, home: { url: 'pc', model: 'home-m' } };
     const out = withModel(cfg, 'local', 'chosen');
-    expect(out.ollama.model).toBe('chosen');
+    expect(out.ollama.model).toBe('oracle-m'); // fallback unchanged — no 300000ms timeout
     expect(out.home.model).toBe('chosen'); // PC primary honors the per-agent model
     expect(cfg.home.model).toBe('home-m'); // input not mutated
+  });
+
+  it('applies an explicit local model to Oracle when the PC tier is not configured', () => {
+    const cfg = { ollama: { url: 'o', model: 'oracle-m' }, home: { url: '', model: 'home-m' } };
+    const out = withModel(cfg, 'local', 'chosen');
+    expect(out.ollama.model).toBe('chosen'); // non-tiered: 'local' IS Oracle
+  });
+
+  it('applies an explicit local model to Oracle when the PC tier is disabled', () => {
+    const cfg = {
+      ollama: { url: 'o', model: 'oracle-m' },
+      home: { url: 'pc', model: 'home-m', enabled: false },
+    };
+    const out = withModel(cfg, 'local', 'chosen');
+    expect(out.ollama.model).toBe('chosen');
   });
 
   it('keeps the configured models when no model is given', () => {
@@ -115,15 +132,39 @@ describe('tiered local wiring', () => {
 
   it('returns a tiered provider when home url is set and enabled', async () => {
     const cfg = { ...baseCfg, home: { ...baseCfg.home, url: 'http://pc:11434' } };
-    // probe (GET /api/tags) is checked via fetchImpl; generate goes through clientFactory
+    // probe (GET /ready) is checked via fetchImpl; generate goes through clientFactory
     const fetchImpl = vi.fn(async (url) => {
-      if (url.endsWith('/api/tags')) return { ok: true };
+      if (url.endsWith('/ready')) return { ok: true, json: async () => ({ ready: true }) };
       return { ok: true };
     });
     const clientFactory = fakeOllamaClientFactory('from-pc');
     const p = createProvider('local', cfg, fetchImpl, clientFactory);
     const out = await p.generate({ system: 's', prompt: 'p' });
     expect(out).toEqual({ text: 'from-pc', model: 'gpt-oss:20b', source: 'pc' });
+  });
+
+  it('falls back to Oracle when /ready reports ready:false (PC busy-gated)', async () => {
+    const cfg = { ...baseCfg, home: { ...baseCfg.home, url: 'http://pc:11434' } };
+    // /ready answers (PC reachable) but busy-gated -> ready:false -> Oracle, not the PC.
+    const fetchImpl = vi.fn(async (url) => {
+      if (url.endsWith('/ready')) return { ok: true, json: async () => ({ ready: false }) };
+      return { ok: true };
+    });
+    const clientFactory = fakeOllamaClientFactory('from-oracle');
+    const p = createProvider('local', cfg, fetchImpl, clientFactory);
+    const out = await p.generate({ system: 's', prompt: 'p' });
+    expect(out).toEqual({ text: 'from-oracle', model: 'qwen2.5:7b-instruct', source: 'oracle' });
+  });
+
+  it('falls back to Oracle when the /ready probe errors (PC offline)', async () => {
+    const cfg = { ...baseCfg, home: { ...baseCfg.home, url: 'http://pc:11434' } };
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('ECONNREFUSED');
+    });
+    const clientFactory = fakeOllamaClientFactory('from-oracle');
+    const p = createProvider('local', cfg, fetchImpl, clientFactory);
+    const out = await p.generate({ system: 's', prompt: 'p' });
+    expect(out.source).toBe('oracle');
   });
 
   it('stays pure-Oracle when home.enabled is false even if url set', async () => {
