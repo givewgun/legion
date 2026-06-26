@@ -41,7 +41,13 @@ export function loadConfig(env = process.env) {
     summaryWindowHours: num(env, 'LEGION_SUMMARY_WINDOW_HOURS', 24),
     ollama: {
       url: env.OLLAMA_URL || 'http://localhost:11434',
-      model: env.OLLAMA_MODEL || 'qwen2.5:7b-instruct',
+      // In the standard tiered deploy this Ollama is the Oracle FALLBACK tier — a
+      // CPU-only VM that only serves when the home PC primary is unavailable. A 7B
+      // model on CPU under a multi-agent sweep can't finish inside OLLAMA_TIMEOUT_MS
+      // and every call hangs the full timeout, so the fallback default is a small,
+      // CPU-fast model. Override OLLAMA_MODEL (or the oracle_model runtime knob) when
+      // this box has a GPU / is the sole tier.
+      model: env.OLLAMA_MODEL || 'qwen2.5:3b-instruct',
       timeoutMs: num(env, 'OLLAMA_TIMEOUT_MS', 300000),
       maxConcurrent: num(env, 'OLLAMA_MAX_CONCURRENT', 1),
       // qwen3 emits <think>...</think> reasoning by default; qwen2.5 has no

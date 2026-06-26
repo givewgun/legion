@@ -16,7 +16,7 @@ describe('loadConfig', () => {
     expect(cfg.natsUrl).toBe('nats://localhost:4222');
     expect(cfg.ollama).toEqual({
       url: 'http://localhost:11434',
-      model: 'qwen2.5:7b-instruct',
+      model: 'qwen2.5:3b-instruct',
       timeoutMs: 300000,
       maxConcurrent: 1,
       think: null,
