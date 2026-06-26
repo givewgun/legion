@@ -773,7 +773,7 @@ export function createRepo(db) {
     },
 
     async upsertHolding(userId, { ticker, shares, avgCost, assetType = 'stock', notes = null }) {
-      const totalCost = parseFloat((Number(shares) * Number(avgCost)).toPrecision(15));
+      const totalCost = Number(shares) * Number(avgCost);
       const row = await db.queryOne(
         `INSERT INTO legion.holdings (user_id, ticker, asset_type, shares, avg_cost, total_cost, notes, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, now())
@@ -794,11 +794,11 @@ export function createRepo(db) {
     },
 
     async deleteHolding(userId, ticker) {
-      const res = await db.query(
-        `DELETE FROM legion.holdings WHERE user_id = $1 AND ticker = $2`,
+      const row = await db.queryOne(
+        `DELETE FROM legion.holdings WHERE user_id = $1 AND ticker = $2 RETURNING id`,
         [userId, ticker.toUpperCase()],
       );
-      return (res.rowCount ?? 0) > 0;
+      return row != null;
     },
 
     // ── Global runtime config (ADR 0031) ───────────────────────────────────────
