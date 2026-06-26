@@ -143,7 +143,7 @@ export function PortfolioPage() {
                 <td className="px-4 py-2">{pct(t.conviction)}</td>
                 <td className="px-4 py-2">{`${t.entryDate} @ $${t.entryPrice.toFixed(2)}`}</td>
                 <td className="px-4 py-2">
-                  {t.exitDate ? `${t.exitDate} @ $${t.exitPrice.toFixed(2)}` : '—'}
+                  {t.exitReason !== 'open' ? `$${t.exitPrice.toFixed(2)}` : '—'}
                 </td>
                 <td className={`px-4 py-2 ${gainColor(t.return ?? 0)}`}>
                   {signedPct(t.return ?? 0)}

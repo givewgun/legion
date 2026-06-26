@@ -29,6 +29,9 @@ export function portfolioRoutes(repo, gunvest, { horizonDays = 5 } = {}) {
       const watchSet = new Set(watchlist);
       const signals = (await repo.listAllSignals()).filter((s) => watchSet.has(s.symbol));
 
+      // `n: signals.length` busts the cache the instant a new signal is emitted.
+      // Safe because legion.signals is append-only (count strictly increases); if a
+      // signal-deletion feature is ever added, switch this to a max-id/updated-at.
       const key = JSON.stringify({ w: watchlist, c: startingCapital, h: userHorizon, n: signals.length });
       const hit = cache.get(userId);
       if (hit && hit.key === key && Date.now() - hit.at < CacheTtlMs) return res.json(hit.payload);

@@ -627,6 +627,8 @@ export function createRepo(db) {
     },
 
     // Every emitted signal, oldest-first, for the quality-weighted paper book.
+    // Deliberately NOT user-scoped: the research engine is shared (ADR 0030);
+    // per-user filtering happens at the route via the user's watchlist.
     async listAllSignals() {
       const rows = await db.query(
         `SELECT id, symbol, band, conviction, plan, created_at,
