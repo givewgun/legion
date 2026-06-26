@@ -22,9 +22,14 @@ export function HoldingsPage() {
   };
 
   useEffect(() => {
-    refresh();
-    const id = setInterval(() => api.getSizing().then(setSizing).catch(() => {}), PollMs);
-    return () => clearInterval(id);
+    let mounted = true;
+    const load = () => {
+      api.getHoldings().then((d) => { if (mounted) setHoldings(d.holdings); }).catch((e) => { if (mounted) setError(e.message); });
+      api.getSizing().then((d) => { if (mounted) setSizing(d); }).catch((e) => { if (mounted) setError(e.message); });
+    };
+    load();
+    const id = setInterval(() => api.getSizing().then((d) => { if (mounted) setSizing(d); }).catch(() => {}), PollMs);
+    return () => { mounted = false; clearInterval(id); };
   }, []);
 
   const save = async (e) => {
@@ -36,7 +41,10 @@ export function HoldingsPage() {
     } catch (err) { setError(err.message); }
   };
 
-  const remove = async (ticker) => { await api.deleteHolding(ticker); refresh(); };
+  const remove = async (ticker) => {
+    try { await api.deleteHolding(ticker); refresh(); }
+    catch (err) { setError(err.message); }
+  };
 
   return (
     <div>
