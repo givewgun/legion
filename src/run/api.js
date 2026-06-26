@@ -6,6 +6,7 @@ import { connectBus } from '../bus/nats.js';
 import { createOrchestrator } from '../orchestrator.js';
 import { createApp } from '../api/app.js';
 import { createGunvestFromConfig } from '../data/gunvest.js';
+import { createQualityService } from '../quality/index.js';
 import { createGoogleAuth } from '../auth/google.js';
 import { createSessionMiddleware } from '../auth/session.js';
 
@@ -23,6 +24,7 @@ try {
 }
 
 const gunvest = createGunvestFromConfig(cfg);
+const quality = createQualityService({ gunvest });
 
 // Build the auth stack. Secure cookies in production (HTTPS terminates at the
 // Cloudflare edge); plain HTTP only for local dev.
@@ -42,5 +44,5 @@ const auth = {
   repo,
 };
 
-const app = createApp({ repo, orchestrator, gunvest, horizonDays: cfg.horizonDays, auth, cfg });
+const app = createApp({ repo, orchestrator, gunvest, horizonDays: cfg.horizonDays, auth, cfg, quality });
 app.listen(cfg.apiPort, () => console.log(`[api] listening on :${cfg.apiPort}`));
