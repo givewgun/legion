@@ -32,4 +32,24 @@ describe('buildPaperBook', () => {
     expect(trades[0].exitReason).toBe('sell-signal');
     expect(trades[0].exitPrice).toBe(60);
   });
+
+  it('horizon-exits a position when a later signal arrives past resolve_after', () => {
+    const signals = [
+      sig({ symbol: 'NVDA', entry_price: 50, created_at: '2026-01-01T00:00:00Z', resolve_after: '2026-01-05T00:00:00Z' }),
+      sig({ symbol: 'AMD', entry_price: 20, created_at: '2026-02-01T00:00:00Z', resolve_after: '2099-01-01T00:00:00Z' }),
+    ];
+    const { openPositions, trades } = buildPaperBook(signals, { NVDA: 60, AMD: 20, SPY: 100, QQQ: 100 }, { startingCapital: 10000, horizonDays: 5, baseWeight: 0.05, maxPerName: 0.2 });
+    const nvda = trades.find((t) => t.symbol === 'NVDA');
+    expect(nvda.exitReason).toBe('horizon');
+    expect(openPositions.some((p) => p.symbol === 'NVDA')).toBe(false);
+  });
+
+  it('does not pyramid: a second BUY for an open symbol is skipped', () => {
+    const signals = [
+      sig({ symbol: 'NVDA', entry_price: 50, created_at: '2026-01-01T00:00:00Z', resolve_after: '2099-01-01T00:00:00Z' }),
+      sig({ symbol: 'NVDA', entry_price: 60, created_at: '2026-01-02T00:00:00Z', resolve_after: '2099-01-01T00:00:00Z' }),
+    ];
+    const { trades } = buildPaperBook(signals, { NVDA: 70, SPY: 100, QQQ: 100 }, { startingCapital: 10000, horizonDays: 5, baseWeight: 0.05, maxPerName: 0.2 });
+    expect(trades.filter((t) => t.symbol === 'NVDA')).toHaveLength(1);
+  });
 });

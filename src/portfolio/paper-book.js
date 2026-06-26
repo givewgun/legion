@@ -7,6 +7,7 @@
 import { BAND_LONG } from '../sizing/engine.js';
 
 const SellBands = new Set(['SELL', 'STRONG_SELL']);
+const DayMs = 86400000;
 
 export function buildPaperBook(signals, livePrices, { startingCapital, horizonDays, baseWeight, maxPerName }) {
   const ordered = [...signals].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
@@ -27,12 +28,13 @@ export function buildPaperBook(signals, livePrices, { startingCapital, horizonDa
     // Horizon exits for anything whose window closed before this signal's time.
     const nowTs = new Date(s.created_at).getTime();
     for (const [symbol, pos] of [...open]) {
-      if (pos.resolveAfter && nowTs >= new Date(pos.resolveAfter).getTime()) {
+      if (nowTs >= pos.resolveAfter) {
+        // Horizon exits mark at the latest available price (live, or entry as fallback): per-date historical prices are not stored, so a long-past horizon close is an approximation. Open-position marks and benchmark bases remain the accurate, reproducible figures.
         close(symbol, livePrices[symbol] ?? pos.entryPrice, 'horizon');
       }
     }
     if (SellBands.has(s.band)) {
-      if (open.has(s.symbol)) close(s.symbol, s.entry_price ?? livePrices[s.symbol], 'sell-signal');
+      if (open.has(s.symbol)) close(s.symbol, s.entry_price ?? livePrices[s.symbol] ?? open.get(s.symbol).entryPrice, 'sell-signal');
       continue;
     }
     const conviction = Number(s.conviction);
@@ -48,7 +50,8 @@ export function buildPaperBook(signals, livePrices, { startingCapital, horizonDa
     cash -= cost;
     const trade = { symbol: s.symbol, band: s.band, conviction, qualityMult, entryDate: s.created_at, entryPrice: price, shares, exitPrice: null, return: null, exitReason: 'open' };
     trades.push(trade);
-    open.set(s.symbol, { entryPrice: price, shares, trade, resolveAfter: s.resolve_after });
+    const resolveAfter = s.resolve_after ? new Date(s.resolve_after).getTime() : new Date(s.created_at).getTime() + horizonDays * DayMs;
+    open.set(s.symbol, { entryPrice: price, shares, trade, resolveAfter });
   }
 
   const openPositions = [...open.entries()].map(([symbol, pos]) => {
