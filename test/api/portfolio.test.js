@@ -61,6 +61,9 @@ describe('per-user portfolio', () => {
     expect(res.body.openPositions[0].symbol).toBe('NVDA');
     expect(res.body.openPositions[0].markPrice).toBe(75);
     expect(res.body.stats.totalReturn).toBeGreaterThan(0);
+    // SPY: 510/500 - 1 = 0.02; QQQ: 420/400 - 1 = 0.05
+    expect(res.body.stats.spyReturn).toBeCloseTo(0.02, 5);
+    expect(res.body.stats.qqqReturn).toBeCloseTo(0.05, 5);
   });
 
   it('TSLA is filtered out (not on watchlist)', async () => {
@@ -76,12 +79,15 @@ describe('per-user portfolio', () => {
     expect(res.status).toBe(200);
   });
 
-  it('serves cached response on second request', async () => {
+  it('serves cached response on second request (skips price fetch + book build but re-reads signals)', async () => {
     const repo = repoStub();
     const app = build(repo, gunvestStub);
     await request(app).get('/api/portfolio');
+    gunvestStub.getPrice.mockClear();
     await request(app).get('/api/portfolio');
-    expect(repo.listAllSignals).toHaveBeenCalledTimes(1);
+    // signals DB read happens on every request (for freshness); price fetches are cached
+    expect(repo.listAllSignals).toHaveBeenCalledTimes(2);
+    expect(gunvestStub.getPrice).not.toHaveBeenCalled();
   });
 
   it('returns 200 when a symbol price fetch fails (getPrice throws)', async () => {

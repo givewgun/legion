@@ -61,12 +61,24 @@ export function buildPaperBook(signals, livePrices, { startingCapital, horizonDa
 
   const markedEquity = cash + openPositions.reduce((s, p) => s + p.marketValue, 0);
   const closed = trades.filter((t) => t.exitReason !== 'open');
+
+  // Benchmarks ride the captured entry prices from the first signal (ADR 0009),
+  // marked at the current live SPY/QQQ price — same "entered at signal time" base
+  // as the book's own startingCapital.
+  const firstSig = ordered[0];
+  const spyEntry = Number(firstSig?.spy_entry_price) || null;
+  const qqqEntry = Number(firstSig?.qqq_entry_price) || null;
+  const spyReturn = spyEntry && livePrices.SPY ? livePrices.SPY / spyEntry - 1 : 0;
+  const qqqReturn = qqqEntry && livePrices.QQQ ? livePrices.QQQ / qqqEntry - 1 : 0;
+
   const stats = {
     totalReturn: markedEquity / startingCapital - 1,
     openValue: openPositions.reduce((s, p) => s + p.marketValue, 0),
     cash,
     trades: trades.length,
     winRate: closed.length ? closed.filter((t) => t.return > 0).length / closed.length : 0,
+    spyReturn,
+    qqqReturn,
   };
   // Single live data point; the historical curve is rebuilt by the route from
   // benchmark entry prices (Task 11). Here we expose the marked equity for now.

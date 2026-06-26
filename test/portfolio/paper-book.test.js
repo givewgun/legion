@@ -44,6 +44,13 @@ describe('buildPaperBook', () => {
     expect(openPositions.some((p) => p.symbol === 'NVDA')).toBe(false);
   });
 
+  it('computes SPY/QQQ benchmark returns from captured entry prices vs live', () => {
+    const signals = [sig({ symbol: 'NVDA', entry_price: 50, created_at: '2026-01-01T00:00:00Z', resolve_after: '2099-01-01T00:00:00Z' })];
+    const { stats } = buildPaperBook(signals, { NVDA: 50, SPY: 120, QQQ: 90 }, { startingCapital: 10000, horizonDays: 5, baseWeight: 0.05, maxPerName: 0.2 });
+    expect(stats.spyReturn).toBeCloseTo(0.2, 5);   // 120/100 - 1
+    expect(stats.qqqReturn).toBeCloseTo(-0.1, 5);  // 90/100 - 1
+  });
+
   it('does not pyramid: a second BUY for an open symbol is skipped', () => {
     const signals = [
       sig({ symbol: 'NVDA', entry_price: 50, created_at: '2026-01-01T00:00:00Z', resolve_after: '2099-01-01T00:00:00Z' }),

@@ -26,12 +26,12 @@ export function portfolioRoutes(repo, gunvest, { horizonDays = 5 } = {}) {
       const startingCapital = config?.startingCash ?? DefaultStartingCash;
       const userHorizon = config?.horizonDays ?? horizonDays;
 
-      const key = JSON.stringify({ w: watchlist, c: startingCapital, h: userHorizon });
-      const hit = cache.get(userId);
-      if (hit && hit.key === key && Date.now() - hit.at < CacheTtlMs) return res.json(hit.payload);
-
       const watchSet = new Set(watchlist);
       const signals = (await repo.listAllSignals()).filter((s) => watchSet.has(s.symbol));
+
+      const key = JSON.stringify({ w: watchlist, c: startingCapital, h: userHorizon, n: signals.length });
+      const hit = cache.get(userId);
+      if (hit && hit.key === key && Date.now() - hit.at < CacheTtlMs) return res.json(hit.payload);
       const symbols = [...new Set(signals.map((s) => s.symbol))];
 
       const livePrices = {};
