@@ -14,6 +14,18 @@ describe('createGunvestClient', () => {
     expect(fetchMock).toHaveBeenCalledWith('http://api:3001/api/market/NVDA', expect.anything());
   });
 
+  it('getFundamentals fetches the gunvest fundamentals endpoint', async () => {
+    const calls = [];
+    const fetchImpl = async (url) => {
+      calls.push(url);
+      return { ok: true, status: 200, json: async () => ({ ticker: 'NVDA', trailingPE: 45, profitMargins: 0.5 }) };
+    };
+    const client = createGunvestClient('http://gv', fetchImpl);
+    const f = await client.getFundamentals('nvda');
+    expect(calls[0]).toBe('http://gv/api/stocks/NVDA/fundamentals');
+    expect(f).toMatchObject({ ticker: 'NVDA', trailingPE: 45 });
+  });
+
   it('fetches ticker news', async () => {
     const fetchMock = fetchReturning([{ headline: 'x' }]);
     const client = createGunvestClient('http://api:3001', fetchMock);
