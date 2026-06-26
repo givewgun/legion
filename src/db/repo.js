@@ -626,10 +626,11 @@ export function createRepo(db) {
       return rows;
     },
 
-    // Every emitted signal, oldest-first, for the portfolio replay simulation.
+    // Every emitted signal, oldest-first, for the quality-weighted paper book.
     async listAllSignals() {
       const rows = await db.query(
-        `SELECT id, symbol, band, conviction, plan, created_at
+        `SELECT id, symbol, band, conviction, plan, created_at,
+                entry_price, spy_entry_price, qqq_entry_price, resolve_after
            FROM legion.signals ORDER BY created_at ASC`,
       );
       return rows;

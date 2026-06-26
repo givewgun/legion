@@ -1,17 +1,16 @@
 import { Router } from 'express';
-import { simulatePortfolio } from '../../portfolio/simulate.js';
+import { buildPaperBook } from '../../portfolio/paper-book.js';
 
-// Same candle depth as run/backtest.js — enough history to cover every signal.
-const FetchDays = 400;
-// Signals change at most once per cycle; candle fetches are the slow part.
-const CacheTtlMs = 10 * 60 * 1000;
-// Default sim config for a user who hasn't customized theirs.
 const DefaultStartingCash = 100000;
+const BaseWeight = 0.05;
+const MaxPerName = 0.10;
+// Live marks refresh ~ client poll cadence.
+const CacheTtlMs = 30 * 1000;
 
-// Per-user simulated portfolio: replays the shared signals filtered to the
-// user's watchlist, with their starting cash + horizon. Deterministic — no
-// stored positions. Cached per user (keyed by userId + a watchlist/config
-// signature) so a config change busts only that user's entry.
+// Per-user live paper book: builds open positions from emitted signals filtered
+// to the user's watchlist, sized by conviction × qualityMult, marked to live
+// prices from gunvest. Cached per user (keyed by watchlist/config signature)
+// so a config change busts only that user's entry.
 export function portfolioRoutes(repo, gunvest, { horizonDays = 5 } = {}) {
   const router = Router();
   const cache = new Map(); // userId -> { at, key, payload }
@@ -20,50 +19,33 @@ export function portfolioRoutes(repo, gunvest, { horizonDays = 5 } = {}) {
     try {
       if (!gunvest) return res.status(503).json({ error: 'price data unavailable' });
       const userId = req.user.id;
-
       const [watchlist, config] = await Promise.all([
         repo.listWatchlist(userId),
         repo.getPortfolioConfig(userId),
       ]);
-      const startingCash = config?.startingCash ?? DefaultStartingCash;
+      const startingCapital = config?.startingCash ?? DefaultStartingCash;
       const userHorizon = config?.horizonDays ?? horizonDays;
-      const key = JSON.stringify({ w: watchlist, c: startingCash, h: userHorizon });
 
+      const key = JSON.stringify({ w: watchlist, c: startingCapital, h: userHorizon });
       const hit = cache.get(userId);
-      if (hit && hit.key === key && Date.now() - hit.at < CacheTtlMs) {
-        return res.json(hit.payload);
-      }
+      if (hit && hit.key === key && Date.now() - hit.at < CacheTtlMs) return res.json(hit.payload);
 
       const watchSet = new Set(watchlist);
       const signals = (await repo.listAllSignals()).filter((s) => watchSet.has(s.symbol));
       const symbols = [...new Set(signals.map((s) => s.symbol))];
 
-      // Benchmark failure propagates and fails the request; per-symbol failure is caught and skipped.
-      const [spy, qqq] = await Promise.all([
-        gunvest.getCandles('SPY', FetchDays),
-        gunvest.getCandles('QQQ', FetchDays),
-      ]);
-      const candlesBySymbol = {};
-      await Promise.all(
-        symbols.map(async (symbol) => {
-          try {
-            candlesBySymbol[symbol] = await gunvest.getCandles(symbol, FetchDays);
-          } catch (err) {
-            console.warn(`[portfolio] candles for ${symbol} unavailable: ${err.message}`);
-            candlesBySymbol[symbol] = [];
-          }
-        }),
-      );
+      const livePrices = {};
+      await Promise.all([...symbols, 'SPY', 'QQQ'].map(async (sym) => {
+        const p = await gunvest.getPrice(sym).catch(() => null);
+        if (p?.price != null) livePrices[sym] = p.price;
+      }));
 
-      const payload = simulatePortfolio(signals, candlesBySymbol, spy, qqq, {
-        horizonDays: userHorizon,
-        startingCapital: startingCash,
+      const payload = buildPaperBook(signals, livePrices, {
+        startingCapital, horizonDays: userHorizon, baseWeight: BaseWeight, maxPerName: MaxPerName,
       });
       cache.set(userId, { at: Date.now(), key, payload });
       res.json(payload);
-    } catch (err) {
-      next(err);
-    }
+    } catch (err) { next(err); }
   });
 
   return router;
