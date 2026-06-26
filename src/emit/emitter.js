@@ -52,6 +52,7 @@ export function createEmitter({
   expectedAgents,
   riskEnabled = false,
   gunvest = null,
+  quality = null,
   horizonDays = 5,
   staleEntryMs = DefaultStaleEntryMs,
   clock = () => new Date(),
@@ -447,6 +448,22 @@ export function createEmitter({
         logger.error(`[emitter] entry price fetch failed for ${entry.symbol}: ${err.message}`);
       }
     }
+
+    // Snapshot the quality multiplier at emit so the paper book is a reproducible,
+    // quality-weighted fold over signals. Failure → neutral 1.0; never blocks the
+    // hot path (same posture as the entryPrice fetch above).
+    let qualityMult = 1.0;
+    let qualityFlags = [];
+    if (quality) {
+      try {
+        const q = await quality.getQuality(entry.symbol, entryPrice);
+        qualityMult = q.qualityMult;
+        qualityFlags = q.flags ?? [];
+      } catch (err) {
+        logger.error(`[emitter] quality fetch failed for ${entry.symbol}: ${err.message}`);
+      }
+    }
+    signal = { ...signal, plan: { ...signal.plan, qualityMult, qualityFlags } };
 
     const signalId = await repo.addSignal(cycleId, {
       ...signal,
