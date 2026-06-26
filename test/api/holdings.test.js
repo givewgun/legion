@@ -34,6 +34,11 @@ describe('holdings routes', () => {
     expect(res.status).toBe(201);
   });
 
+  it('rejects non-negative shares/avgCost with 400', async () => {
+    const res = await request(appWith(baseRepo, gunvest, quality)).put('/api/holdings/nvda').send({ shares: -1, avgCost: 100 });
+    expect(res.status).toBe(400);
+  });
+
   it('returns a sizing book', async () => {
     const res = await request(appWith(baseRepo, gunvest, quality)).get('/api/holdings/sizing');
     expect(res.status).toBe(200);

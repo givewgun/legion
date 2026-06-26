@@ -34,6 +34,7 @@ export function holdingsRoutes(repo, gunvest, quality) {
   router.get('/sizing', async (req, res, next) => {
     try {
       if (!gunvest) return res.status(503).json({ error: 'price data unavailable' });
+      if (!quality) return res.status(503).json({ error: 'quality service unavailable' });
       const holdings = await repo.listHoldings(req.user.id);
       const symbols = [...new Set(holdings.map((h) => h.ticker))];
 
