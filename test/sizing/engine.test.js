@@ -55,6 +55,15 @@ describe('computeSizing', () => {
     expect(row.action).toBe('hold');
   });
 
+  it('empty/zero-value book → hold, not trim', () => {
+    const row = computeSizing({
+      signal: { symbol: 'NVDA', band: 'BUY', conviction: 1 },
+      qualityMult: 1, position: { shares: 0, avgCost: 0 },
+      livePrice: 100, portfolioValue: 0, config,
+    });
+    expect(row.action).toBe('hold');
+  });
+
   it('flags a stale price', () => {
     const row = computeSizing({
       signal: { symbol: 'NVDA', band: 'BUY', conviction: 1 }, qualityMult: 1,

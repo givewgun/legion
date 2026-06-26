@@ -30,7 +30,9 @@ export function computeSizing({ signal, qualityMult, position, livePrice, portfo
   const unrealizedPnlPct = cost > 0 ? unrealizedPnl / cost : 0;
 
   let action = 'hold';
-  if (Math.abs(deltaUSD) >= rebalanceBandPct * portfolioValue) action = deltaUSD > 0 ? 'buy' : 'trim';
+  if (portfolioValue > 0 && Math.abs(deltaUSD) >= rebalanceBandPct * portfolioValue) {
+    action = deltaUSD > 0 ? 'buy' : 'trim';
+  }
 
   return {
     ticker: signal?.symbol ?? position?.ticker ?? null,
