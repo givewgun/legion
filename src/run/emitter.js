@@ -12,7 +12,7 @@ const cfg = loadConfig();
 const bus = await connectBus(cfg.natsUrl);
 const repo = createRepo(connectDb(cfg.databaseUrl));
 const gunvest = createGunvestFromConfig(cfg);
-const quality = createQualityService({ gunvest });
+const quality = gunvest ? createQualityService({ gunvest }) : null;
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const chatId = process.env.TELEGRAM_CHAT_ID;
