@@ -4,6 +4,8 @@ import { buildPaperBook } from '../../portfolio/paper-book.js';
 const DefaultStartingCash = 100000;
 const BaseWeight = 0.05;
 const MaxPerName = 0.10;
+// Candle depth for the equity curve — enough history to cover every signal.
+const FetchDays = 400;
 // Live marks refresh ~ client poll cadence.
 const CacheTtlMs = 30 * 1000;
 
@@ -37,13 +39,30 @@ export function portfolioRoutes(repo, gunvest, { horizonDays = 5 } = {}) {
       if (hit && hit.key === key && Date.now() - hit.at < CacheTtlMs) return res.json(hit.payload);
       const symbols = [...new Set(signals.map((s) => s.symbol))];
 
+      // Benchmark candles drive the trading calendar — a failure fails the request.
+      const [spy, qqq] = await Promise.all([
+        gunvest.getCandles('SPY', FetchDays),
+        gunvest.getCandles('QQQ', FetchDays),
+      ]);
+      // Per-symbol candles for daily marking; a missing symbol degrades to no curve
+      // contribution rather than failing the whole book.
+      const candlesBySymbol = {};
+      await Promise.all(symbols.map(async (sym) => {
+        try {
+          candlesBySymbol[sym] = await gunvest.getCandles(sym, FetchDays);
+        } catch (err) {
+          console.warn(`[portfolio] candles for ${sym} unavailable: ${err.message}`);
+          candlesBySymbol[sym] = [];
+        }
+      }));
+      // Live quotes mark the still-open positions for the live panel.
       const livePrices = {};
       await Promise.all([...symbols, 'SPY', 'QQQ'].map(async (sym) => {
         const p = await gunvest.getPrice(sym).catch(() => null);
         if (p?.price != null) livePrices[sym] = p.price;
       }));
 
-      const payload = buildPaperBook(signals, livePrices, {
+      const payload = buildPaperBook(signals, { candlesBySymbol, spy, qqq, livePrices }, {
         startingCapital, horizonDays: userHorizon, baseWeight: BaseWeight, maxPerName: MaxPerName,
       });
       cache.set(userId, { at: Date.now(), key, payload });
