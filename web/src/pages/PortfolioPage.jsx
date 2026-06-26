@@ -45,7 +45,7 @@ export function PortfolioPage() {
         title="Portfolio"
         subtitle="Paper portfolio replaying every emitted signal vs SPY / QQQ buy-and-hold"
       />
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Stat
           label="Total return"
           value={signedPct(stats.totalReturn)}
@@ -61,8 +61,7 @@ export function PortfolioPage() {
           value={signedPct(stats.totalReturn - stats.qqqReturn)}
           accent={gainColor(stats.totalReturn - stats.qqqReturn)}
         />
-        <Stat label="Open value" value={money(stats.openValue)} />
-        <Stat label="Cash" value={money(stats.cash)} />
+        <Stat label="Max drawdown" value={pct(stats.maxDrawdown, 2)} />
         <Stat label="Win rate" value={pct(stats.winRate)} />
         <Stat label="Trades" value={stats.trades} />
       </div>

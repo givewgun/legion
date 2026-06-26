@@ -12,8 +12,7 @@ function build(repo, gunvest) {
 }
 
 // Signals with entry_price and plan.qualityMult for the paper book.
-// NVDA: open BUY, entry 50, resolve_after far future.
-// TSLA: filtered out (not on watchlist).
+// NVDA: open BUY, entry 50, resolve_after far future. TSLA: filtered (not watchlisted).
 const farFuture = new Date(Date.now() + 365 * 86400000).toISOString();
 
 function repoStub(overrides = {}) {
@@ -38,39 +37,48 @@ function repoStub(overrides = {}) {
   };
 }
 
+// 3-day calendar: SPY 100→120 (+20%), QQQ flat, NVDA 50→60 (position gains).
+const candles = {
+  SPY: [{ date: '2026-01-01', close: 100 }, { date: '2026-01-02', close: 110 }, { date: '2026-01-03', close: 120 }],
+  QQQ: [{ date: '2026-01-01', close: 100 }, { date: '2026-01-02', close: 100 }, { date: '2026-01-03', close: 100 }],
+  NVDA: [{ date: '2026-01-01', close: 50 }, { date: '2026-01-02', close: 55 }, { date: '2026-01-03', close: 60 }],
+};
+
 const gunvestStub = {
-  getPrice: vi.fn(async (sym) => {
-    const prices = { NVDA: 75, SPY: 510, QQQ: 420 };
-    return { price: prices[sym] ?? 100 };
-  }),
+  getCandles: vi.fn(async (sym) => candles[sym] ?? []),
+  getPrice: vi.fn(async (sym) => ({ price: { NVDA: 75, SPY: 120, QQQ: 100 }[sym] ?? 100 })),
 };
 
 describe('per-user portfolio', () => {
-  beforeEach(() => { gunvestStub.getPrice.mockClear(); });
+  beforeEach(() => { gunvestStub.getPrice.mockClear(); gunvestStub.getCandles.mockClear(); });
 
   it('503s when price data is unavailable', async () => {
     const res = await request(build(repoStub(), null)).get('/api/portfolio');
     expect(res.status).toBe(503);
   });
 
-  it('returns openPositions and stats for watchlist symbols only', async () => {
+  it('returns a curve, openPositions, and benchmark stats for watchlist symbols only', async () => {
     const repo = repoStub();
     const res = await request(build(repo, gunvestStub)).get('/api/portfolio');
     expect(res.status).toBe(200);
-    // NVDA is in watchlist → open position marked at live price 75
+    // Daily equity curve with SPY/QQQ series.
+    expect(res.body.curve.length).toBeGreaterThan(1);
+    expect(res.body.curve[0]).toHaveProperty('spy');
+    expect(res.body.curve[0]).toHaveProperty('qqq');
+    // NVDA open position marked at the live price 75.
     expect(res.body.openPositions[0].symbol).toBe('NVDA');
     expect(res.body.openPositions[0].markPrice).toBe(75);
+    // NVDA rose 50→60 on the curve → positive total return.
     expect(res.body.stats.totalReturn).toBeGreaterThan(0);
-    // SPY: 510/500 - 1 = 0.02; QQQ: 420/400 - 1 = 0.05
-    expect(res.body.stats.spyReturn).toBeCloseTo(0.02, 5);
-    expect(res.body.stats.qqqReturn).toBeCloseTo(0.05, 5);
+    // Benchmarks from candles: SPY 100→120 = +20%, QQQ flat = 0.
+    expect(res.body.stats.spyReturn).toBeCloseTo(0.2, 5);
+    expect(res.body.stats.qqqReturn).toBeCloseTo(0, 5);
   });
 
   it('TSLA is filtered out (not on watchlist)', async () => {
     const res = await request(build(repoStub(), gunvestStub)).get('/api/portfolio');
     expect(res.status).toBe(200);
-    const symbols = res.body.openPositions.map((p) => p.symbol);
-    expect(symbols).not.toContain('TSLA');
+    expect(res.body.openPositions.map((p) => p.symbol)).not.toContain('TSLA');
   });
 
   it('falls back to the default config when the user has none', async () => {
@@ -79,19 +87,22 @@ describe('per-user portfolio', () => {
     expect(res.status).toBe(200);
   });
 
-  it('serves cached response on second request (skips price fetch + book build but re-reads signals)', async () => {
+  it('serves cached response on second request (skips candle/price fetch but re-reads signals)', async () => {
     const repo = repoStub();
     const app = build(repo, gunvestStub);
     await request(app).get('/api/portfolio');
     gunvestStub.getPrice.mockClear();
+    gunvestStub.getCandles.mockClear();
     await request(app).get('/api/portfolio');
-    // signals DB read happens on every request (for freshness); price fetches are cached
+    // Signals DB read happens every request (freshness); candle/price fetches are cached.
     expect(repo.listAllSignals).toHaveBeenCalledTimes(2);
+    expect(gunvestStub.getCandles).not.toHaveBeenCalled();
     expect(gunvestStub.getPrice).not.toHaveBeenCalled();
   });
 
   it('returns 200 when a symbol price fetch fails (getPrice throws)', async () => {
     const failing = {
+      getCandles: vi.fn(async (sym) => candles[sym] ?? []),
       getPrice: vi.fn(async (sym) => {
         if (sym === 'NVDA') throw new Error('boom');
         return { price: 100 };
