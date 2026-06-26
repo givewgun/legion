@@ -156,6 +156,43 @@ describe('tiered local wiring', () => {
     expect(out).toEqual({ text: 'from-oracle', model: 'qwen2.5:7b-instruct', source: 'oracle' });
   });
 
+  it('retries a transient readiness-probe miss before committing, then uses the PC', async () => {
+    // A single slow/cold Tailscale hop must not dump the whole sweep onto the slow
+    // Oracle: a transient probe miss (timeout/network) is retried before failing over.
+    const cfg = { ...baseCfg, home: { ...baseCfg.home, url: 'http://pc:11434', probeRetryGapMs: 0 } };
+    let readyCalls = 0;
+    const fetchImpl = vi.fn(async (url) => {
+      if (url.endsWith('/ready')) {
+        readyCalls++;
+        if (readyCalls === 1) throw new Error('UND_ERR_CONNECT_TIMEOUT'); // cold hop
+        return { ok: true, json: async () => ({ ready: true }) };
+      }
+      return { ok: true };
+    });
+    const clientFactory = fakeOllamaClientFactory('from-pc');
+    const p = createProvider('local', cfg, fetchImpl, clientFactory);
+    const out = await p.generate({ system: 's', prompt: 'p' });
+    expect(out.source).toBe('pc'); // did not give up to Oracle on the first transient miss
+    expect(readyCalls).toBeGreaterThanOrEqual(2);
+  });
+
+  it('does NOT retry a definitive ready:false (busy-gated) — goes straight to Oracle', async () => {
+    const cfg = { ...baseCfg, home: { ...baseCfg.home, url: 'http://pc:11434', probeRetryGapMs: 0 } };
+    let readyCalls = 0;
+    const fetchImpl = vi.fn(async (url) => {
+      if (url.endsWith('/ready')) {
+        readyCalls++;
+        return { ok: true, json: async () => ({ ready: false }) };
+      }
+      return { ok: true };
+    });
+    const clientFactory = fakeOllamaClientFactory('from-oracle');
+    const p = createProvider('local', cfg, fetchImpl, clientFactory);
+    const out = await p.generate({ system: 's', prompt: 'p' });
+    expect(out.source).toBe('oracle');
+    expect(readyCalls).toBe(1); // a clear "I'm gaming" answer is respected immediately
+  });
+
   it('falls back to Oracle when the /ready probe errors (PC offline)', async () => {
     const cfg = { ...baseCfg, home: { ...baseCfg.home, url: 'http://pc:11434' } };
     const fetchImpl = vi.fn(async () => {

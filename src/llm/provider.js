@@ -107,23 +107,40 @@ function buildLocalProvider(cfg, fetchImpl, clientFactory) {
   // has its own isolated worker pool on the PC, so it answers in ~ms even while every
   // generate slot is busy with other votes — the probe no longer times out under a
   // sweep and wrongly load-sheds to Oracle. We commit to the PC (queue, don't fail over)
-  // only when /ready reports ready:true. ready:false (the box is busy-gated because the
-  // operator is gaming) and any network/timeout error (PC offline) both fall through to
-  // Oracle — fallback happens only when the PC is unavailable, never when it is merely
-  // busy serving other votes.
-  const probe = async () => {
+  // only when /ready reports ready:true.
+  //
+  // One probe attempt distinguishes three outcomes:
+  //   { state: 'ready' }     — /ready answered ready:true  → commit to the PC.
+  //   { state: 'busy' }      — /ready answered ready:false → operator is gaming; this is
+  //                            a DEFINITIVE answer, so go to Oracle immediately, no retry.
+  //   { state: 'unreachable' } — non-200 / network / timeout: we couldn't tell. The PC is
+  //                            the preferred tier, so a single cold Tailscale hop must not
+  //                            dump the whole sweep onto the slow Oracle — retry a few
+  //                            times before treating the PC as offline.
+  const probeOnce = async () => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), home.probeTimeoutMs);
     try {
       const res = await fetchImpl(`${home.url}/ready`, { signal: controller.signal });
-      if (!res.ok) return false;
+      if (!res.ok) return { state: 'unreachable' };
       const body = await res.json();
-      return body?.ready === true;
+      return { state: body?.ready === true ? 'ready' : 'busy' };
     } catch {
-      return false;
+      return { state: 'unreachable' };
     } finally {
       clearTimeout(timer);
     }
+  };
+  const probe = async () => {
+    const attempts = Math.max(1, home.probeRetries ?? 3);
+    const gapMs = home.probeRetryGapMs ?? 300;
+    for (let i = 0; i < attempts; i++) {
+      const { state } = await probeOnce();
+      if (state === 'ready') return true;
+      if (state === 'busy') return false; // definitive gaming-gate; don't wait it out
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, gapMs));
+    }
+    return false; // every attempt was unreachable → PC offline → Oracle
   };
   return createTieredProvider({ primary: pc, fallback: oracle, probe, allowFallback: home.fallback });
 }

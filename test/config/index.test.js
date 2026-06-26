@@ -16,7 +16,7 @@ describe('loadConfig', () => {
     expect(cfg.natsUrl).toBe('nats://localhost:4222');
     expect(cfg.ollama).toEqual({
       url: 'http://localhost:11434',
-      model: 'qwen2.5:7b-instruct',
+      model: 'qwen2.5:3b-instruct',
       timeoutMs: 300000,
       maxConcurrent: 1,
       think: null,
@@ -108,6 +108,8 @@ describe('loadConfig', () => {
       model: 'qwen3:8b',
       think: null,
       probeTimeoutMs: 1500,
+      probeRetries: 3,
+      probeRetryGapMs: 300,
       timeoutMs: 3600000,
       enabled: true,
       fallback: true,
@@ -127,6 +129,8 @@ describe('loadConfig', () => {
       model: 'qwen3:32b',
       think: false,
       probeTimeoutMs: 2000,
+      probeRetries: 3,
+      probeRetryGapMs: 300,
       timeoutMs: 600000,
       enabled: true,
       fallback: true,

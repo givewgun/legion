@@ -21,7 +21,8 @@
     "api": "node src/run/api.js",
     "reliability": "node src/run/reliability.js",
     "summary": "node src/run/summary.js",
-    "backtest": "node src/run/backtest.js"
+    "backtest": "node src/run/backtest.js",
+    "retrigger": "node scripts/retrigger.js"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",
