@@ -748,6 +748,59 @@ export function createRepo(db) {
       return { startingCash: Number(row.starting_cash), horizonDays: row.horizon_days };
     },
 
+    // ── Quality-weighted sizing: real holdings (ADR 0032) ──────────────────────
+
+    async listHoldings(userId) {
+      const rows = await db.query(
+        `SELECT id, ticker, asset_type, shares, avg_cost, total_cost, realized_pl,
+                dividends, currency, notes, updated_at
+           FROM legion.holdings WHERE user_id = $1 ORDER BY ticker`,
+        [userId],
+      );
+      return rows.map((r) => ({
+        id: r.id,
+        ticker: r.ticker,
+        assetType: r.asset_type,
+        shares: Number(r.shares),
+        avgCost: Number(r.avg_cost),
+        totalCost: Number(r.total_cost),
+        realizedPl: Number(r.realized_pl),
+        dividends: Number(r.dividends),
+        currency: r.currency,
+        notes: r.notes ?? null,
+        updatedAt: r.updated_at,
+      }));
+    },
+
+    async upsertHolding(userId, { ticker, shares, avgCost, assetType = 'stock', notes = null }) {
+      const totalCost = parseFloat((Number(shares) * Number(avgCost)).toPrecision(15));
+      const row = await db.queryOne(
+        `INSERT INTO legion.holdings (user_id, ticker, asset_type, shares, avg_cost, total_cost, notes, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+         ON CONFLICT (user_id, ticker) DO UPDATE
+           SET shares = EXCLUDED.shares, avg_cost = EXCLUDED.avg_cost,
+               total_cost = EXCLUDED.total_cost, asset_type = EXCLUDED.asset_type,
+               notes = EXCLUDED.notes, updated_at = now()
+         RETURNING id, ticker, asset_type, shares, avg_cost, total_cost, realized_pl,
+                   dividends, currency, notes, updated_at`,
+        [userId, ticker.toUpperCase(), assetType, shares, avgCost, totalCost, notes],
+      );
+      return {
+        id: row.id, ticker: row.ticker, assetType: row.asset_type,
+        shares: Number(row.shares), avgCost: Number(row.avg_cost), totalCost: Number(row.total_cost),
+        realizedPl: Number(row.realized_pl), dividends: Number(row.dividends),
+        currency: row.currency, notes: row.notes ?? null, updatedAt: row.updated_at,
+      };
+    },
+
+    async deleteHolding(userId, ticker) {
+      const res = await db.query(
+        `DELETE FROM legion.holdings WHERE user_id = $1 AND ticker = $2`,
+        [userId, ticker.toUpperCase()],
+      );
+      return (res.rowCount ?? 0) > 0;
+    },
+
     // ── Global runtime config (ADR 0031) ───────────────────────────────────────
     // Generic key/value overrides, read per cycle and overlaid on the env-derived
     // config (see src/config/runtime-keys.js + runtime-overrides.js). Values are stored

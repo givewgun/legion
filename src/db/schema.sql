@@ -308,3 +308,25 @@ CREATE TABLE IF NOT EXISTS legion.runtime_config (
 -- Served model + run source on the per-round audit table (debate display).
 ALTER TABLE legion.votes ADD COLUMN IF NOT EXISTS model  TEXT;
 ALTER TABLE legion.votes ADD COLUMN IF NOT EXISTS source TEXT;
+
+-- ── Quality-weighted sizing: real holdings (ADR 0032) ─────────────────────────
+-- Manually-entered real holdings (ADR: quality-weighted sizing). Column shape
+-- mirrors gunvest's holdings_cache so a later merge into the shared gunvest-db is
+-- mechanical. Direct manual entry (no transaction ledger in v1): the user sets
+-- shares + avg_cost; total_cost is derived. Scoped per authenticated user.
+CREATE TABLE IF NOT EXISTS legion.holdings (
+  id          BIGSERIAL PRIMARY KEY,
+  user_id     BIGINT NOT NULL REFERENCES legion.users(id) ON DELETE CASCADE,
+  ticker      TEXT NOT NULL,
+  asset_type  TEXT NOT NULL DEFAULT 'stock',
+  shares      NUMERIC(18,8) NOT NULL DEFAULT 0,
+  avg_cost    NUMERIC(18,8) NOT NULL DEFAULT 0,
+  total_cost  NUMERIC(18,8) NOT NULL DEFAULT 0,
+  realized_pl NUMERIC(18,8) NOT NULL DEFAULT 0,
+  dividends   NUMERIC(18,8) NOT NULL DEFAULT 0,
+  currency    TEXT NOT NULL DEFAULT 'USD',
+  notes       TEXT,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, ticker)
+);
+CREATE INDEX IF NOT EXISTS idx_holdings_user ON legion.holdings (user_id);
