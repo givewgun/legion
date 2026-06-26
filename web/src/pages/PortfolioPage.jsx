@@ -28,13 +28,16 @@ export function PortfolioPage() {
       .getPortfolio()
       .then(setData)
       .catch((e) => setError(e.message));
+    const id = setInterval(() => api.getPortfolio().then(setData).catch(() => {}), 20000);
+    return () => clearInterval(id);
   }, []);
 
   if (error) return <p className="text-red-600">{error}</p>;
   if (!data) return <p className="text-slate-400">Simulating portfolio…</p>;
-  if (data.curve.length === 0) return <p className="text-slate-400">No signals to simulate yet.</p>;
+  if ((data.openPositions?.length ?? 0) === 0 && (data.trades?.length ?? 0) === 0)
+    return <p className="text-slate-400">No signals to simulate yet.</p>;
 
-  const { curve, trades, stats } = data;
+  const { curve, trades, openPositions = [], stats } = data;
 
   return (
     <div>
@@ -42,7 +45,7 @@ export function PortfolioPage() {
         title="Portfolio"
         subtitle="Paper portfolio replaying every emitted signal vs SPY / QQQ buy-and-hold"
       />
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
         <Stat
           label="Total return"
           value={signedPct(stats.totalReturn)}
@@ -58,7 +61,8 @@ export function PortfolioPage() {
           value={signedPct(stats.totalReturn - stats.qqqReturn)}
           accent={gainColor(stats.totalReturn - stats.qqqReturn)}
         />
-        <Stat label="Max drawdown" value={pct(stats.maxDrawdown, 2)} />
+        <Stat label="Open value" value={money(stats.openValue)} />
+        <Stat label="Cash" value={money(stats.cash)} />
         <Stat label="Win rate" value={pct(stats.winRate)} />
         <Stat label="Trades" value={stats.trades} />
       </div>
@@ -90,6 +94,31 @@ export function PortfolioPage() {
           </ResponsiveContainer>
         </div>
       </Card>
+      <Card className="mb-5 overflow-hidden">
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="border-b border-slate-200">
+              {['Symbol', 'Shares', 'Entry → Mark', 'Unrealized'].map((h) => (
+                <th key={h} className="px-4 py-2 font-medium text-slate-500">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {openPositions.map((p) => (
+              <tr key={p.symbol} className="border-b border-slate-100 last:border-0">
+                <td className="px-4 py-2 font-medium">{p.symbol}</td>
+                <td className="px-4 py-2">{p.shares.toFixed(2)}</td>
+                <td className="px-4 py-2">{`$${p.entryPrice.toFixed(2)} → $${p.markPrice.toFixed(2)}`}</td>
+                <td className={`px-4 py-2 ${p.unrealizedReturn >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {signedPct(p.unrealizedReturn)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
       <Card className="overflow-hidden">
         <table className="w-full text-left text-sm">
           <thead>
@@ -114,7 +143,7 @@ export function PortfolioPage() {
                 <td className="px-4 py-2">{pct(t.conviction)}</td>
                 <td className="px-4 py-2">{`${t.entryDate} @ $${t.entryPrice.toFixed(2)}`}</td>
                 <td className="px-4 py-2">
-                  {t.exitDate ? `${t.exitDate} @ $${t.exitPrice.toFixed(2)}` : '—'}
+                  {t.exitReason !== 'open' ? `$${t.exitPrice.toFixed(2)}` : '—'}
                 </td>
                 <td className={`px-4 py-2 ${gainColor(t.return ?? 0)}`}>
                   {signedPct(t.return ?? 0)}

@@ -386,6 +386,93 @@ describe('createEmitter (v2)', () => {
     expect(technicalVote.weight).toBeCloseTo(1.2);
   });
 
+  it('snapshots qualityMult onto signal.plan when quality service is provided', async () => {
+    const bus = createMemoryBus();
+    const repo = fakeRepo();
+    const quality = { getQuality: vi.fn(async () => ({ qualityMult: 1.3, flags: [] })) };
+
+    createEmitter({
+      bus,
+      repo,
+      telegram: vi.fn(async () => {}),
+      consensus,
+      expectedAgents: 2,
+      quality,
+    }).start();
+
+    emitVote(bus, {
+      cycleId: 70,
+      symbol: 'NVDA',
+      round: 1,
+      vote: { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'breakout' },
+    });
+    emitVote(bus, {
+      cycleId: 70,
+      symbol: 'NVDA',
+      round: 1,
+      vote: { agentId: 'news', stance: 2, conviction: 0.8, weight: 1, rationale: 'beat' },
+    });
+
+    await vi.waitFor(() => expect(repo.addSignal).toHaveBeenCalledTimes(1));
+    const [, signal] = repo.addSignal.mock.calls[0];
+    expect(signal.plan.qualityMult).toBe(1.3);
+    expect(signal.plan.qualityFlags).toEqual([]);
+  });
+
+  it('defaults qualityMult to 1.0 when no quality service is injected', async () => {
+    const bus = createMemoryBus();
+    const repo = fakeRepo();
+
+    createEmitter({
+      bus,
+      repo,
+      telegram: vi.fn(async () => {}),
+      consensus,
+      expectedAgents: 2,
+      // quality omitted intentionally
+    }).start();
+
+    emitVote(bus, {
+      cycleId: 71,
+      symbol: 'NVDA',
+      round: 1,
+      vote: { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'breakout' },
+    });
+    emitVote(bus, {
+      cycleId: 71,
+      symbol: 'NVDA',
+      round: 1,
+      vote: { agentId: 'news', stance: 2, conviction: 0.8, weight: 1, rationale: 'beat' },
+    });
+
+    await vi.waitFor(() => expect(repo.addSignal).toHaveBeenCalledTimes(1));
+    const [, signal] = repo.addSignal.mock.calls[0];
+    expect(signal.plan.qualityMult).toBe(1.0);
+  });
+
+  it('falls back to qualityMult 1.0 when the quality service rejects', async () => {
+    const bus = createMemoryBus();
+    const repo = fakeRepo();
+    const quality = { getQuality: vi.fn(async () => { throw new Error('quality down'); }) };
+
+    createEmitter({
+      bus,
+      repo,
+      telegram: vi.fn(async () => {}),
+      consensus,
+      expectedAgents: 2,
+      quality,
+      logger: { ...console, error: () => {} },
+    }).start();
+
+    emitVote(bus, { cycleId: 72, symbol: 'NVDA', round: 1, vote: { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'breakout' } });
+    emitVote(bus, { cycleId: 72, symbol: 'NVDA', round: 1, vote: { agentId: 'news', stance: 2, conviction: 0.8, weight: 1, rationale: 'beat' } });
+
+    await vi.waitFor(() => expect(repo.addSignal).toHaveBeenCalledTimes(1));
+    const [, signal] = repo.addSignal.mock.calls[0];
+    expect(signal.plan.qualityMult).toBe(1.0);
+  });
+
   it('times out abandoned running cycles in the DB on sweep, sparing cycles still active in memory', async () => {
     const bus = createMemoryBus();
     const repo = fakeRepo();

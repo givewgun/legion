@@ -109,6 +109,7 @@ export function createGunvestClient(baseUrl, fetchImpl = fetch, opts = {}) {
 
   return {
     getPrice: (symbol) => get(`/api/market/${symbol.toUpperCase()}`),
+    getFundamentals: (symbol) => get(`/api/stocks/${symbol.toUpperCase()}/fundamentals`),
     getNews: (symbol) => get(`/api/news/${symbol.toUpperCase()}`),
     getSentiment: (symbol) => get(`/api/sentiment/${symbol.toUpperCase()}`),
     getStockFearGreed: () => get(`/api/sentiment/stock/fear-greed`),

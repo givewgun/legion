@@ -6,6 +6,7 @@ import { reliabilityRoutes } from './routes/reliability.js';
 import { backtestRoutes } from './routes/backtest.js';
 import { triggerRoutes } from './routes/trigger.js';
 import { agentRoutes } from './routes/agents.js';
+import { holdingsRoutes } from './routes/holdings.js';
 import { portfolioRoutes } from './routes/portfolio.js';
 import { watchlistRoutes } from './routes/watchlist.js';
 import { settingsRoutes } from './routes/settings.js';
@@ -25,6 +26,7 @@ export function createApp({
   horizonDays = 5,
   auth = null,
   cfg = {},
+  quality = null,
 }) {
   const app = express();
   app.use(express.json());
@@ -52,6 +54,7 @@ export function createApp({
   app.use('/api/trigger', triggerRoutes(orchestrator, repo));
   app.use('/api/agents', agentRoutes(repo));
   app.use('/api/watchlist', watchlistRoutes(repo));
+  app.use('/api/holdings', holdingsRoutes(repo, gunvest, quality));
   app.use('/api/portfolio', portfolioRoutes(repo, gunvest, { horizonDays }));
   app.use('/api/settings', settingsRoutes(repo, cfg));
 

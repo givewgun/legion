@@ -8,6 +8,7 @@ const LINKS = [
   { to: '/reliability', label: 'Reliability' },
   { to: '/backtest', label: 'Backtest' },
   { to: '/portfolio', label: 'Portfolio' },
+  { to: '/holdings', label: 'Holdings' },
   { to: '/watchlist', label: 'Watchlist' },
   { to: '/config', label: 'Config' },
   { to: '/agents', label: 'Agents' },

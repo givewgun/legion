@@ -5,12 +5,14 @@ import { connectDb } from '../db/client.js';
 import { createRepo } from '../db/repo.js';
 import { createGunvestFromConfig } from '../data/gunvest.js';
 import { createEmitter } from '../emit/emitter.js';
+import { createQualityService } from '../quality/index.js';
 import { sendTelegram } from '../emit/telegram.js';
 
 const cfg = loadConfig();
 const bus = await connectBus(cfg.natsUrl);
 const repo = createRepo(connectDb(cfg.databaseUrl));
 const gunvest = createGunvestFromConfig(cfg);
+const quality = gunvest ? createQualityService({ gunvest }) : null;
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -25,6 +27,7 @@ await createEmitter({
   repo,
   telegram,
   gunvest,
+  quality,
   consensus: cfg.consensus,
   expectedAgents,
   riskEnabled,

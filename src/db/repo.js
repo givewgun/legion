@@ -626,10 +626,13 @@ export function createRepo(db) {
       return rows;
     },
 
-    // Every emitted signal, oldest-first, for the portfolio replay simulation.
+    // Every emitted signal, oldest-first, for the quality-weighted paper book.
+    // Deliberately NOT user-scoped: the research engine is shared (ADR 0030);
+    // per-user filtering happens at the route via the user's watchlist.
     async listAllSignals() {
       const rows = await db.query(
-        `SELECT id, symbol, band, conviction, plan, created_at
+        `SELECT id, symbol, band, conviction, plan, created_at,
+                entry_price, spy_entry_price, qqq_entry_price, resolve_after
            FROM legion.signals ORDER BY created_at ASC`,
       );
       return rows;
@@ -746,6 +749,59 @@ export function createRepo(db) {
         [userId, startingCash, horizonDays],
       );
       return { startingCash: Number(row.starting_cash), horizonDays: row.horizon_days };
+    },
+
+    // ── Quality-weighted sizing: real holdings (ADR 0032) ──────────────────────
+
+    async listHoldings(userId) {
+      const rows = await db.query(
+        `SELECT id, ticker, asset_type, shares, avg_cost, total_cost, realized_pl,
+                dividends, currency, notes, updated_at
+           FROM legion.holdings WHERE user_id = $1 ORDER BY ticker`,
+        [userId],
+      );
+      return rows.map((r) => ({
+        id: r.id,
+        ticker: r.ticker,
+        assetType: r.asset_type,
+        shares: Number(r.shares),
+        avgCost: Number(r.avg_cost),
+        totalCost: Number(r.total_cost),
+        realizedPl: Number(r.realized_pl),
+        dividends: Number(r.dividends),
+        currency: r.currency,
+        notes: r.notes ?? null,
+        updatedAt: r.updated_at,
+      }));
+    },
+
+    async upsertHolding(userId, { ticker, shares, avgCost, assetType = 'stock', notes = null }) {
+      const totalCost = Number(shares) * Number(avgCost);
+      const row = await db.queryOne(
+        `INSERT INTO legion.holdings (user_id, ticker, asset_type, shares, avg_cost, total_cost, notes, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+         ON CONFLICT (user_id, ticker) DO UPDATE
+           SET shares = EXCLUDED.shares, avg_cost = EXCLUDED.avg_cost,
+               total_cost = EXCLUDED.total_cost, asset_type = EXCLUDED.asset_type,
+               notes = EXCLUDED.notes, updated_at = now()
+         RETURNING id, ticker, asset_type, shares, avg_cost, total_cost, realized_pl,
+                   dividends, currency, notes, updated_at`,
+        [userId, ticker.toUpperCase(), assetType, shares, avgCost, totalCost, notes],
+      );
+      return {
+        id: row.id, ticker: row.ticker, assetType: row.asset_type,
+        shares: Number(row.shares), avgCost: Number(row.avg_cost), totalCost: Number(row.total_cost),
+        realizedPl: Number(row.realized_pl), dividends: Number(row.dividends),
+        currency: row.currency, notes: row.notes ?? null, updatedAt: row.updated_at,
+      };
+    },
+
+    async deleteHolding(userId, ticker) {
+      const row = await db.queryOne(
+        `DELETE FROM legion.holdings WHERE user_id = $1 AND ticker = $2 RETURNING id`,
+        [userId, ticker.toUpperCase()],
+      );
+      return row != null;
     },
 
     // ── Global runtime config (ADR 0031) ───────────────────────────────────────
