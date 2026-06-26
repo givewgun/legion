@@ -86,6 +86,12 @@ export function loadConfig(env = process.env) {
       model: env.HOME_MODEL || 'qwen3:8b',
       think: bool(env, 'HOME_THINK'),
       probeTimeoutMs: num(env, 'HOME_PROBE_TIMEOUT_MS', 1500),
+      // The PC is the preferred tier, so an inconclusive readiness probe (a cold
+      // Tailscale hop that times out, a transient network blip) is retried before
+      // giving up to the slow Oracle — a single miss must not divert a whole sweep.
+      // A definitive ready:false (the operator is gaming) is NOT retried.
+      probeRetries: num(env, 'HOME_PROBE_RETRIES', 3),
+      probeRetryGapMs: num(env, 'HOME_PROBE_RETRY_GAP_MS', 300),
       // PC-preferred routing commits to the PC and queues rather than failing over,
       // so a call may wait behind the NUM_PARALLEL slots on a big sweep. Give it a
       // generous deadline (60 min) so a deep queue completes instead of aborting into
