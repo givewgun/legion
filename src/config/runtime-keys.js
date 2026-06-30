@@ -19,6 +19,12 @@ export const RUNTIME_KEYS = [
     label: 'Home PC probe timeout (ms)',
   },
   { key: 'oracle_model', type: 'string', cfgPath: 'ollama.model', label: 'Oracle fallback model' },
+  {
+    key: 'oracle_timeout_ms',
+    type: 'int',
+    cfgPath: 'ollama.timeoutMs',
+    label: 'Oracle call timeout (ms)',
+  },
 ];
 
 export const RUNTIME_KEY_BY_NAME = Object.fromEntries(RUNTIME_KEYS.map((k) => [k.key, k]));

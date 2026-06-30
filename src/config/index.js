@@ -48,7 +48,13 @@ export function loadConfig(env = process.env) {
       // CPU-fast model. Override OLLAMA_MODEL (or the oracle_model runtime knob) when
       // this box has a GPU / is the sole tier.
       model: env.OLLAMA_MODEL || 'qwen2.5:3b-instruct',
-      timeoutMs: num(env, 'OLLAMA_TIMEOUT_MS', 300000),
+      // Generous deadline (60 min) because this CPU box serves OLLAMA_NUM_PARALLEL=1:
+      // a whole-watchlist sweep (every ticker × agent) serializes through one slot, so
+      // a queued call can wait a long time for its turn. A short timeout aborts those
+      // queued calls into abstains instead of letting them complete — when the home PC
+      // is off and this is the only tier, we'd rather wait than lose the vote. Tunable
+      // per cycle via the oracle_timeout_ms runtime knob.
+      timeoutMs: num(env, 'OLLAMA_TIMEOUT_MS', 3600000),
       maxConcurrent: num(env, 'OLLAMA_MAX_CONCURRENT', 1),
       // qwen3 emits <think>...</think> reasoning by default; qwen2.5 has no
       // thinking mode and doesn't understand the `think` field at all. null
