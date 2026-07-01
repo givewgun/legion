@@ -17,7 +17,7 @@ describe('loadConfig', () => {
     expect(cfg.ollama).toEqual({
       url: 'http://localhost:11434',
       model: 'qwen2.5:3b-instruct',
-      timeoutMs: 300000,
+      timeoutMs: 3600000,
       maxConcurrent: 1,
       think: null,
     });
