@@ -26,6 +26,13 @@
 # Net: PC reachable+idle -> /ready 200 ready:true -> Legion commits & queues on the PC.
 #      PC busy-gated (you're gaming) -> /ready 200 ready:false -> Legion -> Oracle.
 #      PC offline -> /ready unreachable -> Legion -> Oracle.
+#      Ollama down (sidecar alive) -> /ready 200 ready:false -> Legion -> Oracle.
+#
+# The last case matters because the sidecar is an auto-restarting scheduled task and can
+# outlive the Ollama process. Busy-state alone would then answer ready:true while every
+# proxied generate 502s, so Legion commits to the PC and the whole sweep abstains with
+# "Ollama request failed: 502" instead of falling back. /ready therefore also pings the
+# local Ollama (/api/version) before declaring ready.
 #
 # Runs forever; the setup registers it as an at-logon scheduled task that restarts
 # on failure. Run manually to test: powershell -ExecutionPolicy Bypass -File readiness-sidecar.ps1
@@ -82,14 +89,26 @@ $healthWorker = {
   if (Test-Path $cfg) { . $cfg }
   Invoke-Expression $writeJson
 
+  Add-Type -AssemblyName System.Net.Http
+  # Ollama liveness ping stays cheap: a live localhost server answers /api/version in ~ms
+  # and a dead one refuses the connection instantly. The timeout only bounds a hung
+  # process, and stays well under Legion's probe timeout so /ready itself never stalls.
+  $http = [System.Net.Http.HttpClient]::new()
+  $http.Timeout = [TimeSpan]::FromSeconds(2)
+
   while ($listener.IsListening) {
     $context = $null
     try {
       $context = $listener.GetContext()
+      $ollamaUp = $false
+      try {
+        $ollamaUp = $http.GetAsync("$script:OllamaUrl/api/version").GetAwaiter().GetResult().IsSuccessStatusCode
+      } catch { }
       $b = Get-BusyState
+      $reason = if (-not $ollamaUp) { 'ollama down' } else { $b.Reason }
       Write-Json $context 200 @{
-        ready            = (-not $b.Busy)
-        reason           = $b.Reason
+        ready            = ($ollamaUp -and -not $b.Busy)
+        reason           = $reason
         idleSec          = $b.IdleSec
         locked           = $b.Locked
         fullscreen       = $b.Fullscreen
