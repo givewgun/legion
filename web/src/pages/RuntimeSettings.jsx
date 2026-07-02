@@ -7,6 +7,7 @@ import { api } from '../api/client.js';
 export function RuntimeSettings() {
   const [settings, setSettings] = useState(null); // { key: {value, source, default, type, label} }
   const [pcModels, setPcModels] = useState([]);
+  const [oracleModels, setOracleModels] = useState([]);
   const [status, setStatus] = useState('');
 
   useEffect(() => {
@@ -18,6 +19,10 @@ export function RuntimeSettings() {
       .getPcModels()
       .then((r) => setPcModels(r.models ?? []))
       .catch(() => setPcModels([]));
+    api
+      .getOracleModels()
+      .then((r) => setOracleModels(r.models ?? []))
+      .catch(() => setOracleModels([]));
   }, []);
 
   if (!settings) return null;
@@ -51,7 +56,13 @@ export function RuntimeSettings() {
       <h2 className="font-semibold mb-2">Runtime settings (no redeploy)</h2>
       <div className="grid grid-cols-[220px_1fr] gap-2 items-center">
         {Object.entries(settings).map(([key, field]) => (
-          <Field key={key} name={key} field={field} models={pcModels} onChange={(v) => setValue(key, v)} />
+          <Field
+            key={key}
+            name={key}
+            field={field}
+            models={{ home_model: pcModels, oracle_model: oracleModels }}
+            onChange={(v) => setValue(key, v)}
+          />
         ))}
       </div>
       <button
@@ -69,6 +80,9 @@ export function RuntimeSettings() {
 function Field({ name, field, models, onChange }) {
   const { value, type, default: def, source, label } = field;
   const hint = source === 'db' ? `(env: ${String(def)})` : `(default ${String(def)})`;
+  // Model knobs render as a dropdown of what that box actually has pulled
+  // (home_model → the PC sidecar's tags, oracle_model → the Oracle Ollama's).
+  const modelOptions = models[name] ?? [];
 
   let control;
   if (type === 'bool') {
@@ -107,10 +121,10 @@ function Field({ name, field, models, onChange }) {
         onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
       />
     );
-  } else if (name === 'home_model' && models.length > 0) {
-    // Dropdown of models actually pulled on the PC; keep the current value selectable
+  } else if (modelOptions.length > 0) {
+    // Dropdown of models actually pulled on the box; keep the current value selectable
     // even if it isn't in the list.
-    const opts = !value || models.includes(value) ? models : [value, ...models];
+    const opts = !value || modelOptions.includes(value) ? modelOptions : [value, ...modelOptions];
     control = (
       <select
         id={`set-${name}`}

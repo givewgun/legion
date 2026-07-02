@@ -5,7 +5,7 @@ import { settingsRoutes } from '../../src/api/routes/settings.js';
 
 const CFG = {
   home: { url: 'http://pc:11435', model: 'qwen3:14b', fallback: true, enabled: true, think: true, timeoutMs: 3600000, probeTimeoutMs: 1500 },
-  ollama: { model: 'qwen2.5:7b-instruct' },
+  ollama: { url: 'http://oracle:11434', model: 'qwen2.5:7b-instruct' },
 };
 
 function appWith(repo, fetchImpl) {
@@ -81,6 +81,26 @@ describe('settings routes', () => {
       throw new Error('ECONNREFUSED');
     });
     const res = await request(appWith({}, fetchImpl)).get('/api/settings/pc-models');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ models: [] });
+  });
+
+  it("GET /oracle-models proxies the Oracle box's tags", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ models: [{ name: 'qwen3:4b' }, { name: 'qwen2.5:7b-instruct' }] }),
+    }));
+    const res = await request(appWith({}, fetchImpl)).get('/api/settings/oracle-models');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ models: ['qwen3:4b', 'qwen2.5:7b-instruct'] });
+    expect(fetchImpl.mock.calls[0][0]).toBe('http://oracle:11434/api/tags');
+  });
+
+  it('GET /oracle-models fails soft to an empty list when the box is unreachable', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('ECONNREFUSED');
+    });
+    const res = await request(appWith({}, fetchImpl)).get('/api/settings/oracle-models');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ models: [] });
   });
