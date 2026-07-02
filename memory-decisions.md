@@ -1,5 +1,19 @@
 # Decisions
 
+- **2026-07-02 — Cycle stop + reliability reset are emitter/DB-owned operations.** Stop is
+  publish-only from the API (`DELETE /api/trigger[/:symbol]` → `legion.stop.<SYM>`): the
+  emitter drops the round buffers, closes running cycles as `stopped` (new status), frees
+  pending rows, and keeps a stopped-cycle guard so an agent mid-LLM-call can't resurrect
+  the round with a late vote. `POST /api/reliability/reset` wipes the dial tables AND
+  `signal_votes` (the graded evidence) — otherwise the next relearn re-derives the old
+  dials; signals/backtest history stay intact. UI confirms before resetting.
+
+- **2026-07-02 — Oracle model downgraded again: qwen3:1.7b.** qwen3:4b with thinking hit
+  even the 60-min deadline under a sweep on the 2-OCPU box (user report). qwen3:1.7b
+  (~1.4GB) is the smallest thinking tag that still votes usably — the last rung before
+  thinking has to come off the Oracle tier (blank OLLAMA_THINK + qwen2.5) or move to the
+  home-PC tier entirely.
+
 - **2026-07-02 — Oracle default model is qwen3:4b with thinking ON.** Follow-up to
   ADR 0033: the Oracle tier's default (`OLLAMA_MODEL` env default, `.env.example`, and the
   deploy job's pinned `MODEL`) moves from qwen2.5 to `qwen3:4b` (~2.6GB, fits the 2-OCPU/12GB

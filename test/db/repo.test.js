@@ -43,6 +43,40 @@ describe('createRepo', () => {
     expect(id).toBeNull();
   });
 
+  it('lists running cycles', async () => {
+    const pool = poolReturning([[{ id: 1, symbol: 'NVDA' }]]);
+    const repo = createRepo(createDb(pool));
+    const rows = await repo.listRunningCycles();
+    expect(rows).toEqual([{ id: 1, symbol: 'NVDA' }]);
+    expect(pool.calls[0].text).toMatch(/WHERE status = 'running'/);
+  });
+
+  it('stops the running cycles of a symbol and returns the closed rows', async () => {
+    const pool = poolReturning([[{ id: 1, symbol: 'NVDA' }]]);
+    const repo = createRepo(createDb(pool));
+    const rows = await repo.stopRunningCycles('NVDA');
+    expect(rows).toEqual([{ id: 1, symbol: 'NVDA' }]);
+    expect(pool.calls[0].text).toMatch(/SET status = 'stopped'/);
+    expect(pool.calls[0].params).toEqual(['NVDA']);
+  });
+
+  it('resets reliability by clearing the dial tables and forecast snapshots', async () => {
+    const pool = poolReturning([[{ one: 1 }, { one: 1 }], [], [{ one: 1 }], [], [{ one: 1 }]]);
+    const repo = createRepo(createDb(pool));
+    const cleared = await repo.resetReliability();
+    expect(cleared).toEqual({
+      agent_reliability: 2,
+      agent_regime_reliability: 0,
+      agent_correlation: 1,
+      agent_lessons: 0,
+      signal_votes: 1,
+    });
+    const tables = pool.calls.map((c) => c.text);
+    expect(tables.some((t) => t.includes('legion.signal_votes'))).toBe(true);
+    // signals themselves are never touched — trade history survives a reset
+    expect(tables.every((t) => !/DELETE FROM legion\.signals\b/.test(t))).toBe(true);
+  });
+
   it('adds a vote', async () => {
     const pool = poolReturning([[{ id: 1 }]]);
     const repo = createRepo(createDb(pool));

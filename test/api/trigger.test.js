@@ -5,6 +5,11 @@ import { createApp } from '../../src/api/app.js';
 function repoStub(overrides = {}) {
   return {
     listEnabledTickers: vi.fn(async () => ['NVDA', 'MU']),
+    listRunningCycles: vi.fn(async () => [
+      { id: 1, symbol: 'NVDA' },
+      { id: 2, symbol: 'NVDA' },
+      { id: 3, symbol: 'MU' },
+    ]),
     ...overrides,
   };
 }
@@ -12,6 +17,7 @@ function repoStub(overrides = {}) {
 function orchestratorStub(overrides = {}) {
   return {
     kick: vi.fn(async (symbol) => `cycle-${symbol}`),
+    stop: vi.fn(),
     ...overrides,
   };
 }
@@ -49,6 +55,47 @@ describe('trigger routes', () => {
   it('POST /api/trigger/:symbol returns 503 without an orchestrator', async () => {
     const app = createApp({ repo: repoStub() });
     const res = await request(app).post('/api/trigger/NVDA');
+    expect(res.status).toBe(503);
+  });
+
+  it('DELETE /api/trigger publishes a stop per running symbol and reports the cycles', async () => {
+    const orchestrator = orchestratorStub();
+    const repo = repoStub();
+    const app = createApp({ repo, orchestrator });
+    const res = await request(app).delete('/api/trigger');
+    expect(res.status).toBe(202);
+    expect(orchestrator.stop).toHaveBeenCalledTimes(2); // one per distinct symbol
+    expect(orchestrator.stop).toHaveBeenCalledWith('NVDA');
+    expect(orchestrator.stop).toHaveBeenCalledWith('MU');
+    expect(res.body.stopping).toHaveLength(3);
+  });
+
+  it('DELETE /api/trigger/:symbol stops one ticker and reports its running cycles', async () => {
+    const orchestrator = orchestratorStub();
+    const app = createApp({ repo: repoStub(), orchestrator });
+    const res = await request(app).delete('/api/trigger/nvda');
+    expect(res.status).toBe(202);
+    expect(orchestrator.stop).toHaveBeenCalledWith('NVDA');
+    expect(res.body).toEqual({
+      symbol: 'NVDA',
+      stopping: [
+        { id: 1, symbol: 'NVDA' },
+        { id: 2, symbol: 'NVDA' },
+      ],
+    });
+  });
+
+  it('DELETE /api/trigger/:symbol still publishes when nothing is running (race cover)', async () => {
+    const orchestrator = orchestratorStub();
+    const repo = repoStub({ listRunningCycles: vi.fn(async () => []) });
+    const res = await request(createApp({ repo, orchestrator })).delete('/api/trigger/MU');
+    expect(res.status).toBe(202);
+    expect(orchestrator.stop).toHaveBeenCalledWith('MU');
+    expect(res.body.stopping).toEqual([]);
+  });
+
+  it('DELETE /api/trigger returns 503 without an orchestrator', async () => {
+    const res = await request(createApp({ repo: repoStub() })).delete('/api/trigger');
     expect(res.status).toBe(503);
   });
 

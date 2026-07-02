@@ -6,6 +6,7 @@ import {
   constraintSubject,
   cycleSubject,
   consensusSubject,
+  stopSubject,
 } from '../../src/bus/subjects.js';
 
 const consensus = { thetaV: 0.5, quorum: 2 / 3, holdBand: 0.5, maxRounds: 3 };
@@ -26,6 +27,63 @@ function emitVote(bus, { cycleId, symbol, round, vote }) {
 }
 
 describe('createEmitter (v2)', () => {
+  it('operator stop drops the buffered round, closes the cycles, and ignores stragglers', async () => {
+    const bus = createMemoryBus();
+    const repo = fakeRepo();
+    repo.stopRunningCycles = vi.fn(async () => [{ id: 9, symbol: 'NVDA' }]);
+    const telegram = vi.fn(async () => {});
+    createEmitter({ bus, repo, telegram, consensus, expectedAgents: 2 }).start();
+
+    // one vote in: the round is buffered but incomplete
+    emitVote(bus, {
+      cycleId: 9,
+      symbol: 'NVDA',
+      round: 1,
+      vote: { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'breakout' },
+    });
+
+    bus.publishJSON(stopSubject('NVDA'), { symbol: 'NVDA' });
+    await vi.waitFor(() => expect(repo.stopRunningCycles).toHaveBeenCalledWith('NVDA'));
+
+    // the straggler that would have completed the round must be dropped, not
+    // resurrect the buffer and finalize a stopped cycle
+    emitVote(bus, {
+      cycleId: 9,
+      symbol: 'NVDA',
+      round: 1,
+      vote: { agentId: 'news', stance: 2, conviction: 0.8, weight: 1, rationale: 'beat' },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(repo.addRound).not.toHaveBeenCalled();
+    expect(telegram).not.toHaveBeenCalled();
+  });
+
+  it('a stop for one symbol leaves other symbols untouched', async () => {
+    const bus = createMemoryBus();
+    const repo = fakeRepo();
+    repo.stopRunningCycles = vi.fn(async () => []);
+    const telegram = vi.fn(async () => {});
+    createEmitter({ bus, repo, telegram, consensus, expectedAgents: 2 }).start();
+
+    emitVote(bus, {
+      cycleId: 11,
+      symbol: 'MU',
+      round: 1,
+      vote: { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'r' },
+    });
+    bus.publishJSON(stopSubject('NVDA'), { symbol: 'NVDA' });
+    await vi.waitFor(() => expect(repo.stopRunningCycles).toHaveBeenCalledWith('NVDA'));
+
+    emitVote(bus, {
+      cycleId: 11,
+      symbol: 'MU',
+      round: 1,
+      vote: { agentId: 'news', stance: 2, conviction: 0.8, weight: 1, rationale: 'r' },
+    });
+    await vi.waitFor(() => expect(telegram).toHaveBeenCalledTimes(1));
+    expect(repo.finishCycle).toHaveBeenCalledWith(11, 'converged');
+  });
+
   it('finalizes a converged round: persists, notifies, publishes consensus', async () => {
     const bus = createMemoryBus();
     const repo = fakeRepo();

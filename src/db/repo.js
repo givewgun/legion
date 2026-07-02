@@ -522,6 +522,47 @@ export function createRepo(db) {
       );
     },
 
+    // Cycles still in flight, for the stop endpoints to report what a stop covers.
+    async listRunningCycles() {
+      return db.query(
+        `SELECT id, symbol FROM legion.cycles WHERE status = 'running' ORDER BY symbol, id`,
+      );
+    },
+
+    // Closes every running cycle for a symbol as operator-stopped. Returns the
+    // closed rows so the emitter can drop their buffers and ignore late votes.
+    async stopRunningCycles(symbol) {
+      return db.query(
+        `UPDATE legion.cycles
+            SET status = 'stopped', ended_at = now()
+          WHERE status = 'running' AND symbol = $1
+         RETURNING id, symbol`,
+        [symbol],
+      );
+    },
+
+    // Operator reset of the learning loop: wipes the dial tables AND the graded
+    // forecast snapshots they are re-derived from, so every lookup reads neutral
+    // (ρ = cal = info = 1.0, corr = 0, no lessons, no track-record memory) and a
+    // later relearn cannot resurrect the old record. Signals and their resolved
+    // outcomes are kept — trade history and the backtest stay intact. Returns
+    // per-table deleted row counts.
+    async resetReliability() {
+      const tables = [
+        'agent_reliability',
+        'agent_regime_reliability',
+        'agent_correlation',
+        'agent_lessons',
+        'signal_votes',
+      ];
+      const cleared = {};
+      for (const table of tables) {
+        const rows = await db.query(`DELETE FROM legion.${table} RETURNING 1 AS one`);
+        cleared[table] = rows.length;
+      }
+      return cleared;
+    },
+
     async listEnabledTickers() {
       // db.query returns the rows array directly (see src/db/client.js).
       const rows = await db.query(

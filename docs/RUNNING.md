@@ -54,7 +54,7 @@ cp .env.example .env          # then edit (see §6)
 docker compose up -d nats ollama
 
 # Pull the model the agents use (first time only; a few GB)
-docker exec -it legion-ollama ollama pull qwen3:4b
+docker exec -it legion-ollama ollama pull qwen3:1.7b
 
 # Create the legion schema in GunVest's Postgres
 npm run db:migrate            # prints "legion schema migrated"
@@ -153,7 +153,7 @@ the host one-shot `npm run kick NVDA` against the same NATS.
 | `GUNVEST_API_URL`                                              | `http://localhost:3001`                               | GunVest REST base                                                                                                                         |
 | `DATABASE_URL`                                                 | `postgres://postgres:postgres@localhost:5432/gunvest` | shared Postgres; `legion` schema                                                                                                          |
 | `NATS_URL`                                                     | `nats://localhost:4222`                               | message bus                                                                                                                               |
-| `OLLAMA_URL` / `OLLAMA_MODEL`                                  | `http://localhost:11434` / `qwen3:4b`      | local LLM                                                                                                                                 |
+| `OLLAMA_URL` / `OLLAMA_MODEL`                                  | `http://localhost:11434` / `qwen3:1.7b`      | local LLM                                                                                                                                 |
 | `OLLAMA_TIMEOUT_MS`                                            | `300000`                                              | per-request inference deadline (ms); raise on slow hardware                                                                               |
 | `OLLAMA_MAX_CONCURRENT`                                        | `1`                                                   | in-flight inferences per agent process; keep at 1 to match `OLLAMA_NUM_PARALLEL=1` on the server                                          |
 | `GUNVEST_TIMEOUT_MS`                                           | `15000`                                               | per-request GunVest deadline (ms); raise if a sweep bursts the slow `/api/news` endpoint into `timeout after Nms` abstains               |
@@ -202,7 +202,7 @@ Run the test suite (infra-free): `npm test`.
 | Vote rationale `abstain (unparseable vote)`               | The local model returned no parseable JSON (too small / overloaded). Retry, or use a stronger `OLLAMA_MODEL`. The news feed is now trimmed + relevance-ranked to reduce this. |
 | Emitter never emits                                       | Fewer than `LEGION_EXPECTED_AGENTS` agents running, or `LEGION_RISK_ENABLED=true` but the `risk` process is down (emitter waits for the constraint). Start all 5 + risk. |
 | `ECONNREFUSED 4222`                                       | NATS not up — `docker compose up -d nats`.                                                                                                                               |
-| Ollama timeouts / `model not found`                       | `docker exec -it legion-ollama ollama pull qwen3:4b`; first inference is slow on CPU. If timeouts persist under load, confirm `OLLAMA_NUM_PARALLEL=1` is set on the container (prevents CPU saturation from concurrent requests) and raise `OLLAMA_TIMEOUT_MS` if needed.                              |
+| Ollama timeouts / `model not found`                       | `docker exec -it legion-ollama ollama pull qwen3:1.7b`; first inference is slow on CPU. If timeouts persist under load, confirm `OLLAMA_NUM_PARALLEL=1` is set on the container (prevents CPU saturation from concurrent requests) and raise `OLLAMA_TIMEOUT_MS` if needed.                              |
 | Short-interest feed always `null`                         | `FINNHUB_API_KEY` unset (expected — only that feed needs it).                                                                                                            |
 | AAII / NAAIM feed `null`                                  | HTML scrape of aaii.com / ycharts.com; layout-fragile and degrades to `null` on any change. Other feeds are unaffected.                                                  |
 | Docker agents can't reach DB/NATS                         | Using `localhost` inside containers — apply the §5 `nats`/`ollama`/`host.docker.internal` overrides.                                                                     |

@@ -1,6 +1,7 @@
 import {
   voteWildcard,
   constraintWildcard,
+  stopWildcard,
   cycleSubject,
   consensusSubject,
 } from '../bus/subjects.js';
@@ -62,6 +63,10 @@ export function createEmitter({
   const learnedByCycle = new Map(); // cycleId -> { rhoLookup, calibLookup, corr, regime } loaded once per cycle
   const firstVotesByCycle = new Map(); // cycleId -> round-1 votes (independent priors)
   const cycleSeenAt = new Map(); // cycleId -> ms of last activity (drives stale-cycle eviction)
+  // Operator-stopped cycles (String(cycleId) -> ms stopped). An agent mid-LLM-call
+  // cannot be cancelled, so its late vote must not resurrect a stopped cycle's
+  // buffer; entries age out with the same stale horizon as everything else.
+  const stoppedCycles = new Map();
   const sweepThrottleMs = Math.min(SweepThrottleMs, staleEntryMs);
   let lastSweepMs = 0;
 
@@ -261,6 +266,9 @@ export function createEmitter({
         firstVotesByCycle.delete(cycleId);
       }
     }
+    for (const [cycleId, stoppedAt] of stoppedCycles) {
+      if (nowMs - stoppedAt > staleEntryMs) stoppedCycles.delete(cycleId);
+    }
     // Close abandoned cycles in the DB: still 'running', older than the stale
     // horizon, and no longer tracked in memory. Cycles still in cycleSeenAt are
     // alive however long ago they started (slow multi-round debates) and are
@@ -292,6 +300,32 @@ export function createEmitter({
     if (nowMs - lastSweepMs < sweepThrottleMs) return;
     lastSweepMs = nowMs;
     sweepStale(nowMs);
+  }
+
+  // Operator stop (dashboard / DELETE /api/trigger): drop every in-flight buffer
+  // for the symbol, close its running cycles as 'stopped', free the per-cycle
+  // state and pending rows, and remember the cycle ids so stragglers from agents
+  // already reasoning are ignored rather than resurrecting the round.
+  async function handleStop(symbol) {
+    const nowMs = clock().getTime();
+    const stopped = new Map(); // String(cycleId) -> live cycleId (for map cleanup)
+    for (const [k, entry] of rounds) {
+      if (entry.symbol !== symbol) continue;
+      rounds.delete(k);
+      stopped.set(String(entry.cycleId), entry.cycleId);
+    }
+    // The DB is the authority on what is running — it also covers cycles whose
+    // agents are still reasoning (no buffer exists until the first vote lands).
+    for (const row of (await repo.stopRunningCycles?.(symbol)) ?? []) {
+      if (!stopped.has(String(row.id))) stopped.set(String(row.id), row.id);
+    }
+    for (const [sid, cycleId] of stopped) {
+      stoppedCycles.set(sid, nowMs);
+      await cleanupCycle(cycleId);
+    }
+    if (stopped.size > 0) {
+      logger.info?.(`[emitter] stopped ${stopped.size} cycle(s) for ${symbol}`);
+    }
   }
 
   function ready(entry) {
@@ -510,6 +544,7 @@ export function createEmitter({
         const nowMs = clock().getTime();
         maybeSweep(nowMs);
         const { cycleId, symbol, round, vote } = msg;
+        if (stoppedCycles.has(String(cycleId))) return; // operator-stopped; drop stragglers
         const { k, entry } = touch(cycleId, round, symbol, nowMs);
         entry.votes.push(vote);
         // Fire-and-forget: crash recovery is best-effort, the hot path is not.
@@ -522,12 +557,18 @@ export function createEmitter({
         const nowMs = clock().getTime();
         maybeSweep(nowMs);
         const { cycleId, symbol, round, constraint } = msg;
+        if (stoppedCycles.has(String(cycleId))) return; // operator-stopped; drop stragglers
         const { k, entry } = touch(cycleId, round, symbol, nowMs);
         entry.constraint = constraint;
         repo.savePendingConstraint?.(cycleId, round, symbol, constraint).catch((err) => {
           logger.error(`[emitter] pending constraint persist failed: ${err.message}`);
         });
         if (ready(entry)) process(cycleId, k, entry);
+      });
+      bus.subscribeJSON(stopWildcard(), (msg) => {
+        handleStop(msg.symbol).catch((err) => {
+          logger.error(`[emitter] stop failed for ${msg.symbol}: ${err.message}`);
+        });
       });
       return recover().catch((err) => {
         logger.error(`[emitter] crash recovery failed: ${err.message}`);

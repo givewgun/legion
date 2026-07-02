@@ -4,12 +4,25 @@ import { RuntimeSettings } from './RuntimeSettings.jsx';
 
 const PROVIDERS = ['local', 'gemini', 'openai'];
 
-// Manual operations for the PoC loop: re-kick a full sweep and re-run the
-// reliability learning pass without waiting for their crons. Lives on the
-// config page so it sits behind the same login gate as the other knobs.
+// Manual operations for the PoC loop: kick or stop cycles (all, or a chosen
+// ticker) and drive the reliability loop without waiting for the crons. Lives
+// on the config page so it sits behind the same login gate as the other knobs.
 function Operations() {
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const [tickers, setTickers] = useState([]);
+  const [ticker, setTicker] = useState('');
+
+  useEffect(() => {
+    api
+      .listTickers()
+      .then((rows) => {
+        const enabled = rows.filter((t) => t.enabled).map((t) => t.symbol);
+        setTickers(enabled);
+        setTicker(enabled[0] ?? '');
+      })
+      .catch(() => setTickers([]));
+  }, []);
 
   async function run(label, action, summarize) {
     setBusy(true);
@@ -23,10 +36,14 @@ function Operations() {
     }
   }
 
+  const cycles = (n) => `${n} cycle${n === 1 ? '' : 's'}`;
+  const blue = 'bg-blue-600 text-white rounded px-3 py-1 disabled:opacity-50';
+  const red = 'bg-red-600 text-white rounded px-3 py-1 disabled:opacity-50';
+
   return (
     <section className="mb-4 border rounded p-3">
       <h2 className="font-semibold mb-2">Operations</h2>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           aria-label="run-all-cycles"
           disabled={busy}
@@ -37,9 +54,19 @@ function Operations() {
               (r) => `Kicked ${r.kicked.length} ticker${r.kicked.length === 1 ? '' : 's'}`,
             )
           }
-          className="bg-blue-600 text-white rounded px-3 py-1 disabled:opacity-50"
+          className={blue}
         >
           Run all cycles
+        </button>
+        <button
+          aria-label="stop-all-cycles"
+          disabled={busy}
+          onClick={() =>
+            run('Stopping all cycles', api.stopAllCycles, (r) => `Stopping ${cycles(r.stopping.length)}`)
+          }
+          className={red}
+        >
+          Stop all cycles
         </button>
         <button
           aria-label="relearn-reliability"
@@ -53,11 +80,73 @@ function Operations() {
                 `${r.agents} agent dial${r.agents === 1 ? '' : 's'} recomputed`,
             )
           }
-          className="bg-blue-600 text-white rounded px-3 py-1 disabled:opacity-50"
+          className={blue}
         >
           Relearn reliability
         </button>
+        <button
+          aria-label="reset-reliability"
+          disabled={busy}
+          onClick={() => {
+            if (
+              !window.confirm(
+                'Reset ALL reliability data? Every dial returns to neutral 1.0 and the ' +
+                  'graded per-agent forecast history is deleted (signals and backtest are kept). ' +
+                  'This cannot be undone.',
+              )
+            )
+              return;
+            run(
+              'Resetting reliability',
+              api.resetReliability,
+              (r) =>
+                `Reliability reset to 1.0 (${Object.values(r.cleared).reduce((a, b) => a + b, 0)} rows cleared)`,
+            );
+          }}
+          className={red}
+        >
+          Reset reliability
+        </button>
         {status && <span className="text-gray-500">{status}</span>}
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <select
+          aria-label="ticker-select"
+          value={ticker}
+          disabled={tickers.length === 0}
+          onChange={(e) => setTicker(e.target.value)}
+          className="border rounded px-1 py-0.5"
+        >
+          {tickers.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+        <button
+          aria-label="run-ticker"
+          disabled={busy || !ticker}
+          onClick={() =>
+            run(`Running ${ticker}`, () => api.triggerTicker(ticker), (r) => `Kicked ${r.symbol} (cycle ${r.cycleId})`)
+          }
+          className={blue}
+        >
+          Run cycle
+        </button>
+        <button
+          aria-label="stop-ticker"
+          disabled={busy || !ticker}
+          onClick={() =>
+            run(
+              `Stopping ${ticker}`,
+              () => api.stopTicker(ticker),
+              (r) => `Stopping ${cycles(r.stopping.length)} for ${r.symbol}`,
+            )
+          }
+          className={red}
+        >
+          Stop cycle
+        </button>
       </div>
     </section>
   );

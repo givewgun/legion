@@ -64,6 +64,18 @@ export function reliabilityRoutes(repo, { gunvest = null, runOnce = runReliabili
     }
   });
 
+  // Operator reset: forget every learned dial AND the graded forecast snapshots
+  // they derive from, so the panel restarts at neutral 1.0 and a later relearn
+  // cannot resurrect the old record. Destructive by design — the dashboard
+  // confirms before calling. Signals / backtest history stay intact.
+  router.post('/reset', async (req, res, next) => {
+    try {
+      res.json({ cleared: await repo.resetReliability() });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // Relearn now: resolve due signals, recompute the dials and correlations.
   // Idempotent DB work (the same pass the cron runs), so a manual re-kick is safe.
   router.post('/relearn', async (req, res, next) => {

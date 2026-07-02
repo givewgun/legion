@@ -45,11 +45,13 @@ export function loadConfig(env = process.env) {
       // CPU-only VM that only serves when the home PC primary is unavailable. A 7B
       // model on CPU under a multi-agent sweep can't finish inside OLLAMA_TIMEOUT_MS
       // and every call hangs the full timeout, so the fallback default is a small,
-      // CPU-sized model. qwen3:4b (~2.6GB) stays in that class AND is a thinking
-      // model, so the Oracle tier emits reasoning traces the panel can share
-      // (ADR 0033). Override OLLAMA_MODEL (or the oracle_model runtime knob) when
-      // this box has a GPU / is the sole tier.
-      model: env.OLLAMA_MODEL || 'qwen3:4b',
+      // CPU-sized model. qwen3:1.7b (~1.4GB) is the smallest thinking model that
+      // still emits usable votes, so the Oracle tier produces reasoning traces
+      // the panel can share (ADR 0033) — qwen3:4b was tried first and hit even a
+      // 60-min deadline under a sweep on the 2-OCPU box. Override OLLAMA_MODEL
+      // (or the oracle_model runtime knob) when this box has a GPU / is the
+      // sole tier.
+      model: env.OLLAMA_MODEL || 'qwen3:1.7b',
       // Generous deadline (60 min) because this CPU box serves OLLAMA_NUM_PARALLEL=1:
       // a whole-watchlist sweep (every ticker × agent) serializes through one slot, so
       // a queued call can wait a long time for its turn. A short timeout aborts those

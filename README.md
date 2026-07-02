@@ -156,7 +156,7 @@ handover notes in [`docs/superpowers/handovers/`](docs/superpowers/handovers/).
 cp .env.example .env       # fill in values (see Configuration)
 npm install
 docker compose up -d       # start NATS + Ollama
-docker exec -it legion-ollama ollama pull qwen3:4b
+docker exec -it legion-ollama ollama pull qwen3:1.7b
 npm run db:migrate         # create the legion schema in GunVest's Postgres
 npm test                   # full suite, infra-free
 ```
@@ -237,7 +237,7 @@ does in the algorithm are detailed in
 
 **Ollama** (app side — `OLLAMA_TIMEOUT_MS`, `OLLAMA_MAX_CONCURRENT`=`1`; container
 side — `OLLAMA_NUM_PARALLEL`=`1`, `OLLAMA_KEEP_ALIVE`=`30m` to keep the model resident for a
-whole sweep while still unloading between cycles). The default model is **`qwen3:4b`** with
+whole sweep while still unloading between cycles). The default model is **`qwen3:1.7b`** with
 `OLLAMA_THINK=true`: a CPU-sized thinking model, so the reasoning trace is captured onto each
 vote, quoted to peers as part of the dissent block, and replayable in the debate viewer
 (ADR 0033). Running a non-thinking model instead (e.g. `qwen2.5:7b-instruct`)? Set

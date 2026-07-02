@@ -1,5 +1,16 @@
 # Session log
 
+## 2026-07-02 — Ops controls PR: stop cycles, per-ticker run/stop, reliability reset; 1.7b downgrade
+
+- New PR (claude/cycle-stop-controls): Stop-all + per-ticker Run/Stop on the Config page's
+  Operations row (kept Run-all/Relearn), backed by `legion.stop.*` control messages the
+  emitter honors, `stopped` cycle status, and DELETE /api/trigger endpoints.
+- "Reset reliability" button (confirm-gated) → POST /api/reliability/reset →
+  repo.resetReliability() clears agent_reliability, regime, correlation, lessons, and
+  signal_votes so dials restart at neutral 1.0 and stay there.
+- Downgraded Oracle default qwen3:4b → qwen3:1.7b after the user hit 60-min timeouts with
+  4b thinking on the VM.
+
 ## 2026-07-02 — Oracle defaults to a thinking model (qwen3:4b, think=true)
 
 - Second PR on top of the ADR 0033 thought-sharing feature (PR #67, merged): switched the

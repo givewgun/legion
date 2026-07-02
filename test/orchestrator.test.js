@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createMemoryBus } from '../src/bus/memory.js';
 import { createOrchestrator } from '../src/orchestrator.js';
-import { cycleSubject } from '../src/bus/subjects.js';
+import { cycleSubject, stopSubject } from '../src/bus/subjects.js';
 
 describe('createOrchestrator', () => {
   it('creates a cycle and publishes the kick-off', async () => {
@@ -24,5 +24,17 @@ describe('createOrchestrator', () => {
     const orch = createOrchestrator({ bus, repo });
     await orch.kick('mu');
     expect(repo.createCycle).toHaveBeenCalledWith('MU');
+  });
+
+  it('publishes a stop request for the ticker (no DB write)', () => {
+    const bus = createMemoryBus();
+    const repo = { createCycle: vi.fn() };
+    const msgs = [];
+    bus.subscribeJSON(stopSubject('NVDA'), (m) => msgs.push(m));
+
+    createOrchestrator({ bus, repo }).stop('nvda');
+
+    expect(msgs).toEqual([{ symbol: 'NVDA' }]);
+    expect(repo.createCycle).not.toHaveBeenCalled();
   });
 });
