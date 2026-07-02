@@ -330,3 +330,9 @@ CREATE TABLE IF NOT EXISTS legion.holdings (
   UNIQUE (user_id, ticker)
 );
 CREATE INDEX IF NOT EXISTS idx_holdings_user ON legion.holdings (user_id);
+
+-- ── Thinking agents: shared reasoning traces (ADR 0033) ──────────────────────
+-- The reasoning trace ("thought") a thinking model emitted alongside its vote.
+-- Republished to peers as part of the dissent block and replayed in the debate
+-- viewer. Null for non-thinking models and abstains.
+ALTER TABLE legion.votes ADD COLUMN IF NOT EXISTS thought TEXT;

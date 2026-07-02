@@ -31,6 +31,7 @@ export function threadModel(rounds = []) {
         stance: v.stance,
         conviction: v.conviction,
         rationale: v.rationale,
+        thought: v.thought ?? null,
         model: v.model ?? null,
         source: v.source ?? null,
         location: locationForSource(v.source ?? null),

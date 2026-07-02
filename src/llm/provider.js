@@ -147,15 +147,22 @@ function buildLocalProvider(cfg, fetchImpl, clientFactory) {
   return createTieredProvider({ primary: pc, fallback: oracle, probe, allowFallback: home.fallback });
 }
 
-// Normalizes the provider generate contract: plain providers return a string,
-// the tiered provider returns { text, model, source }. Callers that need the served
-// model and source (the agent runner) use this; text-only callers read `.text`.
+// Normalizes the provider generate contract to { text, thinking, model, source }:
+// legacy providers return a string, the Ollama/OpenAI providers return
+// { text, thinking }, and the tiered provider returns the full shape. Callers that
+// need the served model/source or the reasoning trace (the agent runner) use this;
+// text-only callers read `.text`.
 export async function normalizeGenerate(provider, args) {
   const out = await provider.generate(args);
   if (typeof out === 'string') {
-    return { text: out, model: provider.model ?? null, source: provider.source ?? null };
+    return { text: out, thinking: null, model: provider.model ?? null, source: provider.source ?? null };
   }
-  return out;
+  return {
+    thinking: null,
+    model: provider.model ?? null,
+    source: provider.source ?? null,
+    ...out,
+  };
 }
 
 // Composite key for per-(agent, model) reliability dial maps. NUL never appears in

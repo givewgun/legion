@@ -237,7 +237,10 @@ does in the algorithm are detailed in
 
 **Ollama** (app side — `OLLAMA_TIMEOUT_MS`=`300000`, `OLLAMA_MAX_CONCURRENT`=`1`; container
 side — `OLLAMA_NUM_PARALLEL`=`1`, `OLLAMA_KEEP_ALIVE`=`30m` to keep the model resident for a
-whole sweep while still unloading between cycles).
+whole sweep while still unloading between cycles). Set `OLLAMA_THINK=true` (or the
+`oracle_think` runtime knob on the Config page) when the Oracle box runs a thinking model
+(e.g. qwen3): the reasoning trace is captured onto each vote, quoted to peers as part of the
+dissent block, and replayable in the debate viewer (ADR 0033).
 
 LLM provider is pluggable (`local` Ollama by default; `gemini` / `openai` selectable per agent)
 via [`src/llm/provider.js`](src/llm/provider.js). Only `local` is implemented today — selecting

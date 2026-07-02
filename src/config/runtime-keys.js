@@ -19,6 +19,9 @@ export const RUNTIME_KEYS = [
     label: 'Home PC probe timeout (ms)',
   },
   { key: 'oracle_model', type: 'string', cfgPath: 'ollama.model', label: 'Oracle fallback model' },
+  // Tribool like home_think: true/false is sent as the Ollama `think` field, unset
+  // omits it entirely so a non-thinking model (qwen2.5) sees an unchanged request.
+  { key: 'oracle_think', type: 'tribool', cfgPath: 'ollama.think', label: 'Oracle reasoning (think)' },
   {
     key: 'oracle_timeout_ms',
     type: 'int',

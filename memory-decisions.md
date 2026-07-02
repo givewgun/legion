@@ -1,5 +1,13 @@
 # Decisions
 
+- **2026-07-02 — Agents share reasoning traces, not just verdicts (ADR 0033).** A vote
+  carries an optional `thought` (the thinking model's trace: structured `thinking` field,
+  or inline `<think>` blocks split from the answer). The dissent block quotes it truncated
+  (900 chars/peer; 6000-char storage cap) so revision rounds argue with the peer's actual
+  math. Consensus math and the reliability loop ignore it — replayability holds. Sharing
+  is gated purely by presence: non-thinking panels are byte-identical. New `oracle_think`
+  runtime knob mirrors `home_think` for running a thinking model on the Oracle VM.
+
 - **2026-07-02 — Ollama HTTP timeouts must match the call deadline.** Raising
   `OLLAMA_TIMEOUT_MS` alone can never fix queue-wait aborts: the ollama-js client awaits
   response HEADERS before our abort timer exists, and a box whose `NUM_PARALLEL` slots are

@@ -1,5 +1,30 @@
 import { createVote, validateVote } from '../consensus/vote.js';
 
+// Thinking models running WITHOUT the structured `think` request field (e.g.
+// qwen3 by default) emit their reasoning inline as <think>...</think> in the
+// answer. An unterminated block (the trace ran into the token budget) is
+// captured to end-of-text so a long thought is not silently lost.
+const ThinkBlockRe = /<think>([\s\S]*?)(?:<\/think>|$)/gi;
+
+// Splits inline <think> blocks out of LLM text: returns the concatenated
+// reasoning (null when there is none) and the text with the blocks removed,
+// so vote parsing sees only the answer.
+export function splitThinking(raw) {
+  const blocks = [];
+  const text = raw.replace(ThinkBlockRe, (_, body) => {
+    if (body.trim()) blocks.push(body.trim());
+    return '';
+  });
+  return { thought: blocks.length > 0 ? blocks.join('\n\n') : null, text };
+}
+
+// Truncates a reasoning trace to `max` chars (head-first, with a marker) so a
+// runaway thought cannot bloat the vote payload or a peer's prompt. Null-safe.
+export function truncateThought(thought, max) {
+  if (thought == null || thought.length <= max) return thought ?? null;
+  return `${thought.slice(0, max)}… [truncated]`;
+}
+
 // Returns the balanced { ... } substring starting at `start`, or null if it
 // never closes. String-aware so braces inside quoted values are not counted.
 function sliceBalanced(text, start) {
@@ -38,7 +63,7 @@ function extractJson(text) {
   return null;
 }
 
-export function parseVote(text, { agentId, weight, model = null, source = null }) {
+export function parseVote(text, { agentId, weight, thought = null, model = null, source = null }) {
   const obj = extractJson(text);
   if (!obj) return { ok: false, vote: null, errors: ['no JSON object found in LLM output'] };
 
@@ -48,6 +73,7 @@ export function parseVote(text, { agentId, weight, model = null, source = null }
     conviction: obj.conviction,
     weight,
     rationale: typeof obj.rationale === 'string' ? obj.rationale : '',
+    thought,
     model,
     source,
   });

@@ -1,5 +1,22 @@
 # Session log
 
+## 2026-07-02 — Thinking agents: share the reasoning, not just the vote (ADR 0033)
+
+- Providers now return `{ text, thinking }` (Ollama structured thinking, OpenAI-compat
+  `reasoning_content`; tiered passes it through with model/source; `normalizeGenerate`
+  absorbs all shapes; moat scorer switched to `normalizeGenerate`).
+- Votes carry an optional `thought`: the runner uses structured thinking, falls back to
+  splitting inline `<think>…</think>` blocks out of the answer, caps at 6000 chars.
+  Persisted on `legion.votes.thought`, restored through emitter crash recovery.
+- `summarizePeers` quotes each peer's thought (indented, 900-char cap) under its dissent
+  line — revision rounds argue with the peer's actual logic. No thought → byte-identical
+  prompt to before.
+- New `oracle_think` runtime knob (tribool → `ollama.think`) so the Oracle VM can run a
+  thinking model from the dashboard; dashboard debate viewer shows a collapsed
+  "Show reasoning" block per vote.
+- User context: wants to run a thinking model on the Oracle VM specifically so the
+  thought-sharing consensus works there too.
+
 ## 2026-07-02 — Oracle fallback timeouts, reliability board dedupe, ops buttons
 
 - Root-caused `abstain (data fetch failed: Ollama request timed out after 3600000ms)`

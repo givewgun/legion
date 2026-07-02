@@ -4,7 +4,7 @@ import { RUNTIME_KEYS } from '../../src/config/runtime-keys.js';
 
 const baseCfg = () => ({
   home: { enabled: true, model: 'qwen3:14b', fallback: true, think: true, timeoutMs: 3600000, probeTimeoutMs: 1500 },
-  ollama: { model: 'qwen2.5:7b-instruct', timeoutMs: 3600000 },
+  ollama: { model: 'qwen2.5:7b-instruct', timeoutMs: 3600000, think: null },
 });
 
 describe('coerceRuntimeValue', () => {
@@ -42,12 +42,14 @@ describe('applyRuntimeOverrides', () => {
       home_fallback: 'false',
       home_timeout_ms: '600000',
       oracle_model: 'llama3.1:8b',
+      oracle_think: 'true',
       oracle_timeout_ms: '1800000',
     });
     expect(out.home.model).toBe('qwen3:8b');
     expect(out.home.fallback).toBe(false);
     expect(out.home.timeoutMs).toBe(600000);
     expect(out.ollama.model).toBe('llama3.1:8b');
+    expect(out.ollama.think).toBe(true);
     expect(out.ollama.timeoutMs).toBe(1800000);
     // untouched keys keep defaults
     expect(out.home.enabled).toBe(true);

@@ -15,7 +15,7 @@ describe('createOpenAICompatProvider', () => {
     const fetchMock = okFetch('BUY: catalyst');
     const provider = createOpenAICompatProvider(baseCfg, fetchMock);
     const out = await provider.generate({ system: 'You are a trader', prompt: 'Rate NVDA' });
-    expect(out).toBe('BUY: catalyst');
+    expect(out).toEqual({ text: 'BUY: catalyst', thinking: null });
     const [url, opts] = fetchMock.mock.calls[0];
     expect(url).toBe('https://api.openai.com/v1/chat/completions');
     expect(opts.headers.Authorization).toBe('Bearer sk-test');
@@ -81,8 +81,23 @@ describe('createOpenAICompatProvider', () => {
       return { ok: true, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) };
     });
     const provider = createOpenAICompatProvider({ ...baseCfg, retries: 1 }, fetchMock);
-    await expect(provider.generate({ system: 's', prompt: 'p' })).resolves.toBe('ok');
+    await expect(provider.generate({ system: 's', prompt: 'p' })).resolves.toEqual({
+      text: 'ok',
+      thinking: null,
+    });
     expect(calls).toBe(2);
+  });
+
+  it('captures reasoning_content from a thinking model as thinking', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: 'HOLD', reasoning_content: 'weighing the catalysts' } }],
+      }),
+    }));
+    const provider = createOpenAICompatProvider(baseCfg, fetchMock);
+    const out = await provider.generate({ system: 's', prompt: 'p' });
+    expect(out).toEqual({ text: 'HOLD', thinking: 'weighing the catalysts' });
   });
 });
 

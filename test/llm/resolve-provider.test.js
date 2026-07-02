@@ -126,11 +126,11 @@ describe('tiered local wiring', () => {
     home: { url: '', model: 'gpt-oss:20b', think: null, probeTimeoutMs: 1500, enabled: true },
   };
 
-  it('returns a plain ollama provider (string generate) when home url is empty', async () => {
+  it('returns a plain ollama provider ({ text, thinking } generate) when home url is empty', async () => {
     const clientFactory = fakeOllamaClientFactory('hi');
     const p = createProvider('local', baseCfg, fetch, clientFactory);
     const out = await p.generate({ system: 's', prompt: 'p' });
-    expect(out).toBe('hi'); // plain string contract preserved
+    expect(out).toEqual({ text: 'hi', thinking: null });
     expect(p.model).toBe('qwen2.5:7b-instruct');
   });
 
@@ -144,7 +144,7 @@ describe('tiered local wiring', () => {
     const clientFactory = fakeOllamaClientFactory('from-pc');
     const p = createProvider('local', cfg, fetchImpl, clientFactory);
     const out = await p.generate({ system: 's', prompt: 'p' });
-    expect(out).toEqual({ text: 'from-pc', model: 'gpt-oss:20b', source: 'pc' });
+    expect(out).toEqual({ text: 'from-pc', thinking: null, model: 'gpt-oss:20b', source: 'pc' });
   });
 
   it('falls back to Oracle when /ready reports ready:false (PC busy-gated)', async () => {
@@ -157,7 +157,12 @@ describe('tiered local wiring', () => {
     const clientFactory = fakeOllamaClientFactory('from-oracle');
     const p = createProvider('local', cfg, fetchImpl, clientFactory);
     const out = await p.generate({ system: 's', prompt: 'p' });
-    expect(out).toEqual({ text: 'from-oracle', model: 'qwen2.5:7b-instruct', source: 'oracle' });
+    expect(out).toEqual({
+      text: 'from-oracle',
+      thinking: null,
+      model: 'qwen2.5:7b-instruct',
+      source: 'oracle',
+    });
   });
 
   it('retries a transient readiness-probe miss before committing, then uses the PC', async () => {
@@ -220,22 +225,51 @@ describe('tiered local wiring', () => {
 describe('normalizeGenerate', () => {
   it('wraps a string result with the provider model', async () => {
     const provider = { model: 'm', generate: async () => 'txt' };
-    expect(await normalizeGenerate(provider, {})).toEqual({ text: 'txt', model: 'm', source: null });
+    expect(await normalizeGenerate(provider, {})).toEqual({
+      text: 'txt',
+      thinking: null,
+      model: 'm',
+      source: null,
+    });
   });
-  it('passes through an object result', async () => {
+  it('fills missing fields on an object result from the provider', async () => {
     const provider = { model: 'm', generate: async () => ({ text: 't', model: 'pc' }) };
-    expect(await normalizeGenerate(provider, {})).toEqual({ text: 't', model: 'pc' });
+    expect(await normalizeGenerate(provider, {})).toEqual({
+      text: 't',
+      thinking: null,
+      model: 'pc',
+      source: null,
+    });
+  });
+  it('keeps a { text, thinking } result and fills model/source off the provider', async () => {
+    const provider = { model: 'm', source: 'oracle', generate: async () => ({ text: 't', thinking: 'trace' }) };
+    expect(await normalizeGenerate(provider, {})).toEqual({
+      text: 't',
+      thinking: 'trace',
+      model: 'm',
+      source: 'oracle',
+    });
   });
 });
 
 describe('normalizeGenerate source', () => {
   it('passes a tiered object source through unchanged', async () => {
-    const provider = { generate: async () => ({ text: 't', model: 'm', source: 'pc' }) };
-    expect(await normalizeGenerate(provider, {})).toEqual({ text: 't', model: 'm', source: 'pc' });
+    const provider = { generate: async () => ({ text: 't', thinking: null, model: 'm', source: 'pc' }) };
+    expect(await normalizeGenerate(provider, {})).toEqual({
+      text: 't',
+      thinking: null,
+      model: 'm',
+      source: 'pc',
+    });
   });
   it('reads source off a string-returning provider', async () => {
     const provider = { model: 'm', source: 'oracle', generate: async () => 'hi' };
-    expect(await normalizeGenerate(provider, {})).toEqual({ text: 'hi', model: 'm', source: 'oracle' });
+    expect(await normalizeGenerate(provider, {})).toEqual({
+      text: 'hi',
+      thinking: null,
+      model: 'm',
+      source: 'oracle',
+    });
   });
 });
 

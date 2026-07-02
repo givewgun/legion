@@ -46,7 +46,7 @@ function fakeClientFactory(impl) {
 }
 
 describe('createOllamaProvider (official client, streaming)', () => {
-  it('accumulates multi-chunk response and returns the final answer string', async () => {
+  it('accumulates multi-chunk response and returns the answer with null thinking', async () => {
     const factory = fakeClientFactory(async () =>
       makeStream([{ response: 'BUY: ' }, { response: 'trend ' }, { response: 'up' }]),
     );
@@ -55,7 +55,7 @@ describe('createOllamaProvider (official client, streaming)', () => {
       factory,
     );
     const out = await provider.generate({ system: 'You are a trader', prompt: 'Rate NVDA' });
-    expect(out).toBe('BUY: trend up');
+    expect(out).toEqual({ text: 'BUY: trend up', thinking: null });
     const gen = factory.calls[0];
     expect(gen.model).toBe('qwen2.5:7b-instruct');
     expect(gen.system).toBe('You are a trader');
@@ -65,7 +65,7 @@ describe('createOllamaProvider (official client, streaming)', () => {
     expect(gen).not.toHaveProperty('think');
   });
 
-  it('captures thinking chunks but still returns only the answer', async () => {
+  it('accumulates thinking chunks and returns them alongside the answer', async () => {
     const factory = fakeClientFactory(async () =>
       makeStream([
         { thinking: 'let me reason' },
@@ -78,7 +78,7 @@ describe('createOllamaProvider (official client, streaming)', () => {
       factory,
     );
     const out = await provider.generate({ system: 's', prompt: 'p' });
-    expect(out).toBe('HOLD');
+    expect(out).toEqual({ text: 'HOLD', thinking: 'let me reason some more' });
     expect(factory.calls[0].think).toBe(true);
   });
 
@@ -158,7 +158,7 @@ describe('createOllamaProvider (official client, streaming)', () => {
       factory,
     );
     const out = await provider.generate({ system: 's', prompt: 'p' });
-    expect(out).toBe('ok after retry');
+    expect(out.text).toBe('ok after retry');
     expect(calls).toBe(2);
   });
 
@@ -174,7 +174,7 @@ describe('createOllamaProvider (official client, streaming)', () => {
       factory,
     );
     const out = await provider.generate({ system: 's', prompt: 'p' });
-    expect(out).toBe('recovered');
+    expect(out.text).toBe('recovered');
     expect(calls).toBe(3);
   });
 
