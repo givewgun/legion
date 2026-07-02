@@ -343,7 +343,7 @@ flowchart LR
 ### Worked example, continued — round 2 converges
 
 Recall round 1 failed on **dispersion, not quorum**: `κ = 0.84` already cleared the 2/3 bar, but
-the contrarian's confident SELL kept `V = 1.19` above `θ_v = 0.5`. So the panel iterates. The
+the contrarian's confident SELL kept `V = 1.19` above `θ_v = 0.75`. So the panel iterates. The
 contrarian is now shown the bulls' strongest rationales (the catalyst the news agent flagged), and
 — reluctantly, with low conviction — capitulates from SELL (−1) to a hedged BUY (+1, conviction
 0.4). Everyone else holds. Round 2:
