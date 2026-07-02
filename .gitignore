@@ -4,6 +4,7 @@ coverage/
 reports/
 *.log
 .superpowers/
+private/
 
 # Generated on the PC by pc-host/setup.ps1
 pc-host/legion-pc.config.ps1
