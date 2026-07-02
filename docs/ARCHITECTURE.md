@@ -130,7 +130,7 @@ role — never silently duplicate an existing aperture.
 ## 3. Consensus round lifecycle
 
 Up to `R_max = 3` rounds (ADR 0001). Convergence requires both a directional quorum
-`κ ≥ 2/3` and dispersion `V ≤ θ_v` (0.5).
+`κ ≥ 2/3` and dispersion `V ≤ θ_v` (default 0.75, tuned from the original 0.5 after live analysis — see ADR 0001).
 
 ```mermaid
 sequenceDiagram
