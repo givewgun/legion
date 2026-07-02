@@ -36,5 +36,35 @@ export function triggerRoutes(orchestrator, repo) {
     }
   });
 
+  // Stop every in-flight cycle. Publish-only (202): the emitter owns cycle state,
+  // so it drops the buffers and closes the DB rows as 'stopped'; the response
+  // reports which running cycles the stop covers.
+  router.delete('/', async (req, res, next) => {
+    if (!orchestrator) return unavailable(res);
+    try {
+      const stopping = await repo.listRunningCycles();
+      for (const symbol of new Set(stopping.map((c) => c.symbol))) {
+        orchestrator.stop(symbol);
+      }
+      res.status(202).json({ stopping });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Stop the in-flight cycles of a single ticker. Published even when nothing is
+  // running (harmless no-op on the emitter) to cover a kick racing the query.
+  router.delete('/:symbol', async (req, res, next) => {
+    if (!orchestrator) return unavailable(res);
+    try {
+      const symbol = req.params.symbol.toUpperCase();
+      const stopping = (await repo.listRunningCycles()).filter((c) => c.symbol === symbol);
+      orchestrator.stop(symbol);
+      res.status(202).json({ symbol, stopping });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   return router;
 }

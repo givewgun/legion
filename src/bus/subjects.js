@@ -27,3 +27,13 @@ export function constraintSubject(ticker, round) {
 export function constraintWildcard() {
   return `${PREFIX}.constraint.>`;
 }
+
+// Operator control: stop any in-flight cycles for a ticker. The emitter (the
+// cycle-state owner) subscribes and drops its buffers + closes the DB rows.
+export function stopSubject(ticker) {
+  return `${PREFIX}.stop.${ticker.toUpperCase()}`;
+}
+
+export function stopWildcard() {
+  return `${PREFIX}.stop.*`;
+}

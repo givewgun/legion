@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { cycleSubject, voteSubject, consensusSubject } from '../../src/bus/subjects.js';
+import {
+  cycleSubject,
+  voteSubject,
+  consensusSubject,
+  stopSubject,
+  stopWildcard,
+} from '../../src/bus/subjects.js';
 
 describe('subjects', () => {
   it('builds a cycle subject for a ticker', () => {
@@ -17,5 +23,10 @@ describe('subjects', () => {
   it('uppercases the ticker', () => {
     expect(cycleSubject('nvda')).toBe('legion.cycle.NVDA');
     expect(voteSubject('mu', 1)).toBe('legion.vote.MU.1');
+  });
+
+  it('builds the stop subject and its wildcard', () => {
+    expect(stopSubject('nvda')).toBe('legion.stop.NVDA');
+    expect(stopWildcard()).toBe('legion.stop.*');
   });
 });
