@@ -5,8 +5,31 @@
 // generation instead. thinking is captured for metrics/debug; generate still
 // returns only the final answer string (unchanged contract).
 import { Ollama } from 'ollama';
+import { Agent as UndiciAgent, fetch as undiciFetch } from 'undici';
 import { createLimiter, retryAsync } from '../util/resilient.js';
 import { ollamaRequest, ollamaThinkingChars } from '../instrumentation/metrics.js';
+
+// The client awaits response HEADERS before the stream iterator (and our abort
+// timer) even exists — and an Ollama box whose NUM_PARALLEL slots are all busy
+// sends nothing while a request waits in its queue. With the default fetch that
+// queue wait is bounded by undici's 300s headersTimeout, NOT timeoutMs: any call
+// queued >5 min dies with UND_ERR_HEADERS_TIMEOUT no matter how high the config
+// deadline is raised (isAbort then mislabels it with the full timeoutMs). Give
+// each provider a fetch whose dispatcher stretches the headers/body timeouts to
+// its own timeoutMs, so queued calls genuinely get the configured deadline.
+// Dispatchers are cached per deadline: providers are rebuilt every cycle
+// (getProvider), and each undici Agent owns a keep-alive socket pool.
+const dispatchers = new Map();
+function fetchWithDeadline(timeoutMs) {
+  if (!dispatchers.has(timeoutMs)) {
+    dispatchers.set(
+      timeoutMs,
+      new UndiciAgent({ headersTimeout: timeoutMs, bodyTimeout: timeoutMs }),
+    );
+  }
+  const dispatcher = dispatchers.get(timeoutMs);
+  return (input, init) => undiciFetch(input, { ...init, dispatcher });
+}
 
 // HTTP status carried by the lib's ResponseError; 5xx/429 are worth a retry.
 const isRetryableStatus = (s) => s === 429 || (s >= 500 && s <= 599);
@@ -45,7 +68,7 @@ export function createOllamaProvider(
   { url, model, timeoutMs = 300000, maxConcurrent = 1, retries = 1, options = null, think = null, source = 'oracle' },
   clientFactory = (opts) => new Ollama(opts),
 ) {
-  const client = clientFactory({ host: url });
+  const client = clientFactory({ host: url, fetch: fetchWithDeadline(timeoutMs) });
   const limit = createLimiter(maxConcurrent);
 
   const doRequest = async ({ system, prompt }) => {
