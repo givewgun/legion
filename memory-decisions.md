@@ -1,5 +1,23 @@
 # Decisions
 
+- **2026-07-02 — Ollama HTTP timeouts must match the call deadline.** Raising
+  `OLLAMA_TIMEOUT_MS` alone can never fix queue-wait aborts: the ollama-js client awaits
+  response HEADERS before our abort timer exists, and a box whose `NUM_PARALLEL` slots are
+  busy sends nothing while a request queues — so undici's default 300s `headersTimeout`
+  killed every call queued >5 min (mislabeled with the full configured timeout by
+  `wrapError`). The provider now passes the client a custom `undici` fetch whose
+  dispatcher's `headersTimeout`/`bodyTimeout` equal the provider's `timeoutMs` (dispatchers
+  cached per deadline — providers are rebuilt every cycle).
+- **2026-07-02 — Per-agent 'local' models always target the home block when a PC is
+  configured.** `withModel` previously applied the dashboard-chosen model to
+  `cfg.ollama.model` whenever `home.enabled === false`, so toggling "Use home PC model" off
+  (VM-only runs) handed the CPU-only Oracle a PC-sized model and every call timed out. The
+  override now parks on the idle home block; Oracle always keeps `oracle_model`/env.
+- **2026-07-02 — Reliability board is per (agent, model) end to end.** Perf summaries
+  (`summarizeAgents`) are keyed by `modelKey(agent_id, model)` to match the dials, the API
+  returns `model` on each row, and the UI shows the model under the agent name — one agent
+  served by two models is two rows with independent records, not duplicates.
+
 - **2026-06-11 — Market-aware cron cadence (ADR 0029).** The 4h/24-7 sweep cron was
   judged too granular: agents read daily candles, so most fires re-evaluated an unchanged
   bar and the overlapping 5-day signals corrupted reliability stats. New defaults:
