@@ -129,35 +129,35 @@ jobs:
   # Rewrites the auto-maintained README badge + stats blocks from the test/coverage
   # numbers the verify and web jobs just produced, and commits the result. Runs only
   # on direct pushes to main (not PRs/forks) where contents:write + push are allowed.
-  badges:
-    runs-on: ubuntu-latest
-    needs: [verify, web]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Regenerate README badges
-        env:
-          TESTS_BACKEND: ${{ needs.verify.outputs.tests }}
-          TESTS_WEB: ${{ needs.web.outputs.tests }}
-          COV_BACKEND: ${{ needs.verify.outputs.cov }}
-          COV_WEB: ${{ needs.web.outputs.cov }}
-        run: node scripts/update-badges.mjs
-      - name: Commit if changed
-        run: |
-          if git diff --quiet -- README.md; then
-            echo "Badges already current."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add README.md
-          git commit -m "docs: auto-update README badges [skip ci]"
-          git push
+  # badges:
+  #   runs-on: ubuntu-latest
+  #   needs: [verify, web]
+  #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  #   permissions:
+  #     contents: write
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '20'
+  #     - name: Regenerate README badges
+  #       env:
+  #         TESTS_BACKEND: ${{ needs.verify.outputs.tests }}
+  #         TESTS_WEB: ${{ needs.web.outputs.tests }}
+  #         COV_BACKEND: ${{ needs.verify.outputs.cov }}
+  #         COV_WEB: ${{ needs.web.outputs.cov }}
+  #       run: node scripts/update-badges.mjs
+  #     - name: Commit if changed
+  #       run: |
+  #         if git diff --quiet -- README.md; then
+  #           echo "Badges already current."
+  #           exit 0
+  #         fi
+  #         git config user.name "github-actions[bot]"
+  #         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+  #         git add README.md
+  #         git commit -m "docs: auto-update README badges [skip ci]"
+  #         git push
 
   docker:
     runs-on: ubuntu-latest
