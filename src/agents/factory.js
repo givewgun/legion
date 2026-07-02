@@ -1,6 +1,6 @@
 import { cycleWildcard, voteSubject } from '../bus/subjects.js';
 import { createVote } from '../consensus/vote.js';
-import { parseVote } from './parse.js';
+import { parseVote, splitThinking, truncateThought } from './parse.js';
 import { summarizePeers } from './peers.js';
 import { agentInference } from '../instrumentation/metrics.js';
 import { normalizeGenerate } from '../llm/provider.js';
@@ -9,6 +9,11 @@ import { normalizeGenerate } from '../llm/provider.js';
 // cycle spans minutes; entries older than this belong to a cycle that died and
 // are pruned so the cache cannot grow without bound.
 const GatherCacheTtlMs = 30 * 60 * 1000;
+
+// Cap on the reasoning trace stored on a vote. A thinking model's trace can run
+// to tens of KB; capping it bounds the NATS payload, the pending-vote row, and
+// the dissent block later rounds read.
+const MaxThoughtChars = 6000;
 
 // The shared runner for every voting agent. Adding an agent = id + weight +
 // gather + buildPrompt; the loop (subscribe/gather/reason/parse/publish/abstain)
@@ -82,6 +87,7 @@ export function createAgent({
       // Time the reasoning step (LLM generate) per agent for the dashboards.
       const stopInference = agentInference.startTimer({ agent: id });
       let text;
+      let thinking = null;
       let servedModel = null;
       let servedSource = null;
       try {
@@ -90,12 +96,19 @@ export function createAgent({
           prompt: memory ? `${memory}\n\n${prompt}` : prompt,
         });
         text = out.text;
+        thinking = out.thinking;
         servedModel = out.model;
         servedSource = out.source;
       } finally {
         stopInference();
       }
-      const parsed = parseVote(text, { agentId: id, weight, model: servedModel, source: servedSource });
+      // The reasoning trace rides on the vote so later rounds can weigh the
+      // peer's actual logic, not just its verdict. Structured thinking (the
+      // provider `think` field) wins; models that instead emit inline
+      // <think> blocks have them split out of the answer text.
+      const inline = splitThinking(text);
+      const thought = truncateThought(thinking ?? inline.thought, MaxThoughtChars);
+      const parsed = parseVote(inline.text, { agentId: id, weight, thought, model: servedModel, source: servedSource });
       if (parsed.ok) {
         vote = parsed.vote;
       } else {

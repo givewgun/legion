@@ -14,6 +14,7 @@ describe('parseVote', () => {
       conviction: 0.8,
       weight: 1.0,
       rationale: 'uptrend',
+      thought: null,
       model: null,
       source: null,
     });

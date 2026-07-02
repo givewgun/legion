@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseVote } from '../../src/agents/parse.js';
+import { parseVote, splitThinking, truncateThought } from '../../src/agents/parse.js';
 
 const ctx = { agentId: 'news', weight: 1.0 };
 
@@ -13,6 +13,7 @@ describe('shared parseVote', () => {
       conviction: 0.7,
       weight: 1.0,
       rationale: 'guidance raise',
+      thought: null,
       model: null,
       source: null,
     });
@@ -83,5 +84,49 @@ describe('shared parseVote', () => {
     const { vote } = parseVote(text, { agentId: 'news', weight: 1, model: 'm', source: 'pc' });
     expect(vote.source).toBe('pc');
     expect(vote.model).toBe('m');
+  });
+
+  it('threads a thought onto the parsed vote', () => {
+    const text = '{"stance":1,"conviction":0.6,"rationale":"ok"}';
+    const { vote } = parseVote(text, { agentId: 'news', weight: 1, thought: 'my reasoning' });
+    expect(vote.thought).toBe('my reasoning');
+  });
+});
+
+describe('splitThinking', () => {
+  it('splits an inline <think> block out of the answer', () => {
+    const raw =
+      '<think>RSI is 78, extended</think>{"stance":-1,"conviction":0.6,"rationale":"hot"}';
+    const { thought, text } = splitThinking(raw);
+    expect(thought).toBe('RSI is 78, extended');
+    expect(text).toBe('{"stance":-1,"conviction":0.6,"rationale":"hot"}');
+  });
+
+  it('joins multiple blocks and returns null thought when there are none', () => {
+    const raw = '<think>a</think>mid<think>b</think>end';
+    expect(splitThinking(raw)).toEqual({ thought: 'a\n\nb', text: 'midend' });
+    expect(splitThinking('plain answer')).toEqual({ thought: null, text: 'plain answer' });
+  });
+
+  it('captures an unterminated <think> block to end-of-text', () => {
+    const { thought, text } = splitThinking('<think>ran out of tokens');
+    expect(thought).toBe('ran out of tokens');
+    expect(text).toBe('');
+  });
+
+  it('drops an empty <think></think> block without recording a thought', () => {
+    expect(splitThinking('<think>  </think>answer')).toEqual({ thought: null, text: 'answer' });
+  });
+});
+
+describe('truncateThought', () => {
+  it('passes short thoughts and null through unchanged', () => {
+    expect(truncateThought('short', 10)).toBe('short');
+    expect(truncateThought(null, 10)).toBeNull();
+    expect(truncateThought(undefined, 10)).toBeNull();
+  });
+
+  it('truncates a long thought with a marker', () => {
+    expect(truncateThought('abcdef', 3)).toBe('abc… [truncated]');
   });
 });

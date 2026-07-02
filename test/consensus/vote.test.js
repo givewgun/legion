@@ -16,6 +16,7 @@ describe('vote', () => {
       conviction: 0.8,
       weight: 1.2,
       rationale: 'uptrend intact',
+      thought: null,
       model: null,
       source: null,
     });
@@ -52,6 +53,27 @@ describe('vote', () => {
     const res = validateVote(v);
     expect(res.ok).toBe(false);
     expect(res.errors).toContain('agentId must be a non-empty string');
+  });
+
+  it('carries an optional thought, defaulting to null', () => {
+    expect(createVote({ agentId: 'a', stance: 1, conviction: 0.5, weight: 1 }).thought).toBeNull();
+    const v = createVote({
+      agentId: 'a',
+      stance: 1,
+      conviction: 0.5,
+      weight: 1,
+      rationale: 'x',
+      thought: 'step 1: margins compress…',
+    });
+    expect(v.thought).toBe('step 1: margins compress…');
+    expect(validateVote(v)).toEqual({ ok: true, errors: [] });
+  });
+
+  it('rejects a non-string thought', () => {
+    const v = { agentId: 'a', stance: 1, conviction: 0.5, weight: 1, rationale: 'x', thought: 42 };
+    const res = validateVote(v);
+    expect(res.ok).toBe(false);
+    expect(res.errors).toContain('thought must be a string or null');
   });
 
   it('carries source, defaulting to null', () => {

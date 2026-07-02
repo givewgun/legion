@@ -147,6 +147,7 @@ Every agent `i`, per ticker, per round, emits:
 | stance | `s_i` | `-2, -1, 0, +1, +2` | STRONG_SELL · SELL · HOLD · BUY · STRONG_BUY (an **ordinal** scale) |
 | conviction | `c_i` | `0 … 1` | the agent's self-reported confidence |
 | rationale | — | text | shown in the dashboard, and fed to peers as **dissent** next round |
+| thought | — | text/null | a thinking model's reasoning trace (optional); quoted to peers with the dissent and replayable in the debate viewer (ADR 0033) |
 
 Stance is deliberately a small integer scale (`src/consensus/stance.js`), so "how far apart two
 agents are" is just subtraction.
@@ -321,7 +322,10 @@ honest shrug beats a forced trade.
 When a round fails to converge and the round cap isn't reached, the emitter **re-publishes the
 cycle** with `round + 1` and the prior round's votes attached. Each agent is shown the opposing
 rationales and re-votes — it may hold its ground or move. ([`emitter.js`](../src/emit/emitter.js),
-the `!isFinal` branch republishes `cycleSubject` with `priorVotes`.)
+the `!isFinal` branch republishes `cycleSubject` with `priorVotes`.) When a peer is a thinking
+model, its vote also carries its reasoning trace (`thought`), and the dissent block quotes it
+(truncated) under the peer's line — so an agent can argue with the peer's actual math, not just
+its one-line conclusion (ADR 0033).
 
 This repeats until convergence or `R_max` rounds (default **3**), at which point an unresolved
 panel emits **`NO_CONSENSUS`** (conviction 0).

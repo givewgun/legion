@@ -52,6 +52,21 @@ describe('debate derivation', () => {
     expect(tech2.peers).toContain('contrarian');
   });
 
+  it('carries the reasoning trace per message, defaulting to null', () => {
+    const rounds = [
+      {
+        round_no: 1,
+        votes: [
+          { agent_id: 'news', stance: 1, conviction: 0.5, rationale: 'r', thought: 'the math' },
+          { agent_id: 'social', stance: 0, conviction: 0.2, rationale: 'meh' },
+        ],
+      },
+    ];
+    const [round] = threadModel(rounds);
+    expect(round.messages.find((m) => m.agentId === 'news').thought).toBe('the math');
+    expect(round.messages.find((m) => m.agentId === 'social').thought).toBeNull();
+  });
+
   it('surfaces model, source, and derived location per message', () => {
     const rounds = [
       { round_no: 1, votes: [{ agent_id: 'news', stance: 1, conviction: 0.5, rationale: 'r', model: 'gpt-oss:20b', source: 'pc' }] },

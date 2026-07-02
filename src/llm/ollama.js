@@ -2,8 +2,9 @@
 // clientFactory is injectable for testing; defaults to a real Ollama client.
 // Streaming makes the first chunk arrive quickly, so a long thinking-mode phase
 // no longer trips undici's 300s headers timeout — our abort timer bounds total
-// generation instead. thinking is captured for metrics/debug; generate still
-// returns only the final answer string (unchanged contract).
+// generation instead. generate returns { text, thinking } so a thinking model's
+// reasoning trace can ride along with the answer (null when the model emitted
+// none); callers go through normalizeGenerate, which absorbs both shapes.
 import { Ollama } from 'ollama';
 import { Agent as UndiciAgent, fetch as undiciFetch } from 'undici';
 import { createLimiter, retryAsync } from '../util/resilient.js';
@@ -98,7 +99,7 @@ export function createOllamaProvider(
       ollamaThinkingChars.observe(thinking.length);
       console.debug(`[ollama] ${model} thinking: ${thinking.length} chars`);
     }
-    return answer;
+    return { text: answer, thinking: thinking || null };
   };
 
   return {

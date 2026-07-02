@@ -2,6 +2,7 @@
 // switching costs, network effects, scale) on [0,1]. Injectable provider +
 // gunvest client; any failure returns null so the quality blend degrades to a
 // neutral moat rather than blocking sizing.
+import { normalizeGenerate } from '../llm/provider.js';
 
 const MoatRe = /MOAT:\s*([01](?:\.\d+)?)/i;
 
@@ -16,7 +17,7 @@ export function createMoatScorer({ provider, gunvest, logger = console }) {
         `1 = wide durable moat (pricing power, high switching costs, network ` +
         `effects, or scale). Reply with exactly one line: "MOAT: <score>" then a ` +
         `short reason.`;
-      const reply = await provider.generate({ prompt });
+      const { text: reply } = await normalizeGenerate(provider, { prompt });
       const m = MoatRe.exec(reply);
       if (!m) return null;
       const score = Number(m[1]);

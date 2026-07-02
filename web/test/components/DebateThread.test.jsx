@@ -51,6 +51,21 @@ describe('DebateThread', () => {
     expect(screen.getByText(/Round 2/i)).toBeInTheDocument();
   });
 
+  it('renders a collapsible reasoning block when a vote carries a thought', () => {
+    const rounds = [
+      { round_no: 1, converged: true, s_score: 2, dispersion: 0, quorum: 1,
+        votes: [{ agent_id: 'news', stance: 1, conviction: 0.5, rationale: 'r', thought: 'peers look overvalued on forward P/E' }] },
+    ];
+    render(<DebateThread rounds={rounds} />);
+    expect(screen.getByText(/Show reasoning/i)).toBeInTheDocument();
+    expect(screen.getByText(/peers look overvalued on forward P\/E/)).toBeInTheDocument();
+  });
+
+  it('omits the reasoning block when there is no thought', () => {
+    render(<DebateThread rounds={rounds} />);
+    expect(screen.queryByText(/Show reasoning/i)).not.toBeInTheDocument();
+  });
+
   it('renders a model · location badge', () => {
     const rounds = [
       { round_no: 1, converged: true, s_score: 2, dispersion: 0, quorum: 1,

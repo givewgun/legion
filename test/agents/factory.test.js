@@ -66,6 +66,67 @@ describe('createAgent', () => {
     expect(peersArg).not.toContain('news'); // own prior vote excluded
   });
 
+  describe('shared reasoning traces', () => {
+    it('carries structured provider thinking onto the vote as thought', async () => {
+      const { bus } = setup({
+        generateImpl: async () => ({
+          text: '{"stance": -1, "conviction": 0.7, "rationale": "overvalued"}',
+          thinking: 'DCF says fair value is 20% below spot',
+        }),
+      });
+      const votes = [];
+      bus.subscribeJSON(voteSubject('NVDA', 1), (m) => votes.push(m));
+      bus.publishJSON(cycleSubject('NVDA'), { cycleId: 4, symbol: 'NVDA', round: 1 });
+      await vi.waitFor(() => expect(votes.length).toBe(1));
+
+      expect(votes[0].vote.thought).toBe('DCF says fair value is 20% below spot');
+    });
+
+    it('extracts an inline <think> block when there is no structured thinking', async () => {
+      const { bus } = setup({
+        generateImpl: async () =>
+          '<think>RSI at 78 means the crowd is late</think>{"stance": -2, "conviction": 0.8, "rationale": "fade it"}',
+      });
+      const votes = [];
+      bus.subscribeJSON(voteSubject('NVDA', 1), (m) => votes.push(m));
+      bus.publishJSON(cycleSubject('NVDA'), { cycleId: 5, symbol: 'NVDA', round: 1 });
+      await vi.waitFor(() => expect(votes.length).toBe(1));
+
+      expect(votes[0].vote).toMatchObject({
+        stance: -2,
+        thought: 'RSI at 78 means the crowd is late',
+      });
+    });
+
+    it('caps a runaway thought before publishing the vote', async () => {
+      const { bus } = setup({
+        generateImpl: async () => ({
+          text: '{"stance": 1, "conviction": 0.5, "rationale": "r"}',
+          thinking: 'y'.repeat(50000),
+        }),
+      });
+      const votes = [];
+      bus.subscribeJSON(voteSubject('NVDA', 1), (m) => votes.push(m));
+      bus.publishJSON(cycleSubject('NVDA'), { cycleId: 6, symbol: 'NVDA', round: 1 });
+      await vi.waitFor(() => expect(votes.length).toBe(1));
+
+      expect(votes[0].vote.thought.length).toBeLessThan(7000);
+      expect(votes[0].vote.thought).toContain('… [truncated]');
+    });
+
+    it('leaves thought null for a plain non-thinking reply', async () => {
+      const { bus } = setup({
+        generateImpl: async () => '{"stance": 0, "conviction": 0.2, "rationale": "meh"}',
+      });
+      const votes = [];
+      bus.subscribeJSON(voteSubject('NVDA', 1), (m) => votes.push(m));
+      bus.publishJSON(cycleSubject('NVDA'), { cycleId: 7, symbol: 'NVDA', round: 1 });
+      await vi.waitFor(() => expect(votes.length).toBe(1));
+
+      expect(votes[0].vote.thought).toBeNull();
+    });
+  });
+
   it('abstains with HOLD/0 when output is unparseable', async () => {
     const { bus } = setup({ generateImpl: async () => 'cannot decide' });
     const votes = [];

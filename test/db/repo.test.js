@@ -54,10 +54,10 @@ describe('createRepo', () => {
       rationale: 'breakout',
     });
     expect(pool.calls[0].text).toMatch(/INSERT INTO legion\.votes/);
-    expect(pool.calls[0].params).toEqual([5, 'technical', 2, 0.9, 1, 'breakout', null, null]);
+    expect(pool.calls[0].params).toEqual([5, 'technical', 2, 0.9, 1, 'breakout', null, null, null]);
   });
 
-  it('addVote includes model and source in INSERT params', async () => {
+  it('addVote includes thought, model and source in INSERT params', async () => {
     const pool = poolReturning([[{ id: 2 }]]);
     const repo = createRepo(createDb(pool));
     await repo.addVote(5, {
@@ -66,13 +66,15 @@ describe('createRepo', () => {
       conviction: 0.5,
       weight: 1,
       rationale: 'r',
+      thought: 'step 1: the catalyst is priced in',
       model: 'gpt-oss:20b',
       source: 'pc',
     });
     expect(pool.calls[0].text).toMatch(/INSERT INTO legion\.votes/);
+    expect(pool.calls[0].text).toContain('thought');
     expect(pool.calls[0].text).toContain('model');
     expect(pool.calls[0].text).toContain('source');
-    expect(pool.calls[0].params).toEqual([5, 'news', 1, 0.5, 1, 'r', 'gpt-oss:20b', 'pc']);
+    expect(pool.calls[0].params).toEqual([5, 'news', 1, 0.5, 1, 'r', 'step 1: the catalyst is priced in', 'gpt-oss:20b', 'pc']);
   });
 
   it('adds a signal with a JSONB plan', async () => {

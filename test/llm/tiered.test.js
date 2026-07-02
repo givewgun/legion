@@ -19,7 +19,7 @@ describe('createTieredProvider', () => {
       isEnabled: () => true,
     });
     const out = await t.generate({ system: 's', prompt: 'p' });
-    expect(out).toEqual({ text: 'from-gpt-oss:20b', model: 'gpt-oss:20b', source: 'pc' });
+    expect(out).toEqual({ text: 'from-gpt-oss:20b', thinking: null, model: 'gpt-oss:20b', source: 'pc' });
     expect(fallback.generate).not.toHaveBeenCalled();
   });
 
@@ -28,7 +28,12 @@ describe('createTieredProvider', () => {
     const fallback = stub('qwen2.5:7b-instruct', 'oracle');
     const t = createTieredProvider({ primary, fallback, probe: async () => false });
     const out = await t.generate({ system: 's', prompt: 'p' });
-    expect(out).toEqual({ text: 'from-qwen2.5:7b-instruct', model: 'qwen2.5:7b-instruct', source: 'oracle' });
+    expect(out).toEqual({
+      text: 'from-qwen2.5:7b-instruct',
+      thinking: null,
+      model: 'qwen2.5:7b-instruct',
+      source: 'oracle',
+    });
     expect(primary.generate).not.toHaveBeenCalled();
   });
 
@@ -60,9 +65,25 @@ describe('createTieredProvider', () => {
     const probe = vi.fn(async () => false);
     const t = createTieredProvider({ primary, fallback, probe, allowFallback: false });
     const out = await t.generate({ system: 's', prompt: 'p' });
-    expect(out).toEqual({ text: 'from-qwen3:14b', model: 'qwen3:14b', source: 'pc' });
+    expect(out).toEqual({ text: 'from-qwen3:14b', thinking: null, model: 'qwen3:14b', source: 'pc' });
     expect(fallback.generate).not.toHaveBeenCalled();
     expect(probe).not.toHaveBeenCalled();
+  });
+
+  it('passes a tier\'s { text, thinking } reply through with the tier tags', async () => {
+    const primary = stub('qwen3:8b', 'pc', async () => ({
+      text: 'BUY',
+      thinking: 'the math says overvalued peers, not this one',
+    }));
+    const fallback = stub('qwen2.5:7b-instruct', 'oracle');
+    const t = createTieredProvider({ primary, fallback, probe: async () => true });
+    const out = await t.generate({ system: 's', prompt: 'p' });
+    expect(out).toEqual({
+      text: 'BUY',
+      thinking: 'the math says overvalued peers, not this one',
+      model: 'qwen3:8b',
+      source: 'pc',
+    });
   });
 
   it('propagates a PC error when pinned (allowFallback false) — no Oracle rescue', async () => {

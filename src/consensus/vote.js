@@ -1,7 +1,7 @@
 import { isValidStance } from './stance.js';
 
-export function createVote({ agentId, stance, conviction, weight, rationale, model = null, source = null }) {
-  return { agentId, stance, conviction, weight, rationale, model, source };
+export function createVote({ agentId, stance, conviction, weight, rationale, thought = null, model = null, source = null }) {
+  return { agentId, stance, conviction, weight, rationale, thought, model, source };
 }
 
 export function validateVote(vote) {
@@ -20,6 +20,11 @@ export function validateVote(vote) {
   }
   if (typeof vote.rationale !== 'string') {
     errors.push('rationale must be a string');
+  }
+  // The reasoning trace is optional: only thinking models produce one, and a
+  // missing thought must never invalidate an otherwise sound vote.
+  if (vote.thought != null && typeof vote.thought !== 'string') {
+    errors.push('thought must be a string or null');
   }
   return { ok: errors.length === 0, errors };
 }

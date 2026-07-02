@@ -51,6 +51,16 @@ function Message({ msg }) {
         <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
           {msg.rationale}
         </p>
+        {msg.thought && (
+          <details className="mt-2">
+            <summary className="cursor-pointer text-xs font-medium text-slate-400 hover:text-slate-600">
+              Show reasoning
+            </summary>
+            <p className="mt-1 whitespace-pre-wrap border-l-2 border-slate-200 pl-2 text-xs leading-relaxed text-slate-500">
+              {msg.thought}
+            </p>
+          </details>
+        )}
       </div>
     </div>
   );

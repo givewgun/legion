@@ -1,8 +1,10 @@
 // OpenAI-compatible chat-completions provider: OpenAI itself, Gemini's
 // OpenAI-compatible endpoint, or any server speaking the same protocol.
-// Same generate({ system, prompt }) → string contract as the Ollama provider,
-// so agents can mix model families — the real lever behind panel diversity
-// (four personas on one base model share that model's blind spots).
+// Same generate({ system, prompt }) → { text, thinking } contract as the
+// Ollama provider, so agents can mix model families — the real lever behind
+// panel diversity (four personas on one base model share that model's blind
+// spots). `thinking` carries the reasoning trace thinking models expose as
+// `reasoning_content` (DeepSeek/Qwen convention) or `reasoning`; null otherwise.
 import { createLimiter, retryAsync } from '../util/resilient.js';
 
 // Remote API: 5xx/429 and transport drops are worth a retry; a timeout is not
@@ -54,11 +56,13 @@ export function createOpenAICompatProvider(
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(`${name} request failed: ${res.status}`);
-      const text = (await res.json()).choices?.[0]?.message?.content;
+      const message = (await res.json()).choices?.[0]?.message;
+      const text = message?.content;
       if (typeof text !== 'string') {
         throw new Error(`${name} response missing message content`);
       }
-      return text;
+      const reasoning = message.reasoning_content ?? message.reasoning;
+      return { text, thinking: typeof reasoning === 'string' && reasoning ? reasoning : null };
     } finally {
       clearTimeout(timer);
     }
