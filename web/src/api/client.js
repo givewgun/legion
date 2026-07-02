@@ -53,4 +53,5 @@ export const api = {
   getSettings: () => get('/api/settings'),
   setSettings: (body) => send('PUT', '/api/settings', body),
   getPcModels: () => get('/api/settings/pc-models'),
+  getOracleModels: () => get('/api/settings/oracle-models'),
 };

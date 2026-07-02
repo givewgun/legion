@@ -1,5 +1,14 @@
 # Decisions
 
+- **2026-07-02 — Oracle default model is qwen3:4b with thinking ON.** Follow-up to
+  ADR 0033: the Oracle tier's default (`OLLAMA_MODEL` env default, `.env.example`, and the
+  deploy job's pinned `MODEL`) moves from qwen2.5 to `qwen3:4b` (~2.6GB, fits the 2-OCPU/12GB
+  free tier) with `OLLAMA_THINK=true`, so the VM-only panel produces and shares reasoning
+  traces. Deploy `OLLAMA_TIMEOUT_MS` raised 300s→900s because thinking multiplies tokens per
+  call on CPU. Blank `OLLAMA_THINK` stays the off-switch for non-thinking models (some qwen3
+  tags ignore think:false). If `oracle_model`/`oracle_think` rows exist in runtime_config they
+  override env and must be updated on the dashboard.
+
 - **2026-07-02 — Agents share reasoning traces, not just verdicts (ADR 0033).** A vote
   carries an optional `thought` (the thinking model's trace: structured `thinking` field,
   or inline `<think>` blocks split from the answer). The dissent block quotes it truncated

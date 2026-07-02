@@ -2,10 +2,10 @@ import { Router } from 'express';
 import { RUNTIME_KEYS, RUNTIME_KEY_BY_NAME } from '../../config/runtime-keys.js';
 import { coerceRuntimeValue } from '../../config/runtime-overrides.js';
 
-// The /pc-models list is a one-off UI fetch, not the per-cycle readiness probe, so it
-// gets its own, more generous deadline: a slow first /api/tags over Tailscale shouldn't
+// The model lists are one-off UI fetches, not the per-cycle readiness probe, so they
+// get their own, more generous deadline: a slow first /api/tags over Tailscale shouldn't
 // collapse the model dropdown to a free-text box. Overridable via cfg.home.pcModelsTimeoutMs.
-const PcModelsTimeoutMs = 5000;
+const ModelListTimeoutMs = 5000;
 
 // Resolve a dotted cfgPath against the env-derived cfg (the default for each key).
 function cfgDefault(cfg, path) {
@@ -70,24 +70,33 @@ export function settingsRoutes(repo, cfg = {}, fetchImpl = fetch) {
     }
   });
 
-  // Models pulled on the home PC, for the model dropdown. Proxies the sidecar's
-  // /api/tags. Fail-soft: no URL / unreachable / asleep / busy 503 → empty list, so the
-  // UI degrades to free-text rather than erroring.
-  router.get('/pc-models', async (req, res) => {
-    const url = cfg.home?.url;
-    if (!url) return res.json({ models: [] });
+  // Models pulled on an Ollama box (/api/tags — the PC sidecar proxies the same
+  // path), for the model dropdowns. Fail-soft: no URL / unreachable / asleep /
+  // busy 503 → empty list, so the UI degrades to free-text rather than erroring.
+  async function listModels(url) {
+    if (!url) return [];
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), cfg.home?.pcModelsTimeoutMs ?? PcModelsTimeoutMs);
+    const timer = setTimeout(() => controller.abort(), cfg.home?.pcModelsTimeoutMs ?? ModelListTimeoutMs);
     try {
       const r = await fetchImpl(`${url}/api/tags`, { signal: controller.signal });
-      if (!r.ok) return res.json({ models: [] });
+      if (!r.ok) return [];
       const data = await r.json();
-      return res.json({ models: (data.models ?? []).map((m) => m.name).filter(Boolean) });
+      return (data.models ?? []).map((m) => m.name).filter(Boolean);
     } catch {
-      return res.json({ models: [] });
+      return [];
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  // Models pulled on the home PC, for the home_model dropdown.
+  router.get('/pc-models', async (req, res) => {
+    res.json({ models: await listModels(cfg.home?.url) });
+  });
+
+  // Models pulled on the Oracle box, for the oracle_model dropdown.
+  router.get('/oracle-models', async (req, res) => {
+    res.json({ models: await listModels(cfg.ollama?.url) });
   });
 
   return router;

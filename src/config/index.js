@@ -45,9 +45,11 @@ export function loadConfig(env = process.env) {
       // CPU-only VM that only serves when the home PC primary is unavailable. A 7B
       // model on CPU under a multi-agent sweep can't finish inside OLLAMA_TIMEOUT_MS
       // and every call hangs the full timeout, so the fallback default is a small,
-      // CPU-fast model. Override OLLAMA_MODEL (or the oracle_model runtime knob) when
+      // CPU-sized model. qwen3:4b (~2.6GB) stays in that class AND is a thinking
+      // model, so the Oracle tier emits reasoning traces the panel can share
+      // (ADR 0033). Override OLLAMA_MODEL (or the oracle_model runtime knob) when
       // this box has a GPU / is the sole tier.
-      model: env.OLLAMA_MODEL || 'qwen2.5:3b-instruct',
+      model: env.OLLAMA_MODEL || 'qwen3:4b',
       // Generous deadline (60 min) because this CPU box serves OLLAMA_NUM_PARALLEL=1:
       // a whole-watchlist sweep (every ticker × agent) serializes through one slot, so
       // a queued call can wait a long time for its turn. A short timeout aborts those
@@ -56,10 +58,11 @@ export function loadConfig(env = process.env) {
       // per cycle via the oracle_timeout_ms runtime knob.
       timeoutMs: num(env, 'OLLAMA_TIMEOUT_MS', 3600000),
       maxConcurrent: num(env, 'OLLAMA_MAX_CONCURRENT', 1),
-      // qwen3 emits <think>...</think> reasoning by default; qwen2.5 has no
-      // thinking mode and doesn't understand the `think` field at all. null
-      // means "omit the field entirely" so qwen2.5 deploys see an unchanged
-      // request body — only set OLLAMA_THINK when running a qwen3-family model.
+      // Thinking flag for the qwen3-family default model: true asks Ollama for the
+      // structured thinking field, which lands on the vote as `thought` (ADR 0033).
+      // qwen2.5 has no thinking mode and doesn't understand the `think` field at
+      // all — set OLLAMA_THINK= (blank) to omit the field entirely when overriding
+      // OLLAMA_MODEL to a non-thinking model.
       think: bool(env, 'OLLAMA_THINK'),
     },
     // OpenAI-compatible provider families. An empty apiKey means the provider is

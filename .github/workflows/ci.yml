@@ -214,14 +214,16 @@ jobs:
           script: |
             set -euo pipefail
             APP_DIR=/opt/legion/app
-            # qwen2.5:7b-instruct: strongest model that fits the 2-OCPU/12GB free
-            # tier (loads ~5.5GB under the 7g mem_limit). Instruction-tuned, emits
-            # clean JSON for the agents' votes; ~15s/call on 2 cores is fine for a
-            # twice-daily cron batch (300s timeout). To try a qwen3 thinking model,
-            # set MODEL + OLLAMA_THINK=false — but verify the tag actually honors
-            # think:false first (qwen3:4b on ollama 0.30.6 did NOT). Blank
-            # OLLAMA_THINK omits the field (instruct/qwen2.5-safe).
-            MODEL=qwen2.5:7b-instruct
+            # qwen3:4b: a thinking model that fits the 2-OCPU/12GB free tier with
+            # room to spare (~2.6GB loaded under the 7g mem_limit). Thinking is ON
+            # (OLLAMA_THINK=true below): the reasoning trace is captured onto each
+            # vote and quoted to peers as dissent (ADR 0033). Thinking multiplies
+            # tokens per call on 2 CPU cores, so the request deadline below is
+            # raised from the old 300s; calls still serialize through
+            # OLLAMA_NUM_PARALLEL=1 and the twice-daily cron absorbs the latency.
+            # To fall back to a non-thinking model, set MODEL=qwen2.5:7b-instruct
+            # and OLLAMA_THINK= (blank omits the field — qwen2.5 rejects it).
+            MODEL=qwen3:4b
             REPO_URL="https://x-access-token:${REPO_CLONE_TOKEN}@github.com/${GH_REPO}.git"
 
             # First-run bootstrap: clone if missing. The VM already has Docker and
@@ -252,8 +254,8 @@ jobs:
             NATS_URL=nats://nats:4222
             OLLAMA_URL=http://ollama:11434
             OLLAMA_MODEL=${MODEL}
-            OLLAMA_THINK=
-            OLLAMA_TIMEOUT_MS=300000
+            OLLAMA_THINK=true
+            OLLAMA_TIMEOUT_MS=900000
             OLLAMA_MAX_CONCURRENT=1
             HOME_OLLAMA_URL=${HOME_OLLAMA_URL}
             HOME_MODEL=${HOME_MODEL}
