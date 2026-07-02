@@ -349,12 +349,12 @@ All rows below have been implemented (one commit each, ADRs 0018–0028) unless 
 | **P4** | §2.2 agreement strength | ✅ measured-not-gated (A persisted per round/signal; gate awaits resolver evidence) |
 | **P4** | §6 vol-normalized risk | ✅ done — ADR 0022 (3σ-of-this-name trip, flat-8% fallback). *VIX percentile deferred (needs stored VIX history).* |
 | — | §4.2 data-aperture audit | ✅ done (ARCHITECTURE §2 table + aperture rule) |
-| — | §2.3 vote-drift herding telemetry | *deferred* — complements the backing gate; instrument when herding blocks appear in practice |
+| — | §2.3 vote-drift herding telemetry | ✅ measured-not-gated — ADR 0034 (`Σ\|s_i,r − s_i,1\|` per round on `rounds.drift` + `plan.drift`; gate awaits resolver evidence) |
 
 **Still open, in recommended order:** replicated aggregators (the purist leaderless
 runtime, on top of ADR 0024); per-asset/sector benchmarks; the A-gate and `w_i` blend once
 their measurements accumulate; similarity-retrieved memory episodes (the stronger ADR 0025);
-VIX-percentile risk; §2.3 drift telemetry.
+VIX-percentile risk.
 
 ---
 

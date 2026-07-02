@@ -89,6 +89,20 @@ export function agreementStrength(votes, meanStance, holdBand = 0.5) {
   return agreeing.reduce((sum, vote) => sum + vote.weight * vote.conviction, 0) / wSum;
 }
 
+// Aggregate stance movement since round 1: Σ_i |s_i,r − s_i,1| over the agents
+// present in both rounds (IMPROVEMENT-PLAN §2.3). The anti-herding guard (ADR
+// 0016) only checks independent backing for the side that converged; it cannot
+// see the panel's lean itself migrating toward the loudest agent across rounds.
+// High drift is that migration made visible — a herding smell test. Measured and
+// persisted per round, NOT gated on.
+export function voteDrift(votes, priorVotes) {
+  const priorStance = new Map(priorVotes.map((vote) => [vote.agentId, vote.stance]));
+  return votes.reduce((sum, vote) => {
+    const prior = priorStance.get(vote.agentId);
+    return prior === undefined ? sum : sum + Math.abs(vote.stance - prior);
+  }, 0);
+}
+
 // Weighted fraction of (round-1) votes whose side already matched `targetSide` —
 // the *independent* backing for a direction, before any peer dissent was shown.
 // Used by the anti-herding guard (ADR 0016): a consensus reached only in revision

@@ -39,6 +39,18 @@ describe('buildSignal', () => {
     expect(sig.plan.nEff).toBe(2);
   });
 
+  it('carries vote drift onto the plan when measured', () => {
+    const evalResult = { S: 1.8, V: 0.0, kappa: 1, converged: true, band: 'STRONG_BUY', drift: 3 };
+    const sig = buildSignal(evalResult, { symbol: 'NVDA', votes });
+    expect(sig.plan.drift).toBe(3);
+  });
+
+  it('omits drift when it was not measured', () => {
+    const evalResult = { S: 1.8, V: 0.0, kappa: 1, converged: true, band: 'STRONG_BUY' };
+    const sig = buildSignal(evalResult, { symbol: 'NVDA', votes });
+    expect(sig.plan.drift).toBeUndefined();
+  });
+
   it('carries served model and source onto each rationale', () => {
     const votes = [{ agentId: 'news', rationale: 'r', model: 'gpt-oss:20b', source: 'pc' }];
     const sig = buildSignal({ converged: true, band: 'BUY', S: 2, kappa: 1 }, { symbol: 'AAA', votes });

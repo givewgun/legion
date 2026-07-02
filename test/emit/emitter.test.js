@@ -132,6 +132,58 @@ describe('createEmitter (v2)', () => {
     expect(repo.finishCycle).not.toHaveBeenCalled();
   });
 
+  it('records vote drift per round: 0 for round 1, stance movement from round 1 after', async () => {
+    const bus = createMemoryBus();
+    const repo = fakeRepo();
+    const requests = [];
+    bus.subscribeJSON(cycleSubject('MU'), (m) => requests.push(m));
+
+    createEmitter({
+      bus,
+      repo,
+      telegram: vi.fn(async () => {}),
+      consensus,
+      expectedAgents: 2,
+    }).start();
+
+    // round 1: opposed strong votes -> not converged, republishes round 2
+    emitVote(bus, {
+      cycleId: 7,
+      symbol: 'MU',
+      round: 1,
+      vote: { agentId: 'technical', stance: 2, conviction: 1, weight: 1, rationale: 'up' },
+    });
+    emitVote(bus, {
+      cycleId: 7,
+      symbol: 'MU',
+      round: 1,
+      vote: { agentId: 'news', stance: -2, conviction: 1, weight: 1, rationale: 'down' },
+    });
+    await vi.waitFor(() => expect(requests.length).toBe(1));
+
+    // round 2: news capitulates to +2 -> converged, drift = |2−(−2)| = 4
+    emitVote(bus, {
+      cycleId: 7,
+      symbol: 'MU',
+      round: 2,
+      vote: { agentId: 'technical', stance: 2, conviction: 1, weight: 1, rationale: 'up' },
+    });
+    emitVote(bus, {
+      cycleId: 7,
+      symbol: 'MU',
+      round: 2,
+      vote: { agentId: 'news', stance: 2, conviction: 0.6, weight: 1, rationale: 'caved' },
+    });
+
+    await vi.waitFor(() => expect(repo.finishCycle).toHaveBeenCalledWith(7, 'converged'));
+    expect(repo.addRound).toHaveBeenCalledTimes(2);
+    expect(repo.addRound.mock.calls[0][2].drift).toBe(0);
+    expect(repo.addRound.mock.calls[1][2].drift).toBe(4);
+    // measured, not gated: the drift rides the signal plan for later analysis
+    const [, signal] = repo.addSignal.mock.calls[0];
+    expect(signal.plan.drift).toBe(4);
+  });
+
   it('emits no_consensus when the final round is still split', async () => {
     const bus = createMemoryBus();
     const repo = fakeRepo();
