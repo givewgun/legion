@@ -7,6 +7,7 @@ import {
   effectivePanel,
   effectiveVoices,
   agreementStrength,
+  voteDrift,
   evaluateRound,
 } from '../../src/consensus/aggregate.js';
 
@@ -143,6 +144,31 @@ describe('agreementStrength', () => {
     const res = evaluateRound(votes, { thetaV: 0.75, quorum: 2 / 3, holdBand: 0.5 });
     expect(res.A).toBeCloseTo(0.3, 6);
     expect(res.converged).toBe(true); // timid but unanimous still converges — A is a diagnostic
+  });
+});
+
+describe('voteDrift', () => {
+  it('is 0 when every agent holds its round-1 stance', () => {
+    const priors = [v('a', 2, 0.9, 1), v('b', -1, 0.5, 1)];
+    const now = [v('a', 2, 0.4, 1), v('b', -1, 0.8, 1)]; // conviction moved, stance did not
+    expect(voteDrift(now, priors)).toBe(0);
+  });
+
+  it('sums absolute stance movement from round 1 across agents', () => {
+    const priors = [v('a', -1, 0.5, 1), v('b', 2, 0.9, 1), v('c', 0, 0.5, 1)];
+    const now = [v('a', 1, 0.5, 1), v('b', 2, 0.9, 1), v('c', 1, 0.5, 1)];
+    // a: |1−(−1)| = 2, b: 0, c: |1−0| = 1
+    expect(voteDrift(now, priors)).toBe(3);
+  });
+
+  it('ignores agents with no round-1 baseline', () => {
+    const priors = [v('a', 1, 0.5, 1)];
+    const now = [v('a', 1, 0.5, 1), v('late', 2, 0.9, 1)];
+    expect(voteDrift(now, priors)).toBe(0);
+  });
+
+  it('is 0 for empty votes', () => {
+    expect(voteDrift([], [])).toBe(0);
   });
 });
 

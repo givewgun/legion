@@ -336,3 +336,10 @@ CREATE INDEX IF NOT EXISTS idx_holdings_user ON legion.holdings (user_id);
 -- Republished to peers as part of the dissent block and replayed in the debate
 -- viewer. Null for non-thinking models and abstains.
 ALTER TABLE legion.votes ADD COLUMN IF NOT EXISTS thought TEXT;
+
+-- ── Vote-drift herding telemetry (ADR 0034) ──────────────────────────────────
+-- Aggregate stance movement since round 1: Σ|s_i,r − s_i,1| over the panel
+-- (IMPROVEMENT-PLAN §2.3). 0 for round 1 by construction. Measured per round,
+-- never gated on — high drift with no new evidence is the herding smell the
+-- independent-backing guard (ADR 0016) cannot see.
+ALTER TABLE legion.rounds ADD COLUMN IF NOT EXISTS drift DOUBLE PRECISION;

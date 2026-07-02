@@ -29,6 +29,7 @@ export function buildSignal(evalResult, { symbol, votes }) {
       score: evalResult.S,
       quorum: evalResult.kappa,
       ...(evalResult.A != null && { agreement: evalResult.A }),
+      ...(evalResult.drift != null && { drift: evalResult.drift }),
       ...degraded,
     },
   };

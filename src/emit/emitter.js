@@ -5,7 +5,7 @@ import {
   cycleSubject,
   consensusSubject,
 } from '../bus/subjects.js';
-import { evaluateRound, independentBacking } from '../consensus/aggregate.js';
+import { evaluateRound, independentBacking, voteDrift } from '../consensus/aggregate.js';
 import { scaleWeights, scaleConviction } from '../consensus/reliability.js';
 import { classifyRegime } from '../reliability/regime.js';
 import { buildSignal } from './plan.js';
@@ -224,6 +224,11 @@ export function createEmitter({
     if (calibrated.length === 0) return;
     const result = evaluateRound(calibrated, { ...consensus, corr });
     result.converged = converged;
+    // Drift telemetry for the replayed signal: recomputable only if the round-1
+    // priors survived in the pending table; otherwise the round row (written
+    // pre-crash) still holds the measured value and the plan just omits it.
+    const priors = firstVotesByCycle.get(cycleId);
+    if (priors) result.drift = voteDrift(entry.votes, priors);
     const scaled = scaleWeights(entry.votes, rhoLookup);
     await finalize(cycleId, entry, result, calibrated, scaled);
     logger.info?.(
@@ -401,6 +406,12 @@ export function createEmitter({
     // agents' own pre-dissent claims, and raw votes are what the pending table can
     // restore after a crash (ADR 0024).
     if (!firstVotesByCycle.has(cycleId)) firstVotesByCycle.set(cycleId, entry.votes);
+    // Vote-drift telemetry (IMPROVEMENT-PLAN §2.3): how far the panel's stances
+    // moved since their independent round-1 priors — the herding smell the
+    // backing gate below cannot see (a lean migrating toward the loudest agent).
+    // Measured on RAW stances (scaling never touches stance) and persisted with
+    // the round; never gated on.
+    result.drift = voteDrift(entry.votes, firstVotesByCycle.get(cycleId));
     if (result.converged && entry.round > 1) {
       const priors = firstVotesByCycle.get(cycleId);
       const backing = independentBacking(priors, Math.sign(result.S));
