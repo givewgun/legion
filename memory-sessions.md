@@ -1,5 +1,27 @@
 # Session log
 
+## 2026-07-02 — Oracle fallback timeouts, reliability board dedupe, ops buttons
+
+- Root-caused `abstain (data fetch failed: Ollama request timed out after 3600000ms)`
+  on every Oracle fail-over: the ollama-js client awaits response headers before the
+  provider's abort timer starts, so queued calls on the saturated CPU box were killed at
+  undici's default 300s `headersTimeout` — raising `OLLAMA_TIMEOUT_MS` (PR #65) never
+  touched that phase, and `wrapError` mislabeled the abort with the full 60-min deadline.
+  Fixed by handing the client an undici fetch whose dispatcher timeouts equal `timeoutMs`.
+- Fixed a second fail-over breaker: `withModel` leaked the per-agent PC model onto
+  `cfg.ollama.model` when the home-PC toggle was off, making VM-only runs load a PC-sized
+  model on the CPU Oracle. Per-agent 'local' models now always target `cfg.home` when a
+  PC is configured.
+- Reliability board showed duplicate agent names: dials are per (agent, model) but the
+  perf summaries and UI were per agent. Segmented `summarizeAgents` by `modelKey`, added
+  `model` to `/api/reliability` rows, UI shows the model under the agent name.
+- Added PoC ops controls on the (login-gated) Config page: "Run all cycles"
+  (existing `POST /api/trigger`) and "Relearn reliability" (new
+  `POST /api/reliability/relearn`, running the cron's resolve+recompute pass on demand —
+  `runReliabilityOnce` moved to `src/reliability/run-once.js`, re-exported from the runner).
+- User context: runs the panel on the home PC normally, wants to run VM-only at times
+  with the PC unplugged — Oracle fallback must be dependable.
+
 ## 2026-06-11 — Portfolio page 500 + percent formatting
 
 - Diagnosed `GET /api/portfolio` 500: GunVest returned 404 for

@@ -45,17 +45,19 @@ export function withAgentOptions(cfg, options) {
 // model means "no override" — keep whatever the cfg block already has (the env default
 // or a runtime override), rather than clobbering it.
 //
-// For 'local' the placement depends on whether the PC tier is active:
-//   - Tiered (home.url set and not disabled): the chosen model is the PC PRIMARY's
-//     (cfg.home.model). The Oracle FALLBACK keeps its own model (cfg.ollama.model, the
-//     env default / `oracle_model` runtime knob) — the CPU-only Oracle box can't run a
-//     PC-sized model (e.g. gpt-oss:20b) inside its timeout, so leaking the PC model onto
-//     the fallback makes every fail-over hit `Ollama request timed out after 300000ms`.
-//   - Non-tiered ('local' IS Oracle): the chosen model applies to cfg.ollama.model.
+// For 'local' the placement depends on whether a home PC is CONFIGURED (home.url set):
+//   - PC configured: the chosen model is the PC PRIMARY's (cfg.home.model) — it was
+//     picked from the PC's pulled-model list. The Oracle keeps its own model
+//     (cfg.ollama.model, the env default / `oracle_model` runtime knob) — the CPU-only
+//     Oracle box can't run a PC-sized model (e.g. gpt-oss:20b) inside its timeout, so
+//     leaking the PC model onto it makes every Oracle call hit the timeout and abstain.
+//     This holds even while the PC toggle is OFF (home.enabled === false): running
+//     VM-only must not hand the Oracle the PC's model — the override simply sits idle
+//     on the home block until the PC tier is re-enabled.
+//   - No PC configured ('local' IS the sole Ollama): the model applies to cfg.ollama.model.
 export function withModel(cfg, type, model) {
   if (type === 'local' && model) {
-    const tiered = cfg.home?.url && cfg.home?.enabled !== false;
-    return tiered
+    return cfg.home?.url
       ? { ...cfg, home: { ...cfg.home, model } }
       : { ...cfg, ollama: { ...cfg.ollama, model } };
   }

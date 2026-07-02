@@ -59,6 +59,19 @@ describe('ReliabilityBoard', () => {
     expect(screen.getByText('0.62')).toBeInTheDocument();
   });
 
+  it('renders one row per (agent, model) with the model shown under the agent name', async () => {
+    vi.spyOn(api, 'getReliability').mockResolvedValue([
+      { ...FULL_ROW, agentId: 'news', model: 'qwen3:8b', rho: 1.06 },
+      { ...NULL_METRICS_ROW, agentId: 'news', model: 'qwen2.5:3b-instruct', rho: 0.99 },
+    ]);
+    render(<ReliabilityBoard />);
+    await waitFor(() => expect(screen.getAllByText('News')).toHaveLength(2));
+    expect(screen.getByTestId('agent-row-news-qwen3:8b')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-row-news-qwen2.5:3b-instruct')).toBeInTheDocument();
+    expect(screen.getByText('qwen3:8b')).toBeInTheDocument();
+    expect(screen.getByText('qwen2.5:3b-instruct')).toBeInTheDocument();
+  });
+
   it('shows an empty state', async () => {
     vi.spyOn(api, 'getReliability').mockResolvedValue([]);
     render(<ReliabilityBoard />);

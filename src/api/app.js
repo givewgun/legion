@@ -49,7 +49,7 @@ export function createApp({
   app.use('/api/tickers', tickerRoutes(repo));
   app.use('/api/cycles', cycleRoutes(repo));
   app.use('/api/signals', signalRoutes(repo));
-  app.use('/api/reliability', reliabilityRoutes(repo));
+  app.use('/api/reliability', reliabilityRoutes(repo, { gunvest }));
   app.use('/api/backtest', backtestRoutes(repo));
   app.use('/api/trigger', triggerRoutes(orchestrator, repo));
   app.use('/api/agents', agentRoutes(repo));

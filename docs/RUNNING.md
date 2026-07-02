@@ -102,6 +102,14 @@ curl -X POST localhost:8088/api/trigger/NVDA   # kick one ticker  -> 202 {symbol
 curl -X POST localhost:8088/api/trigger        # sweep all enabled -> 202 {kicked: [...]}
 ```
 
+The reliability learning pass (resolve due signals + recompute the dials) can likewise be
+re-run on demand instead of waiting for its cron — also exposed as the **Run all cycles**
+and **Relearn reliability** buttons on the dashboard's Config page (login-gated):
+
+```bash
+curl -X POST localhost:8088/api/reliability/relearn  # -> 200 {resolved, correlations, agents}
+```
+
 A converged signal (or `NO_CONSENSUS`) is sent to Telegram (if configured) and every round
 is written to `legion.rounds` / `legion.votes`.
 
@@ -190,6 +198,7 @@ Run the test suite (infra-free): `npm test`.
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `insert or update on table "cycles" violates foreign key` | Ticker not seeded — run the `INSERT INTO legion.tickers` from §3.                                                                                                        |
 | Vote rationale `abstain (data fetch failed: …)`           | A GunVest endpoint was unreachable or 404'd. Technical needs per-ticker `GET /api/market/:ticker` (quote + ~1y history; Finnhub fallback). Confirm `curl localhost:3001/api/market/NVDA` and `curl localhost:3001/api/macro`. |
+| Vote rationale `abstain (data fetch failed: Ollama request timed out after …ms)` | The LLM call (not GunVest) hit its deadline. On the CPU-only Oracle tier this used to be endemic: calls queued behind the single `OLLAMA_NUM_PARALLEL` slot were killed at undici's default 300s headers timeout no matter how high `OLLAMA_TIMEOUT_MS` was set. Fixed — the provider now stretches the HTTP timeouts to the configured deadline, so queued calls genuinely wait their turn. If it still fires, the box truly took >`OLLAMA_TIMEOUT_MS` (or `HOME_TIMEOUT_MS` for the PC tier): use a smaller `OLLAMA_MODEL` or raise the knob. |
 | Vote rationale `abstain (unparseable vote)`               | The local model returned no parseable JSON (too small / overloaded). Retry, or use a stronger `OLLAMA_MODEL`. The news feed is now trimmed + relevance-ranked to reduce this. |
 | Emitter never emits                                       | Fewer than `LEGION_EXPECTED_AGENTS` agents running, or `LEGION_RISK_ENABLED=true` but the `risk` process is down (emitter waits for the constraint). Start all 5 + risk. |
 | `ECONNREFUSED 4222`                                       | NATS not up — `docker compose up -d nats`.                                                                                                                               |

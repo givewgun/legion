@@ -1,4 +1,5 @@
 import { WINDOW } from '../consensus/reliability.js';
+import { modelKey } from '../llm/provider.js';
 
 // Number of recent calls to include in the `recent` array per agent.
 const RECENT_LIMIT = 10;
@@ -31,34 +32,39 @@ function callAlpha(forwardReturn, spyReturn) {
 }
 
 /**
- * Pure aggregation of signal_votes ⋈ signals rows into per-agent performance summaries.
+ * Pure aggregation of signal_votes ⋈ signals rows into per-(agent, model) performance
+ * summaries — the same segmentation the reliability dials use, so a board row's
+ * Record/Hit%/alpha describe the SAME bucket as its ρ (one agent served by two models
+ * has two independent track records, not one blended one).
  *
  * Rows must be ordered newest-first (matching `getResolvedForecasts` / `getAgentBoardRows`
- * ordering). Each agent's bucket is capped at `window` rows, mirroring the bucketing in
+ * ordering). Each bucket is capped at `window` rows, mirroring the bucketing in
  * `src/reliability/update.js`, so counts reconcile with the ρ sample.
  *
- * @param {Array<{agent_id: string, stance: number, conviction: number, outcome: number,
- *   forward_return: number|null, spy_return: number|null, symbol?: string}>} rows
+ * @param {Array<{agent_id: string, model?: string|null, stance: number, conviction: number,
+ *   outcome: number, forward_return: number|null, spy_return: number|null,
+ *   symbol?: string}>} rows
  * @param {{ window?: number }} options
  * @returns {Map<string, {wins: number, losses: number, holds: number,
  *   hitRate: number|null, avgAlpha: number|null, bestAlpha: number|null,
  *   worstAlpha: number|null, sample: number,
  *   recent: Array<{symbol: string|undefined, stance: number, conviction: number,
- *     win: boolean|null, alpha: number|null}>}>}
+ *     win: boolean|null, alpha: number|null}>}>} keyed by `modelKey(agent_id, model)`
  */
 export function summarizeAgents(rows, { window = WINDOW } = {}) {
-  // Step 1: bucket per agent, newest-first, capped at window (mirrors bucketByAgent in update.js).
+  // Step 1: bucket per (agent, model), newest-first, capped at window (mirrors
+  // bucketByAgentModel in update.js).
   const buckets = new Map();
   for (const r of rows) {
-    const id = r.agent_id;
-    if (!buckets.has(id)) buckets.set(id, []);
-    const bucket = buckets.get(id);
+    const key = modelKey(r.agent_id, r.model);
+    if (!buckets.has(key)) buckets.set(key, []);
+    const bucket = buckets.get(key);
     if (bucket.length < window) bucket.push(r);
   }
 
   // Step 2: aggregate each bucket.
   const result = new Map();
-  for (const [agentId, bucket] of buckets) {
+  for (const [key, bucket] of buckets) {
     let wins = 0;
     let losses = 0;
     let holds = 0;
@@ -102,7 +108,7 @@ export function summarizeAgents(rows, { window = WINDOW } = {}) {
       alpha: callAlpha(r.forward_return, r.spy_return),
     }));
 
-    result.set(agentId, {
+    result.set(key, {
       wins,
       losses,
       holds,

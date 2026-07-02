@@ -208,6 +208,17 @@ describe('createOllamaProvider (official client, streaming)', () => {
     expect(calls).toBe(1);
   });
 
+  it('hands the client a deadline-aware fetch so queue waits are not cut off at undici defaults', () => {
+    const seen = [];
+    const recordingFactory = (opts) => {
+      seen.push(opts);
+      return { generate: async () => makeStream([{ response: 'ok' }]) };
+    };
+    createOllamaProvider({ url: 'http://o:11434', model: 'm', timeoutMs: 3600000 }, recordingFactory);
+    expect(seen[0].host).toBe('http://o:11434');
+    expect(typeof seen[0].fetch).toBe('function');
+  });
+
   it('caps concurrency: peak in-flight <= maxConcurrent', async () => {
     let inFlight = 0;
     let peak = 0;

@@ -26,13 +26,17 @@ describe('withModel', () => {
     expect(out.ollama.model).toBe('chosen'); // non-tiered: 'local' IS Oracle
   });
 
-  it('applies an explicit local model to Oracle when the PC tier is disabled', () => {
+  it('keeps the PC model off Oracle even when the PC toggle is off (VM-only runs)', () => {
+    // The per-agent model was picked for the PC. Toggling "Use home PC model" off to
+    // run VM-only must not hand the CPU-only Oracle that model — it would hit the
+    // call timeout on every cycle. The override parks on the idle home block instead.
     const cfg = {
       ollama: { url: 'o', model: 'oracle-m' },
       home: { url: 'pc', model: 'home-m', enabled: false },
     };
     const out = withModel(cfg, 'local', 'chosen');
-    expect(out.ollama.model).toBe('chosen');
+    expect(out.ollama.model).toBe('oracle-m');
+    expect(out.home.model).toBe('chosen');
   });
 
   it('keeps the configured models when no model is given', () => {
