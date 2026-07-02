@@ -1,18 +1,30 @@
 import { describe, it, expect } from 'vitest';
 import { summarizeAgents } from '../../src/reliability/performance.js';
+import { modelKey } from '../../src/llm/provider.js';
 
 // Helpers to build minimal row objects (signal_votes ⋈ signals, newest-first).
 const row = (
   agentId,
-  { stance = 1, conviction = 0.5, outcome = 1, forwardReturn = null, spyReturn = null } = {},
+  {
+    stance = 1,
+    conviction = 0.5,
+    outcome = 1,
+    forwardReturn = null,
+    spyReturn = null,
+    model = undefined,
+  } = {},
 ) => ({
   agent_id: agentId,
+  model,
   stance,
   conviction,
   outcome,
   forward_return: forwardReturn,
   spy_return: spyReturn,
 });
+
+// Summaries are keyed per (agent, model) — the same composite key the dials use.
+const get = (map, agentId, model = undefined) => map.get(modelKey(agentId, model));
 
 describe('summarizeAgents', () => {
   it('returns an empty Map when given no rows', () => {
@@ -29,7 +41,7 @@ describe('summarizeAgents', () => {
       row('a', { stance: -1, outcome: 1 }), // bearish, beat SPY → loss
     ];
     const map = summarizeAgents(rows, { window: 50 });
-    const s = map.get('a');
+    const s = get(map, 'a');
     expect(s.wins).toBe(2);
     expect(s.losses).toBe(2);
     expect(s.holds).toBe(0);
@@ -42,7 +54,7 @@ describe('summarizeAgents', () => {
       row('a', { stance: 1, outcome: 1 }),
     ];
     const map = summarizeAgents(rows, { window: 50 });
-    const s = map.get('a');
+    const s = get(map, 'a');
     expect(s.holds).toBe(2);
     expect(s.wins).toBe(1);
     expect(s.losses).toBe(0);
@@ -52,7 +64,7 @@ describe('summarizeAgents', () => {
     // All holds → null hitRate
     const allHolds = [row('a', { stance: 0 }), row('a', { stance: 0 })];
     const mapHolds = summarizeAgents(allHolds, { window: 50 });
-    expect(mapHolds.get('a').hitRate).toBeNull();
+    expect(get(mapHolds, 'a').hitRate).toBeNull();
 
     // 3 wins, 1 loss → 0.75
     const mixed = [
@@ -62,7 +74,7 @@ describe('summarizeAgents', () => {
       row('b', { stance: 1, outcome: 0 }),
     ];
     const mapMixed = summarizeAgents(mixed, { window: 50 });
-    expect(mapMixed.get('b').hitRate).toBeCloseTo(0.75);
+    expect(get(mapMixed, 'b').hitRate).toBeCloseTo(0.75);
   });
 
   it('avgAlpha = mean(forward_return - spy_return) over directional calls with both returns present', () => {
@@ -71,7 +83,7 @@ describe('summarizeAgents', () => {
       row('a', { stance: -1, outcome: 0, forwardReturn: -0.05, spyReturn: 0.01 }), // alpha -0.06
     ];
     const map = summarizeAgents(rows, { window: 50 });
-    const s = map.get('a');
+    const s = get(map, 'a');
     // (0.08 + -0.06) / 2 = 0.01
     expect(s.avgAlpha).toBeCloseTo(0.01);
   });
@@ -83,7 +95,7 @@ describe('summarizeAgents', () => {
       row('a', { stance: 1, outcome: 0, forwardReturn: -0.05, spyReturn: 0.01 }), // -0.06
     ];
     const map = summarizeAgents(rows, { window: 50 });
-    const s = map.get('a');
+    const s = get(map, 'a');
     expect(s.bestAlpha).toBeCloseTo(0.09);
     expect(s.worstAlpha).toBeCloseTo(-0.06);
   });
@@ -92,7 +104,7 @@ describe('summarizeAgents', () => {
     // All holds
     const rows = [row('a', { stance: 0, forwardReturn: 0.05, spyReturn: 0.01 })];
     const map = summarizeAgents(rows, { window: 50 });
-    const s = map.get('a');
+    const s = get(map, 'a');
     expect(s.avgAlpha).toBeNull();
     expect(s.bestAlpha).toBeNull();
     expect(s.worstAlpha).toBeNull();
@@ -105,7 +117,7 @@ describe('summarizeAgents', () => {
       row('a', { stance: 1, outcome: 1, forwardReturn: 0.05, spyReturn: 0.01 }), // win, alpha 0.04
     ];
     const map = summarizeAgents(rows, { window: 50 });
-    const s = map.get('a');
+    const s = get(map, 'a');
     expect(s.wins).toBe(2);
     expect(s.losses).toBe(1);
     // avgAlpha only over the one row with valid returns
@@ -124,7 +136,7 @@ describe('summarizeAgents', () => {
       ...Array.from({ length: 5 }, () => lossRow),
     ];
     const map = summarizeAgents(rows, { window: 50 });
-    const s = map.get('a');
+    const s = get(map, 'a');
     expect(s.wins).toBe(50);
     expect(s.losses).toBe(0);
     expect(s.sample).toBe(50);
@@ -138,10 +150,10 @@ describe('summarizeAgents', () => {
       row('beta', { stance: -1, outcome: 0 }), // bearish, lagged → win
     ];
     const map = summarizeAgents(rows, { window: 50 });
-    expect(map.get('alpha').wins).toBe(2);
-    expect(map.get('alpha').losses).toBe(0);
-    expect(map.get('beta').wins).toBe(1);
-    expect(map.get('beta').losses).toBe(1);
+    expect(get(map, 'alpha').wins).toBe(2);
+    expect(get(map, 'alpha').losses).toBe(0);
+    expect(get(map, 'beta').wins).toBe(1);
+    expect(get(map, 'beta').losses).toBe(1);
   });
 
   it('recent list is newest-first, capped at 10, and carries correct win/alpha fields', () => {
@@ -156,7 +168,7 @@ describe('summarizeAgents', () => {
       symbol: `SYM${i}`,
     }));
     const map = summarizeAgents(rows, { window: 50 });
-    const s = map.get('a');
+    const s = get(map, 'a');
     expect(s.recent).toHaveLength(10);
     // First in recent = index 0 (newest)
     expect(s.recent[0].symbol).toBe('SYM0');
@@ -177,7 +189,7 @@ describe('summarizeAgents', () => {
       },
     ];
     const map = summarizeAgents(rows, { window: 50 });
-    expect(map.get('a').recent[0].win).toBeNull();
+    expect(get(map, 'a').recent[0].win).toBeNull();
   });
 
   it('alpha field in recent is null when returns are missing', () => {
@@ -193,12 +205,26 @@ describe('summarizeAgents', () => {
       },
     ];
     const map = summarizeAgents(rows, { window: 50 });
-    expect(map.get('a').recent[0].alpha).toBeNull();
+    expect(get(map, 'a').recent[0].alpha).toBeNull();
+  });
+
+  it('segments one agent per model — each model earns its own record', () => {
+    const rows = [
+      row('a', { stance: 1, outcome: 1, model: 'qwen3:8b' }), // win on the PC model
+      row('a', { stance: 1, outcome: 1, model: 'qwen3:8b' }), // win on the PC model
+      row('a', { stance: 1, outcome: 0, model: 'qwen2.5:3b-instruct' }), // loss on Oracle
+    ];
+    const map = summarizeAgents(rows, { window: 50 });
+    expect(get(map, 'a', 'qwen3:8b').wins).toBe(2);
+    expect(get(map, 'a', 'qwen3:8b').losses).toBe(0);
+    expect(get(map, 'a', 'qwen2.5:3b-instruct').wins).toBe(0);
+    expect(get(map, 'a', 'qwen2.5:3b-instruct').losses).toBe(1);
+    expect(get(map, 'a')).toBeUndefined(); // no blended bucket
   });
 
   it('sample field reflects actual rows used (respects window cap)', () => {
     const rows = Array.from({ length: 30 }, () => row('a', { stance: 1, outcome: 1 }));
     const map = summarizeAgents(rows, { window: 50 });
-    expect(map.get('a').sample).toBe(30);
+    expect(get(map, 'a').sample).toBe(30);
   });
 });

@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { summarizeAgents } from '../../reliability/performance.js';
 import { WINDOW } from '../../consensus/reliability.js';
+import { modelKey } from '../../llm/provider.js';
 
 // Headroom multiplier matching getResolvedForecasts: enough rows to cover every
 // agent's window even in a large panel.
 const BOARD_HEADROOM = 8;
 
-// Read-only reliability leaderboard (per-agent ρ_i ordered by rho desc), enriched
+// Reliability leaderboard (per-(agent, model) ρ_i ordered by rho desc), enriched
 // with win/loss/hold record, hit rate, and alpha magnitude per the v2 data contract.
 export function reliabilityRoutes(repo) {
   const router = Router();
@@ -25,11 +26,14 @@ export function reliabilityRoutes(repo) {
       // pass), so iterating dials misses nothing in practice. An agent with
       // board rows but no dial would be dropped — acceptable per the contract,
       // which only guarantees the dial-without-rows direction.
+      // Dials and board rows are both segmented per (agent, model) — one agent
+      // served by two models is two leaderboard rows with independent records.
       const result = leaderboard.map((dial) => {
-        const perf = perfMap.get(dial.agentId);
+        const perf = perfMap.get(modelKey(dial.agentId, dial.model));
         return {
           // Existing dial fields (backward compatible)
           agentId: dial.agentId,
+          model: dial.model ?? null,
           rho: dial.rho,
           sampleSize: dial.sampleSize,
           calibration: dial.calibration,

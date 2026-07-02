@@ -142,6 +142,13 @@ function RecentCallsDetail({ recent }) {
   );
 }
 
+// Rows are per (agent, model) — one agent served by two models has two independent
+// track records. The composite key disambiguates React keys and testids; rows
+// without a model (older API) collapse back to the bare agent id.
+function rowKey(r) {
+  return r.model ? `${r.agentId}-${r.model}` : r.agentId;
+}
+
 // One table row + optional expanded detail.
 function AgentRow({ r }) {
   const [expanded, setExpanded] = useState(false);
@@ -157,10 +164,13 @@ function AgentRow({ r }) {
       <tr
         className="border-b border-slate-100 last:border-0 cursor-pointer hover:bg-slate-50 select-none"
         onClick={() => setExpanded((v) => !v)}
-        data-testid={`agent-row-${r.agentId}`}
+        data-testid={`agent-row-${rowKey(r)}`}
         aria-expanded={expanded}
       >
-        <td className="px-4 py-2 font-medium text-slate-800">{info.label}</td>
+        <td className="px-4 py-2 font-medium text-slate-800">
+          {info.label}
+          {r.model && <div className="text-xs font-normal text-slate-400">{r.model}</div>}
+        </td>
         <td className="px-4 py-2 text-slate-700">
           {r.wins ?? 0}–{r.losses ?? 0}–{r.holds ?? 0}
         </td>
@@ -190,7 +200,10 @@ export function ReliabilityBoard() {
   if (error) return <p className="text-red-600">{error}</p>;
   if (rows && rows.length === 0) return <p className="text-slate-400">No reliability data yet.</p>;
 
-  const data = (rows ?? []).map((r) => ({ ...r, label: agentInfo(r.agentId).label }));
+  const data = (rows ?? []).map((r) => ({
+    ...r,
+    label: r.model ? `${agentInfo(r.agentId).label} · ${r.model}` : agentInfo(r.agentId).label,
+  }));
 
   return (
     <div>
@@ -206,12 +219,12 @@ export function ReliabilityBoard() {
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} layout="vertical" margin={{ left: 24, right: 16 }}>
               <XAxis type="number" domain={[0.5, 1.5]} stroke="#94a3b8" fontSize={12} />
-              <YAxis type="category" dataKey="label" stroke="#94a3b8" fontSize={12} width={80} />
+              <YAxis type="category" dataKey="label" stroke="#94a3b8" fontSize={11} width={170} />
               <Tooltip />
               <ReferenceLine x={1.0} stroke="#94a3b8" strokeDasharray="4 2" label="baseline" />
               <Bar dataKey="rho" radius={[0, 4, 4, 0]}>
                 {data.map((r) => (
-                  <Cell key={r.agentId} fill={agentInfo(r.agentId).hex} />
+                  <Cell key={rowKey(r)} fill={agentInfo(r.agentId).hex} />
                 ))}
               </Bar>
             </BarChart>
@@ -226,7 +239,9 @@ export function ReliabilityBoard() {
               <th className="px-4 py-2 font-medium text-slate-500">
                 Agent
                 <InfoTip label="Agent">
-                  The agent whose track record this row summarizes.
+                  The agent whose track record this row summarizes. Rows are segmented per
+                  served model — the same agent earns a separate record for each model that
+                  produced its votes.
                 </InfoTip>
               </th>
               <th className="px-4 py-2 font-medium text-slate-500">
@@ -282,7 +297,7 @@ export function ReliabilityBoard() {
           </thead>
           <tbody>
             {(rows ?? []).map((r) => (
-              <AgentRow key={r.agentId} r={r} />
+              <AgentRow key={rowKey(r)} r={r} />
             ))}
           </tbody>
         </table>
