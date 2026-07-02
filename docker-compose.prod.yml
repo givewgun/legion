@@ -60,7 +60,8 @@ services:
     # runaway runner gets OOM-killed and restarted instead of starving the
     # gunvest stack on the shared VM. Oracle cut the free tier to 12GB total
     # (2026), so the cap must leave room for the rest of the box: base
-    # footprint ~2.6GB + qwen2.5:7b (~5.5GB loaded) fits in 7g with headroom.
+    # footprint ~2.6GB + qwen3:4b (~2.6GB loaded) fits in 7g with ample headroom
+    # (a 7B fallback like qwen2.5:7b at ~5.5GB loaded still fits).
     mem_limit: 7g
     networks: [legion]
 

@@ -156,7 +156,7 @@ handover notes in [`docs/superpowers/handovers/`](docs/superpowers/handovers/).
 cp .env.example .env       # fill in values (see Configuration)
 npm install
 docker compose up -d       # start NATS + Ollama
-docker exec -it legion-ollama ollama pull qwen2.5:7b-instruct
+docker exec -it legion-ollama ollama pull qwen3:4b
 npm run db:migrate         # create the legion schema in GunVest's Postgres
 npm test                   # full suite, infra-free
 ```
@@ -235,12 +235,14 @@ does in the algorithm are detailed in
 | `LEGION_SUMMARY_CRON` / `LEGION_SUMMARY_WINDOW_HOURS` | digest schedule (`0 18 * * 1-5`, after the post-close sweep) / look-back (`24`)                                                                    |
 | `FINNHUB_API_KEY`                                     | enables the Contrarian short-interest feed only; the other feeds are live without it (short interest returns `null` when unset)                    |
 
-**Ollama** (app side — `OLLAMA_TIMEOUT_MS`=`300000`, `OLLAMA_MAX_CONCURRENT`=`1`; container
+**Ollama** (app side — `OLLAMA_TIMEOUT_MS`, `OLLAMA_MAX_CONCURRENT`=`1`; container
 side — `OLLAMA_NUM_PARALLEL`=`1`, `OLLAMA_KEEP_ALIVE`=`30m` to keep the model resident for a
-whole sweep while still unloading between cycles). Set `OLLAMA_THINK=true` (or the
-`oracle_think` runtime knob on the Config page) when the Oracle box runs a thinking model
-(e.g. qwen3): the reasoning trace is captured onto each vote, quoted to peers as part of the
-dissent block, and replayable in the debate viewer (ADR 0033).
+whole sweep while still unloading between cycles). The default model is **`qwen3:4b`** with
+`OLLAMA_THINK=true`: a CPU-sized thinking model, so the reasoning trace is captured onto each
+vote, quoted to peers as part of the dissent block, and replayable in the debate viewer
+(ADR 0033). Running a non-thinking model instead (e.g. `qwen2.5:7b-instruct`)? Set
+`OLLAMA_THINK=` blank (or the `oracle_think` runtime knob on the Config page) so the `think`
+field is omitted.
 
 LLM provider is pluggable (`local` Ollama by default; `gemini` / `openai` selectable per agent)
 via [`src/llm/provider.js`](src/llm/provider.js). Only `local` is implemented today — selecting

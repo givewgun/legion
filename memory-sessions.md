@@ -1,5 +1,13 @@
 # Session log
 
+## 2026-07-02 — Oracle defaults to a thinking model (qwen3:4b, think=true)
+
+- Second PR on top of the ADR 0033 thought-sharing feature (PR #67, merged): switched the
+  Oracle tier's default model to `qwen3:4b` and turned the think knob on in `.env.example`
+  and the deploy job (`MODEL=qwen3:4b`, `OLLAMA_THINK=true`, `OLLAMA_TIMEOUT_MS` 300s→900s).
+  Updated README/RUNNING pull commands, prod compose mem comment, config default + test.
+- User intent: the Oracle VM should run a model "that can think", not too large.
+
 ## 2026-07-02 — Thinking agents: share the reasoning, not just the vote (ADR 0033)
 
 - Providers now return `{ text, thinking }` (Ollama structured thinking, OpenAI-compat
