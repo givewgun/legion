@@ -4,6 +4,65 @@ import { RuntimeSettings } from './RuntimeSettings.jsx';
 
 const PROVIDERS = ['local', 'gemini', 'openai'];
 
+// Manual operations for the PoC loop: re-kick a full sweep and re-run the
+// reliability learning pass without waiting for their crons. Lives on the
+// config page so it sits behind the same login gate as the other knobs.
+function Operations() {
+  const [status, setStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function run(label, action, summarize) {
+    setBusy(true);
+    setStatus(`${label}…`);
+    try {
+      setStatus(summarize(await action()));
+    } catch (e) {
+      setStatus(`${label} failed: ${e.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="mb-4 border rounded p-3">
+      <h2 className="font-semibold mb-2">Operations</h2>
+      <div className="flex items-center gap-2">
+        <button
+          aria-label="run-all-cycles"
+          disabled={busy}
+          onClick={() =>
+            run(
+              'Running all cycles',
+              api.triggerAllCycles,
+              (r) => `Kicked ${r.kicked.length} ticker${r.kicked.length === 1 ? '' : 's'}`,
+            )
+          }
+          className="bg-blue-600 text-white rounded px-3 py-1 disabled:opacity-50"
+        >
+          Run all cycles
+        </button>
+        <button
+          aria-label="relearn-reliability"
+          disabled={busy}
+          onClick={() =>
+            run(
+              'Relearning',
+              api.relearnReliability,
+              (r) =>
+                `Relearned: ${r.resolved} signal${r.resolved === 1 ? '' : 's'} resolved, ` +
+                `${r.agents} agent dial${r.agents === 1 ? '' : 's'} recomputed`,
+            )
+          }
+          className="bg-blue-600 text-white rounded px-3 py-1 disabled:opacity-50"
+        >
+          Relearn reliability
+        </button>
+        {status && <span className="text-gray-500">{status}</span>}
+      </div>
+    </section>
+  );
+}
+
 export function AgentConfig() {
   const [agents, setAgents] = useState([]);
 
@@ -24,6 +83,7 @@ export function AgentConfig() {
 
   return (
     <>
+      <Operations />
       <RuntimeSettings />
       <table className="w-full text-left">
       <thead>

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { summarizeAgents } from '../../reliability/performance.js';
 import { WINDOW } from '../../consensus/reliability.js';
 import { modelKey } from '../../llm/provider.js';
+import { runReliabilityOnce } from '../../reliability/run-once.js';
 
 // Headroom multiplier matching getResolvedForecasts: enough rows to cover every
 // agent's window even in a large panel.
@@ -9,7 +10,11 @@ const BOARD_HEADROOM = 8;
 
 // Reliability leaderboard (per-(agent, model) ρ_i ordered by rho desc), enriched
 // with win/loss/hold record, hit rate, and alpha magnitude per the v2 data contract.
-export function reliabilityRoutes(repo) {
+// POST /relearn runs the same resolve+recompute pass as the reliability cron, on
+// demand from the dashboard (no reflection — never an LLM call from the API box).
+// `gunvest` feeds the signal resolver; without it the endpoint is 503 (data-only
+// mode). `runOnce` is injectable for tests.
+export function reliabilityRoutes(repo, { gunvest = null, runOnce = runReliabilityOnce } = {}) {
   const router = Router();
 
   router.get('/', async (req, res, next) => {
@@ -54,6 +59,20 @@ export function reliabilityRoutes(repo) {
       });
 
       res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Relearn now: resolve due signals, recompute the dials and correlations.
+  // Idempotent DB work (the same pass the cron runs), so a manual re-kick is safe.
+  router.post('/relearn', async (req, res, next) => {
+    if (!gunvest) {
+      return res.status(503).json({ error: 'relearn unavailable: GunVest client not configured' });
+    }
+    try {
+      const { resolved, reliability, correlations } = await runOnce({ repo, gunvest });
+      res.json({ resolved, correlations, agents: Object.keys(reliability).length });
     } catch (err) {
       next(err);
     }
