@@ -51,6 +51,21 @@ $healthListener.Prefixes.Add($healthPrefix)
 $apiListener = [System.Net.HttpListener]::new()
 $apiListener.Prefixes.Add($apiPrefix)
 
+# A full sweep fires every ticker at once: ~80 generates land together, the proxy pool
+# claims $workerCount of them, and the rest sit UNCLAIMED in the HTTP.sys request queue
+# until a worker frees up. HTTP.sys kills unclaimed/idle connections after 2 minutes by
+# default (TimeoutManager RequestQueue/IdleConnection), sending a TCP RST — Legion sees
+# "Ollama request failed: ECONNRESET", retries once to the back of the same queue, dies
+# again, and the agent abstains. Legion is happy to wait (HOME_TIMEOUT_MS, 60 min) and
+# aborts its own call when too slow, so the sidecar must not hang up first: raise both
+# timeouts past HOME_TIMEOUT_MS so the queue outlasts a whole sweep and the client owns
+# the deadline.
+$queueTimeout = [TimeSpan]::FromMinutes(70)
+foreach ($l in @($healthListener, $apiListener)) {
+  $l.TimeoutManager.RequestQueue   = $queueTimeout
+  $l.TimeoutManager.IdleConnection = $queueTimeout
+}
+
 try {
   $healthListener.Start()
   $apiListener.Start()
@@ -64,7 +79,7 @@ try {
 # never a generate, so a couple of workers keep /ready instant under any sweep.
 $workerCount = if ($env:LEGION_SIDECAR_WORKERS) { [int]$env:LEGION_SIDECAR_WORKERS } else { 6 }
 $healthWorkerCount = if ($env:LEGION_HEALTH_WORKERS) { [int]$env:LEGION_HEALTH_WORKERS } else { 2 }
-Write-Host "[sidecar] /ready x$healthWorkerCount, /api x$workerCount on port $script:GatePort -> $script:OllamaUrl (model $script:Model)"
+Write-Host "[sidecar] /ready x$healthWorkerCount, /api x$workerCount on port $script:GatePort -> $script:OllamaUrl (model $script:Model, queue timeout $($queueTimeout.TotalMinutes)m)"
 
 # Shared response helper, dot-sourceable into either worker's runspace.
 $writeJson = @'
