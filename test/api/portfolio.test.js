@@ -1,114 +1,180 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { portfolioRoutes } from '../../src/api/routes/portfolio.js';
 
-function build(repo, gunvest) {
+function build(repo, gunvest, broker) {
   const app = express();
   app.use((req, _res, next) => { req.user = { id: 1 }; next(); });
-  app.use('/api/portfolio', portfolioRoutes(repo, gunvest, { horizonDays: 5 }));
+  app.use('/api/portfolio', portfolioRoutes(repo, gunvest, broker));
   app.use((err, req, res, _next) => res.status(500).json({ error: err.message }));
   return app;
 }
 
-// Signals with entry_price and plan.qualityMult for the paper book.
-// NVDA: open BUY, entry 50, resolve_after far future. TSLA: filtered (not watchlisted).
-const farFuture = new Date(Date.now() + 365 * 86400000).toISOString();
-
+// Two snapshots on 2026-07-01 (14:00 and 20:00 UTC) — bucketing keeps the LAST
+// one per calendar day — plus one on 2026-07-02.
 function repoStub(overrides = {}) {
   return {
-    listWatchlist: vi.fn(async () => ['NVDA']),
-    getPortfolioConfig: vi.fn(async () => ({ startingCash: 100000, horizonDays: 5 })),
-    listAllSignals: vi.fn(async () => [
+    listEquitySnapshots: vi.fn(async () => [
+      { ts: '2026-07-01T14:00:00Z', equity: 100000, cash: 50000 },
+      { ts: '2026-07-01T20:00:00Z', equity: 100200, cash: 49800 },
+      { ts: '2026-07-02T14:00:00Z', equity: 100400, cash: 49600 },
+    ]),
+    listOrderIntents: vi.fn(async () => [
       {
-        id: 1, symbol: 'NVDA', band: 'BUY', conviction: 0.7,
-        plan: { qualityMult: 1.2 }, created_at: '2026-01-01T10:00:00Z',
-        entry_price: 50, spy_entry_price: 500, qqq_entry_price: 400,
-        resolve_after: farFuture,
+        id: 2, signalId: 20, symbol: 'MSFT', band: 'BUY', conviction: 0.6, qualityMult: 1,
+        targetWeight: 0.03, status: 'pending', skipReason: null, brokerOrderId: null,
+        submittedQty: null, fillQty: null, fillPrice: null, error: null, createdAt: '2026-07-02T10:00:00Z',
       },
       {
-        id: 2, symbol: 'TSLA', band: 'BUY', conviction: 0.7,
-        plan: { qualityMult: 1.0 }, created_at: '2026-01-01T10:00:00Z',
-        entry_price: 200, spy_entry_price: 500, qqq_entry_price: 400,
-        resolve_after: farFuture,
+        id: 1, signalId: 10, symbol: 'AAPL', band: 'BUY', conviction: 0.8, qualityMult: 1.1,
+        targetWeight: 0.048, status: 'filled', skipReason: null, brokerOrderId: 'B-1',
+        submittedQty: 25, fillQty: 25, fillPrice: 190.1, error: null, createdAt: '2026-07-01T09:00:00Z',
       },
     ]),
     ...overrides,
   };
 }
 
-// 3-day calendar: SPY 100→120 (+20%), QQQ flat, NVDA 50→60 (position gains).
 const candles = {
-  SPY: [{ date: '2026-01-01', close: 100 }, { date: '2026-01-02', close: 110 }, { date: '2026-01-03', close: 120 }],
-  QQQ: [{ date: '2026-01-01', close: 100 }, { date: '2026-01-02', close: 100 }, { date: '2026-01-03', close: 100 }],
-  NVDA: [{ date: '2026-01-01', close: 50 }, { date: '2026-01-02', close: 55 }, { date: '2026-01-03', close: 60 }],
+  SPY: [{ date: '2026-07-01', close: 500 }, { date: '2026-07-02', close: 505 }],
+  QQQ: [{ date: '2026-07-01', close: 400 }, { date: '2026-07-02', close: 404 }],
 };
 
-const gunvestStub = {
-  getCandles: vi.fn(async (sym) => candles[sym] ?? []),
-  getPrice: vi.fn(async (sym) => ({ price: { NVDA: 75, SPY: 120, QQQ: 100 }[sym] ?? 100 })),
-};
+function gunvestStub(overrides = {}) {
+  return {
+    getCandles: vi.fn(async (sym) => candles[sym] ?? []),
+    getPrice: vi.fn(async (sym) => ({ price: { AAPL: 195.2 }[sym] ?? 100 })),
+    ...overrides,
+  };
+}
 
-describe('per-user portfolio', () => {
-  beforeEach(() => { gunvestStub.getPrice.mockClear(); gunvestStub.getCandles.mockClear(); });
+function brokerStub(overrides = {}) {
+  return {
+    isAuthenticated: vi.fn(async () => true),
+    getPositions: vi.fn(async () => [{ symbol: 'AAPL', qty: 25, avgCost: 190.1, conid: 1 }]),
+    getAccountSummary: vi.fn(async () => ({ accountId: 'DU123456', equity: 100500, cash: 40000 })),
+    ...overrides,
+  };
+}
 
-  it('503s when price data is unavailable', async () => {
-    const res = await request(build(repoStub(), null)).get('/api/portfolio');
-    expect(res.status).toBe(503);
+describe('/api/portfolio (IBKR-backed book)', () => {
+  it('returns the full payload shape when the gateway is configured and authenticated', async () => {
+    const res = await request(build(repoStub(), gunvestStub(), brokerStub())).get('/api/portfolio');
+    expect(res.status).toBe(200);
+
+    expect(res.body.gateway).toEqual({ configured: true, authenticated: true, accountId: 'DU123456' });
+
+    // Curve bucketed to one point per calendar day (2 days, not 3 snapshots).
+    expect(res.body.curve).toHaveLength(2);
+    expect(res.body.curve[0]).toMatchObject({ date: '2026-07-01', equity: 100200 });
+    expect(res.body.curve[1]).toMatchObject({ date: '2026-07-02', equity: 100400 });
+    // Benchmarks normalized to the first bucketed point's equity.
+    expect(res.body.curve[0].spy).toBeCloseTo(100200, 5);
+    expect(res.body.curve[1].spy).toBeCloseTo((100200 * 505) / 500, 5);
+    expect(res.body.curve[0].qqq).toBeCloseTo(100200, 5);
+    expect(res.body.curve[1].qqq).toBeCloseTo((100200 * 404) / 400, 5);
+
+    // Stats: equity/cash from the live broker account; returns from the curve.
+    expect(res.body.stats.equity).toBe(100500);
+    expect(res.body.stats.cash).toBe(40000);
+    expect(res.body.stats.totalReturn).toBeCloseTo(100400 / 100200 - 1, 6);
+    expect(res.body.stats.spyReturn).toBeCloseTo(505 / 500 - 1, 6);
+    expect(res.body.stats.qqqReturn).toBeCloseTo(404 / 400 - 1, 6);
+
+    // Positions marked via gunvest.getPrice.
+    expect(res.body.positions).toEqual([{
+      symbol: 'AAPL', qty: 25, avgCost: 190.1, markPrice: 195.2,
+      marketValue: 25 * 195.2, unrealizedPnl: (195.2 - 190.1) * 25,
+      unrealizedPnlPct: (195.2 - 190.1) / 190.1,
+    }]);
+
+    // Orders newest-first from repo.listOrderIntents, mapped to the API shape.
+    expect(res.body.orders).toEqual([
+      {
+        id: 2, createdAt: '2026-07-02T10:00:00Z', symbol: 'MSFT', band: 'BUY', conviction: 0.6,
+        targetWeight: 0.03, status: 'pending', skipReason: null, submittedQty: null,
+        fillQty: null, fillPrice: null, error: null,
+      },
+      {
+        id: 1, createdAt: '2026-07-01T09:00:00Z', symbol: 'AAPL', band: 'BUY', conviction: 0.8,
+        targetWeight: 0.048, status: 'filled', skipReason: null, submittedQty: 25,
+        fillQty: 25, fillPrice: 190.1, error: null,
+      },
+    ]);
   });
 
-  it('returns a curve, openPositions, and benchmark stats for watchlist symbols only', async () => {
+  it('degrades gracefully when no broker is configured (broker === null)', async () => {
+    const res = await request(build(repoStub(), gunvestStub(), null)).get('/api/portfolio');
+    expect(res.status).toBe(200);
+    expect(res.body.gateway).toEqual({ configured: false, authenticated: false, accountId: null });
+    expect(res.body.positions).toEqual([]);
+    expect(res.body.stats).toEqual({ equity: null, cash: null, totalReturn: null, spyReturn: null, qqqReturn: null });
+    // History keeps serving even with no gateway.
+    expect(res.body.curve).toHaveLength(2);
+    expect(res.body.orders).toHaveLength(2);
+  });
+
+  it('degrades gracefully when the broker is configured but not authenticated', async () => {
+    const broker = brokerStub({ isAuthenticated: vi.fn(async () => false) });
+    const res = await request(build(repoStub(), gunvestStub(), broker)).get('/api/portfolio');
+    expect(res.status).toBe(200);
+    expect(res.body.gateway).toEqual({ configured: true, authenticated: false, accountId: null });
+    expect(res.body.positions).toEqual([]);
+    expect(res.body.stats).toEqual({ equity: null, cash: null, totalReturn: null, spyReturn: null, qqqReturn: null });
+    expect(broker.getPositions).not.toHaveBeenCalled();
+    expect(broker.getAccountSummary).not.toHaveBeenCalled();
+    expect(res.body.curve).toHaveLength(2);
+    expect(res.body.orders).toHaveLength(2);
+  });
+
+  it('still serves curve and orders when a broker read throws after auth succeeds', async () => {
+    const broker = brokerStub({ getAccountSummary: vi.fn(async () => { throw new Error('gateway blip'); }) });
+    const res = await request(build(repoStub(), gunvestStub(), broker)).get('/api/portfolio');
+    expect(res.status).toBe(200);
+    expect(res.body.gateway.authenticated).toBe(false);
+    expect(res.body.positions).toEqual([]);
+    expect(res.body.curve).toHaveLength(2);
+    expect(res.body.orders).toHaveLength(2);
+  });
+
+  it('serves a cached response within the TTL, keyed by intent + snapshot counts', async () => {
     const repo = repoStub();
-    const res = await request(build(repo, gunvestStub)).get('/api/portfolio');
-    expect(res.status).toBe(200);
-    // Daily equity curve with SPY/QQQ series.
-    expect(res.body.curve.length).toBeGreaterThan(1);
-    expect(res.body.curve[0]).toHaveProperty('spy');
-    expect(res.body.curve[0]).toHaveProperty('qqq');
-    // NVDA open position marked at the live price 75.
-    expect(res.body.openPositions[0].symbol).toBe('NVDA');
-    expect(res.body.openPositions[0].markPrice).toBe(75);
-    // NVDA rose 50→60 on the curve → positive total return.
-    expect(res.body.stats.totalReturn).toBeGreaterThan(0);
-    // Benchmarks from candles: SPY 100→120 = +20%, QQQ flat = 0.
-    expect(res.body.stats.spyReturn).toBeCloseTo(0.2, 5);
-    expect(res.body.stats.qqqReturn).toBeCloseTo(0, 5);
-  });
-
-  it('TSLA is filtered out (not on watchlist)', async () => {
-    const res = await request(build(repoStub(), gunvestStub)).get('/api/portfolio');
-    expect(res.status).toBe(200);
-    expect(res.body.openPositions.map((p) => p.symbol)).not.toContain('TSLA');
-  });
-
-  it('falls back to the default config when the user has none', async () => {
-    const repo = repoStub({ getPortfolioConfig: vi.fn(async () => null) });
-    const res = await request(build(repo, gunvestStub)).get('/api/portfolio');
-    expect(res.status).toBe(200);
-  });
-
-  it('serves cached response on second request (skips candle/price fetch but re-reads signals)', async () => {
-    const repo = repoStub();
-    const app = build(repo, gunvestStub);
+    const gunvest = gunvestStub();
+    const broker = brokerStub();
+    const app = build(repo, gunvest, broker);
     await request(app).get('/api/portfolio');
-    gunvestStub.getPrice.mockClear();
-    gunvestStub.getCandles.mockClear();
+    broker.isAuthenticated.mockClear();
+    broker.getPositions.mockClear();
+    broker.getAccountSummary.mockClear();
+    gunvest.getCandles.mockClear();
+    gunvest.getPrice.mockClear();
+
     await request(app).get('/api/portfolio');
-    // Signals DB read happens every request (freshness); candle/price fetches are cached.
-    expect(repo.listAllSignals).toHaveBeenCalledTimes(2);
-    expect(gunvestStub.getCandles).not.toHaveBeenCalled();
-    expect(gunvestStub.getPrice).not.toHaveBeenCalled();
+    // Freshness reads always happen (cheap, used for the cache key)...
+    expect(repo.listEquitySnapshots).toHaveBeenCalledTimes(2);
+    expect(repo.listOrderIntents).toHaveBeenCalledTimes(2);
+    // ...but the expensive broker/gunvest work is skipped on a cache hit.
+    expect(broker.isAuthenticated).not.toHaveBeenCalled();
+    expect(broker.getPositions).not.toHaveBeenCalled();
+    expect(broker.getAccountSummary).not.toHaveBeenCalled();
+    expect(gunvest.getCandles).not.toHaveBeenCalled();
+    expect(gunvest.getPrice).not.toHaveBeenCalled();
   });
 
-  it('returns 200 when a symbol price fetch fails (getPrice throws)', async () => {
-    const failing = {
-      getCandles: vi.fn(async (sym) => candles[sym] ?? []),
-      getPrice: vi.fn(async (sym) => {
-        if (sym === 'NVDA') throw new Error('boom');
-        return { price: 100 };
-      }),
-    };
-    const res = await request(build(repoStub(), failing)).get('/api/portfolio');
-    expect(res.status).toBe(200);
+  it('busts the cache when a new order intent appears', async () => {
+    const intents = [
+      { id: 1, signalId: 10, symbol: 'AAPL', band: 'BUY', conviction: 0.8, qualityMult: 1.1, targetWeight: 0.048, status: 'filled', skipReason: null, brokerOrderId: 'B-1', submittedQty: 25, fillQty: 25, fillPrice: 190.1, error: null, createdAt: '2026-07-01T09:00:00Z' },
+    ];
+    const repo = repoStub({ listOrderIntents: vi.fn(async () => intents) });
+    const broker = brokerStub();
+    const app = build(repo, gunvestStub(), broker);
+    await request(app).get('/api/portfolio');
+    broker.getAccountSummary.mockClear();
+
+    intents.unshift({ id: 2, signalId: 20, symbol: 'MSFT', band: 'BUY', conviction: 0.6, qualityMult: 1, targetWeight: 0.03, status: 'pending', skipReason: null, brokerOrderId: null, submittedQty: null, fillQty: null, fillPrice: null, error: null, createdAt: '2026-07-02T10:00:00Z' });
+    const res = await request(app).get('/api/portfolio');
+    expect(res.body.orders).toHaveLength(2);
+    expect(broker.getAccountSummary).toHaveBeenCalledTimes(1);
   });
 });

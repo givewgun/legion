@@ -9,6 +9,7 @@ import { createGunvestFromConfig } from '../data/gunvest.js';
 import { createQualityService } from '../quality/index.js';
 import { createGoogleAuth } from '../auth/google.js';
 import { createSessionMiddleware } from '../auth/session.js';
+import { createBrokerFromConfig } from '../broker/broker.js';
 
 const cfg = loadConfig();
 const db = connectDb(cfg.databaseUrl);
@@ -25,6 +26,8 @@ try {
 
 const gunvest = createGunvestFromConfig(cfg);
 const quality = createQualityService({ gunvest });
+const broker = createBrokerFromConfig(cfg);
+if (!broker) console.warn('[api] no IBKR gateway configured — /api/portfolio serves history only');
 
 // Build the auth stack. Secure cookies in production (HTTPS terminates at the
 // Cloudflare edge); plain HTTP only for local dev.
@@ -44,5 +47,5 @@ const auth = {
   repo,
 };
 
-const app = createApp({ repo, orchestrator, gunvest, horizonDays: cfg.horizonDays, auth, cfg, quality });
+const app = createApp({ repo, orchestrator, gunvest, auth, cfg, quality, broker });
 app.listen(cfg.apiPort, () => console.log(`[api] listening on :${cfg.apiPort}`));

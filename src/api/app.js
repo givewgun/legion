@@ -16,17 +16,18 @@ import { httpMetricsMiddleware } from '../instrumentation/metrics.js';
 
 // Builds the Express app without listening (so tests can drive it in-process).
 // When `auth` is supplied, the whole /api surface (except /api/auth and
-// /health) is gated by requireUser; per-user routes (watchlist, portfolio) read
-// req.user. Without `auth`, gating is skipped — used by route unit tests that
-// exercise business logic directly.
+// /health) is gated by requireUser; per-user routes (watchlist, holdings) read
+// req.user. `/api/portfolio` is the one global (instance-level) book — it does
+// not read req.user. Without `auth`, gating is skipped — used by route unit
+// tests that exercise business logic directly.
 export function createApp({
   repo,
   orchestrator = null,
   gunvest = null,
-  horizonDays = 5,
   auth = null,
   cfg = {},
   quality = null,
+  broker = null,
 }) {
   const app = express();
   app.use(express.json());
@@ -55,7 +56,7 @@ export function createApp({
   app.use('/api/agents', agentRoutes(repo));
   app.use('/api/watchlist', watchlistRoutes(repo));
   app.use('/api/holdings', holdingsRoutes(repo, gunvest, quality));
-  app.use('/api/portfolio', portfolioRoutes(repo, gunvest, { horizonDays }));
+  app.use('/api/portfolio', portfolioRoutes(repo, gunvest, broker));
   app.use('/api/settings', settingsRoutes(repo, cfg));
 
   app.use((err, req, res, _next) => {
