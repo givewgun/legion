@@ -111,7 +111,7 @@ shows these statuses:
 | `filled` | The broker reported a fill; `fill_qty`/`fill_price` are recorded and an equity snapshot was taken immediately after. |
 | `skipped (dust)` | The sized order was smaller than `trading_min_order_notional` (default $50) or rounded to 0 shares — not worth sending. |
 | `skipped (dry-run)` | `trading_dry_run` was on when this intent was processed; the would-be quantity/target weight are recorded but nothing was sent to the broker. |
-| `failed` | Either the broker rejected the order (its error text is recorded — read it, this is not auto-retried on purpose) or a resting DAY order was cancelled/expired unfilled. A new signal for the same symbol re-sizes against the account's *actual* position, so a failed order self-corrects on the next signal rather than needing a manual resubmit. |
+| `failed` | One of three causes, each recorded in the error text: the broker rejected the order (read it — rejections are not auto-retried on purpose); a resting DAY order was cancelled/expired unfilled; or a `submitted` order's `cOID` was no longer found at the broker on a status check ("order not found at broker (lost after submit)"). A new signal for the same symbol re-sizes against the account's *actual* position, so a failed order self-corrects on the next signal rather than needing a manual resubmit. |
 
 A gap between a signal appearing elsewhere in Legion (Telegram, the Signals page) and an order
 intent showing up here means the intent write itself failed at emit time — check the emitter's

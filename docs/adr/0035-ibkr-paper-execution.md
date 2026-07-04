@@ -147,6 +147,6 @@ kill trading instantly if something looks wrong.
   signal (e.g. a delisted/ignored ticker) has no independent mechanism to close it. This is an
   accepted v1 gap — the trading universe is "whatever the panel still votes on."
 - A future non-IBKR broker (e.g. InnovestX/Settrade) is a new adapter implementing the same
-  four-method interface (`init`/`getAccountSummary`/`getPositions`/`placeOrder`/`getOrderStatus`)
-  behind `createBrokerFromConfig` (`src/broker/broker.js`) — nothing above the adapter layer
-  changes.
+  interface (`init`/`isAuthenticated`/`getAccountSummary`/`getPositions`/`placeOrder`/
+  `getOrderStatus`) behind `createBrokerFromConfig` (`src/broker/broker.js`) — nothing above
+  the adapter layer changes.
