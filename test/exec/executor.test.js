@@ -23,6 +23,7 @@ function makeRepo(intents, runtimeConfig = {}) {
   return {
     intents,
     runtimeConfig,
+    equitySnapshots: [],
     async getRuntimeConfig() {
       return this.runtimeConfig;
     },
@@ -38,15 +39,29 @@ function makeRepo(intents, runtimeConfig = {}) {
       const intent = this.intents.find((i) => i.id === id);
       Object.assign(intent, patch);
     },
+    async addEquitySnapshot({ equity, cash }) {
+      this.equitySnapshots.push({ equity, cash });
+    },
   };
 }
 
 // Fake broker recording every call (optionally into a shared `log` for ordering
-// assertions) and returning a fixed account/position snapshot.
-function makeBroker({ equity = 100000, cash = 100000, positions = [], placeOrderImpl, log } = {}) {
-  const calls = { getAccountSummary: 0, getPositions: 0, placeOrder: [] };
+// assertions) and returning a fixed account/position snapshot. `orderStatusByCoid`
+// maps clientOrderId (string) -> getOrderStatus response; `getOrderStatusImpl`
+// overrides the lookup entirely (e.g. to throw).
+function makeBroker({
+  equity = 100000,
+  cash = 100000,
+  positions = [],
+  placeOrderImpl,
+  orderStatusByCoid = {},
+  getOrderStatusImpl,
+  log,
+} = {}) {
+  const calls = { getAccountSummary: 0, getPositions: 0, placeOrder: [], getOrderStatus: [] };
   return {
     calls,
+    orderStatusByCoid,
     async getAccountSummary() {
       calls.getAccountSummary += 1;
       log?.push('getAccountSummary');
@@ -62,6 +77,12 @@ function makeBroker({ equity = 100000, cash = 100000, positions = [], placeOrder
       log?.push(`placeOrder:${order.symbol}`);
       if (placeOrderImpl) return placeOrderImpl(order);
       return { brokerOrderId: `B-${calls.placeOrder.length}` };
+    },
+    async getOrderStatus(clientOrderId) {
+      calls.getOrderStatus.push(clientOrderId);
+      log?.push(`getOrderStatus:${clientOrderId}`);
+      if (getOrderStatusImpl) return getOrderStatusImpl(clientOrderId);
+      return this.orderStatusByCoid[clientOrderId] ?? { found: false };
     },
   };
 }
@@ -286,12 +307,231 @@ describe('executor', () => {
     await executor.tick();
 
     // Every fetch+submit for AAPL (the older intent) completes before MSFT's
-    // fetches even start -- no interleaving across intents.
+    // fetches even start -- no interleaving across intents. Each intent now opens
+    // with a Task 6 crash-recovery probe (getOrderStatus) before the sizing fetch.
     expect(log).toEqual([
-      'getAccountSummary', 'getPositions', 'getPrice:AAPL', 'placeOrder:AAPL',
-      'getAccountSummary', 'getPositions', 'getPrice:MSFT', 'placeOrder:MSFT',
+      'getOrderStatus:1', 'getAccountSummary', 'getPositions', 'getPrice:AAPL', 'placeOrder:AAPL',
+      'getOrderStatus:2', 'getAccountSummary', 'getPositions', 'getPrice:MSFT', 'placeOrder:MSFT',
     ]);
     expect(older.status).toBe('submitted');
     expect(newer.status).toBe('submitted');
+  });
+
+  describe('fill tracking (submitted intents)', () => {
+    it('submitted intent fills: records fill qty/price, snapshots equity', async () => {
+      const intent = mkIntent({ id: 10, status: 'submitted', brokerOrderId: 'B-1' });
+      const repo = makeRepo([intent], { trading_enabled: 'true', trading_dry_run: 'false' });
+      const broker = makeBroker({
+        equity: 100000,
+        positions: [],
+        orderStatusByCoid: { 10: { found: true, status: 'filled', fillQty: 25, avgFillPrice: 198.4 } },
+      });
+      const gunvest = makeGunvest({ AAPL: 200 });
+      // Off-hours clock isolates the fill-triggered snapshot from the hourly gate.
+      const now = new Date('2026-07-02T22:00:00-04:00');
+      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger, clock: () => now });
+
+      await executor.tick();
+
+      expect(intent.status).toBe('filled');
+      expect(intent.fillQty).toBe(25);
+      expect(intent.fillPrice).toBe(198.4);
+      expect(repo.equitySnapshots).toEqual([{ equity: 100000, cash: 100000 }]);
+    });
+
+    it('submitted intent still resting: left submitted (overnight order)', async () => {
+      const intent = mkIntent({ id: 11, status: 'submitted', brokerOrderId: 'B-2' });
+      const repo = makeRepo([intent], { trading_enabled: 'true', trading_dry_run: 'false' });
+      const broker = makeBroker({
+        equity: 100000,
+        positions: [],
+        orderStatusByCoid: { 11: { found: true, status: 'submitted' } },
+      });
+      const gunvest = makeGunvest({ AAPL: 200 });
+      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+
+      await executor.tick();
+
+      expect(intent.status).toBe('submitted');
+      expect(intent.fillQty).toBeUndefined();
+      expect(broker.calls.placeOrder).toHaveLength(0);
+    });
+
+    it('submitted intent cancelled/expired: marked failed with reason', async () => {
+      const intent = mkIntent({ id: 12, status: 'submitted', brokerOrderId: 'B-3' });
+      const repo = makeRepo([intent], { trading_enabled: 'true', trading_dry_run: 'false' });
+      const broker = makeBroker({
+        equity: 100000,
+        positions: [],
+        orderStatusByCoid: { 12: { found: true, status: 'cancelled' } },
+      });
+      const gunvest = makeGunvest({ AAPL: 200 });
+      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+
+      await executor.tick();
+
+      expect(intent.status).toBe('failed');
+      expect(intent.error).toBe('order cancelled/expired unfilled');
+    });
+
+    it('crash recovery: submitted intent whose cOID is unknown to broker → failed(order lost)', async () => {
+      const intent = mkIntent({ id: 13, status: 'submitted', brokerOrderId: 'B-4' });
+      const repo = makeRepo([intent], { trading_enabled: 'true', trading_dry_run: 'false' });
+      const broker = makeBroker({ equity: 100000, positions: [] }); // no orderStatusByCoid entry -> found:false
+      const gunvest = makeGunvest({ AAPL: 200 });
+      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+
+      await executor.tick();
+
+      expect(intent.status).toBe('failed');
+      expect(intent.error).toBe('order not found at broker (lost after submit)');
+    });
+
+    it('trackSubmitted: getOrderStatus throw logs warning and leaves intent submitted for retry', async () => {
+      const intent = mkIntent({ id: 14, status: 'submitted', brokerOrderId: 'B-5' });
+      const repo = makeRepo([intent], { trading_enabled: 'true', trading_dry_run: 'false' });
+      const broker = makeBroker({
+        equity: 100000,
+        positions: [],
+        getOrderStatusImpl: () => {
+          throw new Error('gateway timeout');
+        },
+      });
+      const gunvest = makeGunvest({ AAPL: 200 });
+      const warnings = [];
+      const logger = { ...silentLogger, warn: (msg) => warnings.push(msg) };
+      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger });
+
+      await executor.tick();
+
+      expect(intent.status).toBe('submitted'); // left untouched -- retried next tick
+      expect(warnings.some((w) => w.includes('order status check failed'))).toBe(true);
+    });
+  });
+
+  describe('crash recovery of pending intents (persist-failure hole)', () => {
+    it('pending intent with a live submitted order at broker: no resubmit, marked submitted', async () => {
+      const intent = mkIntent({ id: 20, status: 'pending' });
+      const repo = makeRepo([intent], { trading_enabled: 'true', trading_dry_run: 'false' });
+      const broker = makeBroker({
+        equity: 100000,
+        positions: [],
+        orderStatusByCoid: { 20: { found: true, status: 'submitted' } },
+      });
+      const gunvest = makeGunvest({ AAPL: 200 });
+      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+
+      await executor.tick();
+
+      expect(broker.calls.placeOrder).toHaveLength(0);
+      expect(intent.status).toBe('submitted');
+    });
+
+    it('pending intent with a filled order at broker: marked filled + equity snapshot, no resubmit', async () => {
+      const intent = mkIntent({ id: 21, status: 'pending' });
+      const repo = makeRepo([intent], { trading_enabled: 'true', trading_dry_run: 'false' });
+      const broker = makeBroker({
+        equity: 100000,
+        positions: [],
+        orderStatusByCoid: { 21: { found: true, status: 'filled', fillQty: 10, avgFillPrice: 201.5 } },
+      });
+      const gunvest = makeGunvest({ AAPL: 200 });
+      const now = new Date('2026-07-02T22:00:00-04:00'); // off-hours: isolates the fill-triggered snapshot
+      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger, clock: () => now });
+
+      await executor.tick();
+
+      expect(broker.calls.placeOrder).toHaveLength(0);
+      expect(intent.status).toBe('filled');
+      expect(intent.fillQty).toBe(10);
+      expect(intent.fillPrice).toBe(201.5);
+      expect(repo.equitySnapshots).toEqual([{ equity: 100000, cash: 100000 }]);
+    });
+
+    it('pending intent with a cancelled order at broker: marked failed with reason, no resubmit', async () => {
+      const intent = mkIntent({ id: 23, status: 'pending' });
+      const repo = makeRepo([intent], { trading_enabled: 'true', trading_dry_run: 'false' });
+      const broker = makeBroker({
+        equity: 100000,
+        positions: [],
+        orderStatusByCoid: { 23: { found: true, status: 'cancelled' } },
+      });
+      const gunvest = makeGunvest({ AAPL: 200 });
+      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+
+      await executor.tick();
+
+      expect(broker.calls.placeOrder).toHaveLength(0);
+      expect(intent.status).toBe('failed');
+      expect(intent.error).toBe('order cancelled/expired unfilled');
+    });
+
+    it('pending intent probe throws: proceeds with normal sizing/submission', async () => {
+      const intent = mkIntent({ id: 22, status: 'pending' });
+      const repo = makeRepo([intent], { trading_enabled: 'true', trading_dry_run: 'false' });
+      const broker = makeBroker({
+        equity: 100000,
+        positions: [],
+        getOrderStatusImpl: () => {
+          throw new Error('gateway timeout');
+        },
+      });
+      const gunvest = makeGunvest({ AAPL: 200 });
+      const warnings = [];
+      const logger = { ...silentLogger, warn: (msg) => warnings.push(msg) };
+      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger });
+
+      await executor.tick();
+
+      expect(broker.calls.placeOrder).toEqual([{ symbol: 'AAPL', side: 'BUY', qty: 25, clientOrderId: '22' }]);
+      expect(intent.status).toBe('submitted');
+      expect(warnings.some((w) => w.includes('order status probe failed'))).toBe(true);
+    });
+  });
+
+  describe('equity snapshots', () => {
+    it('hourly in-market snapshot: taken when >1h since last and market open; skipped off-hours', async () => {
+      const repo = makeRepo([], { trading_enabled: 'true', trading_dry_run: 'false' });
+      const broker = makeBroker({ equity: 100000, positions: [] });
+      const gunvest = makeGunvest({});
+      let now = new Date('2026-07-02T12:00:00-04:00'); // Thursday, market open
+      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger, clock: () => now });
+
+      await executor.tick(); // first tick ever: lastSnapshotMs starts at 0 -> snapshot taken
+      expect(repo.equitySnapshots).toHaveLength(1);
+
+      await executor.tick(); // immediately again: <1h since last -> gated, no new snapshot
+      expect(repo.equitySnapshots).toHaveLength(1);
+
+      now = new Date(now.getTime() + 61 * 60 * 1000); // advance >1h, still inside market hours
+      await executor.tick();
+      expect(repo.equitySnapshots).toHaveLength(2);
+
+      now = new Date('2026-07-02T22:00:00-04:00'); // same day, after close
+      await executor.tick();
+      expect(repo.equitySnapshots).toHaveLength(2); // off-hours: skipped despite >1h gap
+
+      now = new Date('2026-07-04T12:00:00-04:00'); // Saturday, weekend
+      await executor.tick();
+      expect(repo.equitySnapshots).toHaveLength(2); // weekend: skipped
+    });
+
+    it('snapshot failure logs but does not fail the tick', async () => {
+      const repo = makeRepo([], { trading_enabled: 'true', trading_dry_run: 'false' });
+      const broker = makeBroker({ equity: 100000, positions: [] });
+      broker.getAccountSummary = async () => {
+        throw new Error('gateway timeout');
+      };
+      const gunvest = makeGunvest({});
+      const warnings = [];
+      const logger = { ...silentLogger, warn: (msg) => warnings.push(msg) };
+      const now = new Date('2026-07-02T15:00:00-04:00'); // market open
+      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger, clock: () => now });
+
+      await expect(executor.tick()).resolves.toBeUndefined();
+
+      expect(repo.equitySnapshots).toHaveLength(0);
+      expect(warnings.some((w) => w.includes('equity snapshot failed'))).toBe(true);
+    });
   });
 });
