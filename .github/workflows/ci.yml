@@ -264,6 +264,7 @@ jobs:
             HOME_FALLBACK=${HOME_FALLBACK}
             DATABASE_URL=${DATABASE_URL}
             GUNVEST_API_URL=http://gunvest-app:3001
+            IBKR_GATEWAY_URL=https://ibeam:5000/v1/api
             FINNHUB_API_KEY=${FINNHUB_API_KEY}
             TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
             TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}

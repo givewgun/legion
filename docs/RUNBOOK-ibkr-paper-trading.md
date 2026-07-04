@@ -44,9 +44,12 @@ chmod 600 .env.ibeam
 ```
 
 Both compose files (`docker-compose.yml` and `docker-compose.prod.yml`) declare the `ibeam`
-service with `env_file: .env.ibeam`. **`docker compose up` fails outright if this file is
-missing** — Compose refuses to start a service whose `env_file` doesn't exist on disk. Create
-`.env.ibeam` *before* the first deploy/up on any host, dev or prod.
+service with `env_file: [{ path: .env.ibeam, required: false }]`, so **`docker compose up`
+degrades gracefully if this file is missing** — the rest of the stack (including a fresh deploy)
+comes up normally; only the `ibeam` container itself starts without credentials and fails IBKR
+auth until `.env.ibeam` is created and the container is restarted. Still create `.env.ibeam`
+*before* the first deploy/up on any host, dev or prod, so the gateway chip goes green immediately
+instead of sitting red.
 
 Legion's own `.env` (not `.env.ibeam`) needs the gateway URL pointed at the `ibeam` service by
 its compose service name:
@@ -55,16 +58,14 @@ its compose service name:
 IBKR_GATEWAY_URL=https://ibeam:5000/v1/api
 ```
 
-**Prod deploy gap:** `.github/workflows/ci.yml`'s deploy job regenerates `.env` on the VM from
-GitHub Secrets on *every* deploy (the same `HOME_OLLAMA_URL`-style templating used for the PC
-model server). `IBKR_GATEWAY_URL` and the `LEGION_TRADING_*` / `LEGION_ALLOW_LIVE_BROKER` vars
-are not yet in that template as of this writing — a hand-edit of `.env` on the VM will be
-silently wiped on the next deploy. Until the workflow is updated to pass these through (add them
-to the `deploy` job's `env:` block and `envs:` list, same pattern as `HOME_MODEL`), either:
-
-- add `IBKR_GATEWAY_URL=https://ibeam:5000/v1/api` (and any non-default `LEGION_TRADING_*`
-  overrides) to the `sudo tee .env` heredoc in `ci.yml` directly, or
-- re-apply the hand-edit after each deploy until the workflow is updated.
+`.github/workflows/ci.yml`'s deploy job regenerates `.env` on the VM from GitHub Secrets on
+*every* deploy (the same `HOME_OLLAMA_URL`-style templating used for the PC model server). The
+`sudo tee .env` heredoc includes the literal `IBKR_GATEWAY_URL=https://ibeam:5000/v1/api` line, so
+it survives every redeploy without a hand-edit. The `LEGION_TRADING_*` / `LEGION_ALLOW_LIVE_BROKER`
+vars are deliberately **not** templated into `.env` — their safe-by-default values
+(`enabled=false`, `dryRun=true`) come from `.env.example`/code defaults, and any non-default
+override belongs in `runtime_config` (toggled from the dashboard), not baked into the deploy
+template.
 
 `.env.ibeam` itself is **not** part of the CI-generated `.env` and is unaffected by deploys —
 it only needs to exist once on the VM's `/opt/legion/app` directory.

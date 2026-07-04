@@ -211,7 +211,9 @@ services:
   ibeam:
     image: voyz/ibeam:latest
     container_name: legion-ibeam
-    env_file: .env.ibeam
+    env_file:
+      - path: .env.ibeam
+        required: false
     environment:
       TZ: Asia/Bangkok
     restart: unless-stopped
