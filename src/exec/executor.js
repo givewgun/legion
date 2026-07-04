@@ -78,13 +78,22 @@ export function createExecutor({
       });
       return;
     }
+    let brokerOrderId;
     try {
-      const { brokerOrderId } = await broker.placeOrder({
+      ({ brokerOrderId } = await broker.placeOrder({
         symbol: intent.symbol,
         side,
         qty,
         clientOrderId: String(intent.id),
-      });
+      }));
+    } catch (err) {
+      // Reached the broker and was rejected: terminal — a rejection carries
+      // information a human should read. Transport failures upstream stay pending.
+      await repo.updateOrderIntent(intent.id, { status: 'failed', error: err.message, targetWeight: sized.targetWeight });
+      logger.error?.(`[executor] order failed for intent ${intent.id} (${intent.symbol}): ${err.message}`);
+      return;
+    }
+    try {
       await repo.updateOrderIntent(intent.id, {
         status: 'submitted',
         brokerOrderId,
@@ -93,10 +102,13 @@ export function createExecutor({
       });
       logger.info?.(`[executor] submitted ${side} ${qty} ${intent.symbol} (intent ${intent.id}, order ${brokerOrderId})`);
     } catch (err) {
-      // Reached the broker and was rejected: terminal — a rejection carries
-      // information a human should read. Transport failures upstream stay pending.
-      await repo.updateOrderIntent(intent.id, { status: 'failed', error: err.message, targetWeight: sized.targetWeight });
-      logger.error(`[executor] order failed for intent ${intent.id} (${intent.symbol}): ${err.message}`);
+      // The order IS live at the broker — never mark it failed over a DB write.
+      // Leave the intent as-is (pending); next tick re-submits with the same cOID
+      // (= intent id), which the broker dedupes, so no double order — and Task 6's
+      // fill tracking reconciles the true state.
+      logger.error?.(
+        `[executor] CRITICAL: order ${brokerOrderId} submitted for intent ${intent.id} (${intent.symbol}) but persisting 'submitted' failed: ${err.message} — leaving intent pending for cOID-deduped reconcile`,
+      );
     }
   }
 
@@ -127,7 +139,7 @@ export function createExecutor({
     try {
       await tick();
     } catch (err) {
-      logger.error(`[executor] tick failed: ${err.message}`);
+      logger.error?.(`[executor] tick failed: ${err.message}`);
     } finally {
       ticking = false;
     }

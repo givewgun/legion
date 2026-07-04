@@ -145,6 +145,24 @@ describe('executor', () => {
     expect(intent.targetWeight).toBe(0);
   });
 
+  it('SELL cap binds: rounding a fractional position up never sells more than held', async () => {
+    const heldQty = 29.6; // deltaShares -29.6 -> Math.round -> 30 > held; uncapped this would short 0.4
+    const intent = mkIntent({ id: 8, band: 'NO_CONSENSUS' });
+    const repo = makeRepo([intent], { trading_enabled: 'true', trading_dry_run: 'false' });
+    const broker = makeBroker({
+      equity: 100000,
+      positions: [{ symbol: 'AAPL', qty: heldQty, avgCost: 150, conid: 1 }],
+    });
+    const gunvest = makeGunvest({ AAPL: 200 });
+    const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+
+    await executor.tick();
+
+    expect(broker.calls.placeOrder).toEqual([{ symbol: 'AAPL', side: 'SELL', qty: heldQty, clientOrderId: '8' }]);
+    expect(intent.status).toBe('submitted');
+    expect(intent.submittedQty).toBe(heldQty);
+  });
+
   it('dust: |deltaUSD| below minOrderNotional → skipped(dust)', async () => {
     const intent = mkIntent({ id: 3, conviction: 0.6 });
     const repo = makeRepo([intent], { trading_enabled: 'true', trading_dry_run: 'false' });
@@ -214,6 +232,44 @@ describe('executor', () => {
     expect(intent.status).toBe('failed');
     expect(intent.error).toBe('Order rejected: insufficient buying power');
     expect(intent.targetWeight).toBeCloseTo(0.05, 5);
+  });
+
+  it('submitted-write failure: real order is never mislabeled failed; error logged', async () => {
+    const intent = mkIntent({ id: 7 });
+    const repo = makeRepo([intent], { trading_enabled: 'true', trading_dry_run: 'false' });
+    // placeOrder succeeds, but persisting status:'submitted' throws once — the
+    // order IS live at the broker, so the intent must NOT be marked failed.
+    const realUpdate = repo.updateOrderIntent.bind(repo);
+    let persistFailures = 0;
+    repo.updateOrderIntent = async (id, patch) => {
+      if (patch.status === 'submitted' && persistFailures === 0) {
+        persistFailures += 1;
+        throw new Error('db connection lost');
+      }
+      return realUpdate(id, patch);
+    };
+    const broker = makeBroker({ equity: 100000, positions: [] });
+    const gunvest = makeGunvest({ AAPL: 200 });
+    const errors = [];
+    const logger = { ...silentLogger, error: (msg) => errors.push(msg) };
+    const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger });
+
+    await executor.tick();
+
+    expect(broker.calls.placeOrder).toHaveLength(1);
+    expect(persistFailures).toBe(1);
+    expect(intent.status).toBe('pending'); // untouched — NOT 'failed'
+    expect(intent.error).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('B-1'); // broker order id
+    expect(errors[0]).toContain('intent 7');
+
+    // Next tick retries the still-pending intent with the SAME cOID — the broker
+    // dedupes on cOID so this cannot double-order — and the write now succeeds.
+    await executor.tick();
+    expect(broker.calls.placeOrder).toHaveLength(2);
+    expect(broker.calls.placeOrder[1].clientOrderId).toBe('7');
+    expect(intent.status).toBe('submitted');
   });
 
   it('processes intents oldest-first, sequentially', async () => {
