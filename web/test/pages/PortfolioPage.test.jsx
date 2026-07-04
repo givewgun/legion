@@ -102,7 +102,7 @@ describe('PortfolioPage', () => {
     expect(screen.getByText(/below min order size/)).toBeInTheDocument();
   });
 
-  it('renders a null-safe degraded state when the gateway is down', async () => {
+  it('renders a null-safe degraded state when the gateway is not configured', async () => {
     vi.spyOn(api, 'getPortfolio').mockResolvedValue(degradedPayload);
     render(<PortfolioPage />);
     await waitFor(() => expect(screen.getByText('Gateway: not configured')).toBeInTheDocument());
@@ -113,6 +113,15 @@ describe('PortfolioPage', () => {
     // No NaN / undefined should leak into stats when gateway stats are null.
     expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
     expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
+  });
+
+  it('shows "Gateway: down" when configured but not authenticated', async () => {
+    vi.spyOn(api, 'getPortfolio').mockResolvedValue({
+      ...degradedPayload,
+      gateway: { configured: true, authenticated: false, accountId: null },
+    });
+    render(<PortfolioPage />);
+    await waitFor(() => expect(screen.getByText('Gateway: down')).toBeInTheDocument());
   });
 
   it('shows the empty state when there are no snapshots or orders', async () => {
