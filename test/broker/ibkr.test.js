@@ -150,4 +150,43 @@ describe('ibkr adapter', () => {
       b.placeOrder({ symbol: 'ZZZZ', side: 'BUY', qty: 1, clientOrderId: 'intent-8' })
     ).rejects.toThrow(/unknown symbol/i);
   });
+
+  it('placeOrder throws ambiguous symbol when multiple results and none match exactly', async () => {
+    const { impl } = scriptedFetch([
+      ...initScript(),
+      { path: '/iserver/secdef/search', json: [
+        { conid: 111, symbol: 'BRKA' },
+        { conid: 222, symbol: 'BRKB' },
+      ] },
+    ]);
+    const b = createIbkrBroker({ gatewayUrl: GatewayUrl, fetchImpl: impl });
+    await expect(
+      b.placeOrder({ symbol: 'BRK', side: 'BUY', qty: 1, clientOrderId: 'intent-9' })
+    ).rejects.toThrow(/ambiguous symbol/i);
+  });
+
+  it('placeOrder accepts a single non-matching search result', async () => {
+    const { impl } = scriptedFetch([
+      ...initScript(),
+      { path: '/iserver/secdef/search', json: [{ conid: 333, symbol: 'BRK B' }] },
+      { path: '/iserver/account/DU123456/orders', method: 'POST', json: [{ order_id: '654', order_status: 'Submitted' }] },
+    ]);
+    const b = createIbkrBroker({ gatewayUrl: GatewayUrl, fetchImpl: impl });
+    const r = await b.placeOrder({ symbol: 'BRK.B', side: 'BUY', qty: 1, clientOrderId: 'intent-10' });
+    expect(r).toEqual({ brokerOrderId: '654' });
+  });
+
+  it('getOrderStatus warns and defaults to submitted on an unmapped status', async () => {
+    const { impl } = scriptedFetch([
+      ...initScript(),
+      { path: '/iserver/account/orders', json: { orders: [{ orderId: 987, order_ref: 'intent-7', status: 'WarnState', filledQuantity: 0, avgPrice: 0 }] } },
+    ]);
+    const warns = [];
+    const logger = { warn: (msg) => warns.push(msg) };
+    const b = createIbkrBroker({ gatewayUrl: GatewayUrl, fetchImpl: impl, logger });
+    const result = await b.getOrderStatus('intent-7');
+    expect(result.status).toBe('submitted');
+    expect(warns).toHaveLength(1);
+    expect(warns[0]).toContain('WarnState');
+  });
 });

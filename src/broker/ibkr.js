@@ -33,10 +33,10 @@ const StatusMap = {
  */
 export function createIbkrBroker({ gatewayUrl, fetchImpl, allowLive = false, logger = console }) {
   const base = gatewayUrl.replace(/\/$/, '');
-  const fetcher =
-    fetchImpl ??
-    ((url, opts) =>
-      undiciFetch(url, { ...opts, dispatcher: new Agent({ connect: { rejectUnauthorized: false } }) }));
+  // One TLS-skipping dispatcher per broker instance, reused across all gateway
+  // calls (a per-call Agent would leak a connection pool on every request).
+  const gatewayDispatcher = fetchImpl ? null : new Agent({ connect: { rejectUnauthorized: false } });
+  const fetcher = fetchImpl ?? ((url, opts) => undiciFetch(url, { ...opts, dispatcher: gatewayDispatcher }));
 
   let accountId = null;
   const conidCache = new Map(); // symbol -> conid
@@ -51,9 +51,15 @@ export function createIbkrBroker({ gatewayUrl, fetchImpl, allowLive = false, log
     return res.json();
   }
 
+  // /iserver/auth/status is a POST in current CP docs, but some gateway builds
+  // accept GET only — fall back so both work.
+  function checkAuthStatus() {
+    return call('/iserver/auth/status', { method: 'POST' }).catch(() => call('/iserver/auth/status'));
+  }
+
   async function init() {
     if (accountId) return { accountId };
-    const auth = await call('/iserver/auth/status', { method: 'POST' }).catch(() => call('/iserver/auth/status'));
+    const auth = await checkAuthStatus();
     if (!auth?.authenticated) throw new Error('IBKR gateway not authenticated');
     const acct = await call('/iserver/accounts');
     const id = acct?.selectedAccount ?? acct?.accounts?.[0];
@@ -68,9 +74,13 @@ export function createIbkrBroker({ gatewayUrl, fetchImpl, allowLive = false, log
 
   async function resolveConid(symbol) {
     if (conidCache.has(symbol)) return conidCache.get(symbol);
-    const results = await call(`/iserver/secdef/search?symbol=${encodeURIComponent(symbol)}`);
-    const hit = (results ?? []).find((r) => r.symbol === symbol) ?? results?.[0];
-    if (!hit?.conid) throw new Error(`IBKR: unknown symbol ${symbol}`);
+    const results = (await call(`/iserver/secdef/search?symbol=${encodeURIComponent(symbol)}`)) ?? [];
+    if (results.length === 0) throw new Error(`IBKR: unknown symbol ${symbol}`);
+    // Only trust an exact symbol match, or a single unambiguous result —
+    // never guess among multiple non-matching instruments.
+    const hit = results.find((r) => r.symbol === symbol) ?? (results.length === 1 ? results[0] : undefined);
+    if (!hit) throw new Error(`IBKR: ambiguous symbol ${symbol}`);
+    if (!hit.conid) throw new Error(`IBKR: unknown symbol ${symbol}`);
     const conid = Number(hit.conid);
     conidCache.set(symbol, conid);
     return conid;
@@ -81,7 +91,7 @@ export function createIbkrBroker({ gatewayUrl, fetchImpl, allowLive = false, log
 
     async isAuthenticated() {
       try {
-        const auth = await call('/iserver/auth/status', { method: 'POST' }).catch(() => call('/iserver/auth/status'));
+        const auth = await checkAuthStatus();
         return !!auth?.authenticated;
       } catch {
         return false;
@@ -133,7 +143,14 @@ export function createIbkrBroker({ gatewayUrl, fetchImpl, allowLive = false, log
       const data = await call('/iserver/account/orders');
       const o = (data?.orders ?? []).find((x) => x.order_ref === clientOrderId);
       if (!o) return { found: false };
-      const status = StatusMap[String(o.status ?? '').toLowerCase()] ?? 'submitted';
+      const rawStatus = String(o.status ?? '');
+      let status = StatusMap[rawStatus.toLowerCase()];
+      if (!status) {
+        // Unmapped statuses stay 'submitted' (the safe, retry-friendly default)
+        // but are logged so terminal-but-unmapped states don't pass silently.
+        logger.warn?.(`[ibkr] unmapped order status "${rawStatus}" for ${clientOrderId}; treating as submitted`);
+        status = 'submitted';
+      }
       return {
         found: true,
         status,
