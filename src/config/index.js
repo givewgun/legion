@@ -132,6 +132,24 @@ export function loadConfig(env = process.env) {
     emitter: {
       staleEntryMs: num(env, 'LEGION_EMITTER_STALE_MS', 5400000),
     },
+    // IBKR paper-trading execution (ADR 0035). enabled/dryRun are static defaults;
+    // the dashboard toggles (trading_enabled / trading_dry_run runtime knobs)
+    // override them per executor tick. Rollout: enabled=false → enabled+dryRun
+    // (observe logged would-be orders) → dryRun=false for live-paper.
+    trading: {
+      enabled: env.LEGION_TRADING_ENABLED === 'true',
+      dryRun: env.LEGION_TRADING_DRY_RUN !== 'false',
+      minOrderNotional: num(env, 'LEGION_TRADING_MIN_NOTIONAL', 50),
+      baseWeight: num(env, 'LEGION_TRADING_BASE_WEIGHT', 0.05),
+      maxPerName: num(env, 'LEGION_TRADING_MAX_PER_NAME', 0.10),
+    },
+    // IBeam gateway for the IBKR Client Portal API. Empty url = broker unconfigured
+    // (executor idles, /api/portfolio reports gateway down). allowLive must stay
+    // false: the adapter refuses non-paper (non-D) accounts without it.
+    broker: {
+      gatewayUrl: env.IBKR_GATEWAY_URL || '',
+      allowLive: env.LEGION_ALLOW_LIVE_BROKER === 'true',
+    },
     consensus: {
       thetaV: num(env, 'CONSENSUS_THETA_V', 0.75),
       quorum: num(env, 'CONSENSUS_QUORUM', 0.6667),

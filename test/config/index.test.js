@@ -142,4 +142,23 @@ describe('loadConfig', () => {
     expect(loadConfig({ HOME_FALLBACK: 'true' }).home.fallback).toBe(true);
     expect(loadConfig({}).home.fallback).toBe(true);
   });
+
+  it('trading + broker defaults', () => {
+    const cfg = loadConfig({});
+    expect(cfg.trading).toEqual({
+      enabled: false, dryRun: true, minOrderNotional: 50, baseWeight: 0.05, maxPerName: 0.10,
+    });
+    expect(cfg.broker).toEqual({ gatewayUrl: '', allowLive: false });
+  });
+
+  it('trading env overrides', () => {
+    const cfg = loadConfig({
+      LEGION_TRADING_ENABLED: 'true', LEGION_TRADING_DRY_RUN: 'false',
+      LEGION_TRADING_MIN_NOTIONAL: '100', IBKR_GATEWAY_URL: 'https://ibeam:5000/v1/api',
+    });
+    expect(cfg.trading.enabled).toBe(true);
+    expect(cfg.trading.dryRun).toBe(false);
+    expect(cfg.trading.minOrderNotional).toBe(100);
+    expect(cfg.broker.gatewayUrl).toBe('https://ibeam:5000/v1/api');
+  });
 });

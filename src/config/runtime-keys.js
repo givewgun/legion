@@ -28,6 +28,14 @@ export const RUNTIME_KEYS = [
     cfgPath: 'ollama.timeoutMs',
     label: 'Oracle call timeout (ms)',
   },
+  { key: 'trading_enabled', type: 'bool', cfgPath: 'trading.enabled', label: 'Paper trading (kill switch)' },
+  { key: 'trading_dry_run', type: 'bool', cfgPath: 'trading.dryRun', label: 'Trading dry-run (log only)' },
+  {
+    key: 'trading_min_order_notional',
+    type: 'int',
+    cfgPath: 'trading.minOrderNotional',
+    label: 'Min order notional (USD)',
+  },
 ];
 
 export const RUNTIME_KEY_BY_NAME = Object.fromEntries(RUNTIME_KEYS.map((k) => [k.key, k]));
