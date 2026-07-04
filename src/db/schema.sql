@@ -343,3 +343,36 @@ ALTER TABLE legion.votes ADD COLUMN IF NOT EXISTS thought TEXT;
 -- never gated on — high drift with no new evidence is the herding smell the
 -- independent-backing guard (ADR 0016) cannot see.
 ALTER TABLE legion.rounds ADD COLUMN IF NOT EXISTS drift DOUBLE PRECISION;
+
+-- ── IBKR paper-trading execution (ADR 0035) ──────────────────────────────────
+-- Order-intent outbox: the emitter INSERTs one row per emitted signal; the
+-- executor worker polls, sizes against the real IBKR position, submits, and
+-- records the outcome. status: pending → submitted → filled | skipped | failed.
+CREATE TABLE IF NOT EXISTS legion.order_intents (
+  id              BIGSERIAL PRIMARY KEY,
+  signal_id       BIGINT REFERENCES legion.signals(id),
+  symbol          TEXT NOT NULL,
+  band            TEXT NOT NULL,
+  conviction      NUMERIC,
+  quality_mult    NUMERIC,
+  target_weight   NUMERIC,
+  status          TEXT NOT NULL DEFAULT 'pending',
+  skip_reason     TEXT,
+  broker_order_id TEXT,
+  submitted_qty   NUMERIC,
+  fill_qty        NUMERIC,
+  fill_price      NUMERIC,
+  error           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_order_intents_status ON legion.order_intents (status);
+
+-- Own equity history for the IBKR paper book (CP API history is shallow and
+-- resets with the paper account). Executor snapshots hourly in-market + per fill.
+CREATE TABLE IF NOT EXISTS legion.paper_equity_snapshots (
+  id     BIGSERIAL PRIMARY KEY,
+  ts     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  equity NUMERIC NOT NULL,
+  cash   NUMERIC
+);

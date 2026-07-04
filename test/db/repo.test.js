@@ -257,4 +257,91 @@ describe('createRepo', () => {
     expect(pool.calls[0].text).toMatch(/DELETE FROM legion\.runtime_config/);
     expect(pool.calls[0].params).toEqual(['home_model']);
   });
+
+  describe('order intents', () => {
+    it('addOrderIntent inserts pending and returns id', async () => {
+      const pool = poolReturning([[{ id: 7 }]]);
+      const repo = createRepo(createDb(pool));
+      const id = await repo.addOrderIntent({ signalId: 3, symbol: 'AAPL', band: 'BUY', conviction: 0.8, qualityMult: 1.2 });
+      expect(id).toBe(7);
+      expect(pool.calls[0].text).toMatch(/INSERT INTO legion\.order_intents/);
+      expect(pool.calls[0].params).toEqual([3, 'AAPL', 'BUY', 0.8, 1.2]);
+    });
+
+    it('listOrderIntentsByStatus orders by created_at ASC', async () => {
+      const pool = poolReturning([
+        [
+          { id: 1, signal_id: 3, symbol: 'AAPL', band: 'BUY', conviction: 0.8, quality_mult: 1.2, target_weight: null, status: 'pending', skip_reason: null, broker_order_id: null, submitted_qty: null, fill_qty: null, fill_price: null, error: null, created_at: '2025-01-01T00:00:00Z' },
+        ],
+      ]);
+      const repo = createRepo(createDb(pool));
+      const rows = await repo.listOrderIntentsByStatus('pending');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(1);
+      expect(rows[0].signalId).toBe(3);
+      expect(rows[0].status).toBe('pending');
+      expect(pool.calls[0].text).toMatch(/ORDER BY created_at ASC/);
+      expect(pool.calls[0].params).toEqual(['pending']);
+    });
+
+    it('updateOrderIntent patches only given keys', async () => {
+      const pool = poolReturning([[]]);
+      const repo = createRepo(createDb(pool));
+      await repo.updateOrderIntent(7, { status: 'submitted', brokerOrderId: 'X1', submittedQty: 10 });
+      expect(pool.calls[0].text).toMatch(/UPDATE legion\.order_intents SET/);
+      expect(pool.calls[0].text).toMatch(/updated_at = now\(\)/);
+      expect(pool.calls[0].params).toContain('submitted');
+      expect(pool.calls[0].params).toContain('X1');
+      expect(pool.calls[0].params).toContain(10);
+    });
+
+    it('updateOrderIntent rejects unknown keys', async () => {
+      const pool = poolReturning([[]]);
+      const repo = createRepo(createDb(pool));
+      await expect(repo.updateOrderIntent(7, { nope: 1 })).rejects.toThrow(/unknown/i);
+    });
+
+    it('listOrderIntents orders by created_at DESC with limit', async () => {
+      const pool = poolReturning([
+        [
+          { id: 2, signal_id: 4, symbol: 'TSLA', band: 'SELL', conviction: 0.7, quality_mult: 0.9, target_weight: null, status: 'pending', skip_reason: null, broker_order_id: null, submitted_qty: null, fill_qty: null, fill_price: null, error: null, created_at: '2025-01-02T00:00:00Z' },
+          { id: 1, signal_id: 3, symbol: 'AAPL', band: 'BUY', conviction: 0.8, quality_mult: 1.2, target_weight: null, status: 'pending', skip_reason: null, broker_order_id: null, submitted_qty: null, fill_qty: null, fill_price: null, error: null, created_at: '2025-01-01T00:00:00Z' },
+        ],
+      ]);
+      const repo = createRepo(createDb(pool));
+      const rows = await repo.listOrderIntents(100);
+      expect(rows).toHaveLength(2);
+      expect(rows[0].id).toBe(2);
+      expect(rows[1].id).toBe(1);
+      expect(pool.calls[0].text).toMatch(/ORDER BY created_at DESC LIMIT/);
+      expect(pool.calls[0].params).toEqual([100]);
+    });
+  });
+
+  describe('equity snapshots', () => {
+    it('addEquitySnapshot inserts equity and cash', async () => {
+      const pool = poolReturning([[]]);
+      const repo = createRepo(createDb(pool));
+      await repo.addEquitySnapshot({ equity: 50000, cash: 5000 });
+      expect(pool.calls[0].text).toMatch(/INSERT INTO legion\.paper_equity_snapshots/);
+      expect(pool.calls[0].params).toEqual([50000, 5000]);
+    });
+
+    it('listEquitySnapshots returns ordered by ts ASC', async () => {
+      const pool = poolReturning([
+        [
+          { ts: '2025-01-01T00:00:00Z', equity: 50000, cash: 5000 },
+          { ts: '2025-01-02T00:00:00Z', equity: 51000, cash: 4900 },
+        ],
+      ]);
+      const repo = createRepo(createDb(pool));
+      const rows = await repo.listEquitySnapshots();
+      expect(rows).toHaveLength(2);
+      expect(rows[0].equity).toBe(50000);
+      expect(rows[0].cash).toBe(5000);
+      expect(rows[1].equity).toBe(51000);
+      expect(rows[1].cash).toBe(4900);
+      expect(pool.calls[0].text).toMatch(/ORDER BY ts ASC/);
+    });
+  });
 });
