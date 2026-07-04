@@ -1,14 +1,50 @@
 import { useEffect, useState } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, Legend } from 'recharts';
 import { api } from '../api/client.js';
-import { pct, bandColor } from '../lib/format.js';
+import { pct, bandColor, fmtDate } from '../lib/format.js';
 import { PageHeader } from '../ui/PageHeader.jsx';
 import { Card } from '../ui/Card.jsx';
 
 const money = (v) => `$${Math.round(v ?? 0).toLocaleString('en-US')}`;
 // Returns are small (often < 1%) — show 2 decimals so they don't flatten to 0%.
 const signedPct = (v) => `${v > 0 ? '+' : ''}${pct(v, 2)}`;
-const gainColor = (v) => (v >= 0 ? 'text-green-600' : 'text-red-600');
+const gainColor = (v) => ((v ?? 0) >= 0 ? 'text-green-600' : 'text-red-600');
+
+function GatewayChip({ gateway }) {
+  const ok = gateway?.configured && gateway?.authenticated;
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${ok ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${ok ? 'bg-green-500' : 'bg-red-500'}`} />
+      {ok
+        ? `Gateway: ${gateway.accountId}`
+        : gateway?.configured
+          ? 'Gateway: down'
+          : 'Gateway: not configured'}
+    </span>
+  );
+}
+
+const StatusStyles = {
+  filled: 'bg-green-100 text-green-700',
+  submitted: 'bg-blue-100 text-blue-700',
+  pending: 'bg-slate-100 text-slate-600',
+  skipped: 'bg-amber-100 text-amber-700',
+  failed: 'bg-red-100 text-red-700',
+};
+
+function StatusChip({ order }) {
+  const detail = order.skipReason ?? order.error;
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-xs font-medium ${StatusStyles[order.status] ?? StatusStyles.pending}`}
+    >
+      {order.status}
+      {detail ? ` · ${detail}` : ''}
+    </span>
+  );
+}
 
 function Stat({ label, value, accent = '' }) {
   return (
@@ -33,37 +69,38 @@ export function PortfolioPage() {
   }, []);
 
   if (error) return <p className="text-red-600">{error}</p>;
-  if (!data) return <p className="text-slate-400">Simulating portfolio…</p>;
-  if ((data.openPositions?.length ?? 0) === 0 && (data.trades?.length ?? 0) === 0)
-    return <p className="text-slate-400">No signals to simulate yet.</p>;
+  if (!data) return <p className="text-slate-400">Loading paper trading data…</p>;
 
-  const { curve, trades, openPositions = [], stats } = data;
+  const { gateway, curve = [], positions = [], orders = [], stats = {} } = data;
+
+  if (curve.length === 0 && orders.length === 0)
+    return <p className="text-slate-400">No paper trades yet — enable trading in Settings.</p>;
+
+  const totalReturn = stats.totalReturn ?? 0;
+  const spyReturn = stats.spyReturn ?? 0;
+  const qqqReturn = stats.qqqReturn ?? 0;
 
   return (
     <div>
       <PageHeader
-        title="Portfolio"
-        subtitle="Paper portfolio replaying every emitted signal vs SPY / QQQ buy-and-hold"
+        title="Paper Trading"
+        subtitle="Live IBKR paper account driven by Legion signals"
+        actions={<GatewayChip gateway={gateway} />}
       />
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Stat
-          label="Total return"
-          value={signedPct(stats.totalReturn)}
-          accent={gainColor(stats.totalReturn)}
-        />
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <Stat label="Equity" value={money(stats.equity)} />
+        <Stat label="Cash" value={money(stats.cash)} />
+        <Stat label="Total return" value={signedPct(totalReturn)} accent={gainColor(totalReturn)} />
         <Stat
           label="vs SPY"
-          value={signedPct(stats.totalReturn - stats.spyReturn)}
-          accent={gainColor(stats.totalReturn - stats.spyReturn)}
+          value={signedPct(totalReturn - spyReturn)}
+          accent={gainColor(totalReturn - spyReturn)}
         />
         <Stat
           label="vs QQQ"
-          value={signedPct(stats.totalReturn - stats.qqqReturn)}
-          accent={gainColor(stats.totalReturn - stats.qqqReturn)}
+          value={signedPct(totalReturn - qqqReturn)}
+          accent={gainColor(totalReturn - qqqReturn)}
         />
-        <Stat label="Max drawdown" value={pct(stats.maxDrawdown, 2)} />
-        <Stat label="Win rate" value={pct(stats.winRate)} />
-        <Stat label="Trades" value={stats.trades} />
       </div>
       <Card className="mb-5 p-3">
         <div className="h-72 w-full" data-testid="portfolio-chart">
@@ -97,7 +134,7 @@ export function PortfolioPage() {
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-slate-200">
-              {['Symbol', 'Shares', 'Entry → Mark', 'Unrealized'].map((h) => (
+              {['Symbol', 'Qty', 'Avg cost → Mark', 'Market value', 'Unrealized'].map((h) => (
                 <th key={h} className="px-4 py-2 font-medium text-slate-500">
                   {h}
                 </th>
@@ -105,13 +142,14 @@ export function PortfolioPage() {
             </tr>
           </thead>
           <tbody>
-            {openPositions.map((p) => (
+            {positions.map((p) => (
               <tr key={p.symbol} className="border-b border-slate-100 last:border-0">
                 <td className="px-4 py-2 font-medium">{p.symbol}</td>
-                <td className="px-4 py-2">{p.shares.toFixed(2)}</td>
-                <td className="px-4 py-2">{`$${p.entryPrice.toFixed(2)} → $${p.markPrice.toFixed(2)}`}</td>
-                <td className={`px-4 py-2 ${p.unrealizedReturn >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {signedPct(p.unrealizedReturn)}
+                <td className="px-4 py-2">{p.qty.toFixed(2)}</td>
+                <td className="px-4 py-2">{`$${p.avgCost.toFixed(2)} → $${p.markPrice.toFixed(2)}`}</td>
+                <td className="px-4 py-2">{money(p.marketValue)}</td>
+                <td className={`px-4 py-2 ${gainColor(p.unrealizedPnl)}`}>
+                  {`${money(p.unrealizedPnl)} (${signedPct(p.unrealizedPnlPct)})`}
                 </td>
               </tr>
             ))}
@@ -122,32 +160,26 @@ export function PortfolioPage() {
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-slate-200">
-              <th className="px-4 py-2 font-medium text-slate-500">Symbol</th>
-              <th className="px-4 py-2 font-medium text-slate-500">Band</th>
-              <th className="px-4 py-2 font-medium text-slate-500">Conviction</th>
-              <th className="px-4 py-2 font-medium text-slate-500">Entry</th>
-              <th className="px-4 py-2 font-medium text-slate-500">Exit</th>
-              <th className="px-4 py-2 font-medium text-slate-500">Return</th>
-              <th className="px-4 py-2 font-medium text-slate-500">Reason</th>
+              {['Time', 'Symbol', 'Band', 'Qty', 'Fill', 'Status'].map((h) => (
+                <th key={h} className="px-4 py-2 font-medium text-slate-500">
+                  {h}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {trades.map((t, i) => (
-              <tr
-                key={`${t.symbol}-${t.entryDate}-${i}`}
-                className="border-b border-slate-100 last:border-0"
-              >
-                <td className="px-4 py-2 font-medium">{t.symbol}</td>
-                <td className={`px-4 py-2 ${bandColor(t.band)}`}>{t.band}</td>
-                <td className="px-4 py-2">{pct(t.conviction)}</td>
-                <td className="px-4 py-2">{`${t.entryDate} @ $${t.entryPrice.toFixed(2)}`}</td>
+            {orders.map((o) => (
+              <tr key={o.id} className="border-b border-slate-100 last:border-0">
+                <td className="px-4 py-2 text-slate-500">{fmtDate(o.createdAt)}</td>
+                <td className="px-4 py-2 font-medium">{o.symbol}</td>
+                <td className={`px-4 py-2 ${bandColor(o.band)}`}>{o.band}</td>
+                <td className="px-4 py-2">{o.submittedQty ?? '—'}</td>
                 <td className="px-4 py-2">
-                  {t.exitReason !== 'open' ? `$${t.exitPrice.toFixed(2)}` : '—'}
+                  {o.fillQty && o.fillPrice ? `${o.fillQty} @ $${o.fillPrice.toFixed(2)}` : '—'}
                 </td>
-                <td className={`px-4 py-2 ${gainColor(t.return ?? 0)}`}>
-                  {signedPct(t.return ?? 0)}
+                <td className="px-4 py-2">
+                  <StatusChip order={o} />
                 </td>
-                <td className="px-4 py-2 text-slate-500">{t.exitReason}</td>
               </tr>
             ))}
           </tbody>

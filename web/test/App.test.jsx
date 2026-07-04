@@ -11,7 +11,13 @@ beforeEach(() => {
   vi.spyOn(api, 'listCycleTickers').mockResolvedValue([]);
   vi.spyOn(api, 'getReliability').mockResolvedValue([]);
   vi.spyOn(api, 'getBacktest').mockResolvedValue([]);
-  vi.spyOn(api, 'getPortfolio').mockResolvedValue({ curve: [], trades: [], stats: {} });
+  vi.spyOn(api, 'getPortfolio').mockResolvedValue({
+    gateway: { configured: false, authenticated: false, accountId: null },
+    stats: { equity: null, cash: null, totalReturn: null, spyReturn: null, qqqReturn: null },
+    curve: [],
+    positions: [],
+    orders: [],
+  });
   vi.spyOn(api, 'listTickers').mockResolvedValue([]);
 });
 
@@ -34,6 +40,8 @@ describe('App shell + routing', () => {
     render(<App />);
     fireEvent.click(await screen.findByRole('link', { name: /Portfolio/i }));
     await waitFor(() => expect(api.getPortfolio).toHaveBeenCalled());
-    expect(await screen.findByText(/No signals to simulate yet/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/No paper trades yet — enable trading in Settings\./i),
+    ).toBeInTheDocument();
   });
 });
