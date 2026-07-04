@@ -301,6 +301,13 @@ describe('createRepo', () => {
       await expect(repo.updateOrderIntent(7, { nope: 1 })).rejects.toThrow(/unknown/i);
     });
 
+    it('updateOrderIntent rejects an empty patch', async () => {
+      const pool = poolReturning([[]]);
+      const repo = createRepo(createDb(pool));
+      await expect(repo.updateOrderIntent(7, {})).rejects.toThrow(/empty patch/i);
+      expect(pool.calls).toHaveLength(0);
+    });
+
     it('listOrderIntents orders by created_at DESC with limit', async () => {
       const pool = poolReturning([
         [

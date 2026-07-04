@@ -919,6 +919,7 @@ export function createRepo(db) {
 
     async updateOrderIntent(id, patch) {
       const keys = Object.keys(patch);
+      if (keys.length === 0) throw new Error('updateOrderIntent: empty patch');
       const cols = keys.map((k) => {
         if (!OrderIntentColumns[k]) throw new Error(`updateOrderIntent: unknown key ${k}`);
         return OrderIntentColumns[k];
