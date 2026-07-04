@@ -7,6 +7,8 @@ import { createGunvestFromConfig } from '../data/gunvest.js';
 import { createEmitter } from '../emit/emitter.js';
 import { createQualityService } from '../quality/index.js';
 import { sendTelegram } from '../emit/telegram.js';
+import { createBrokerFromConfig } from '../broker/broker.js';
+import { createExecutor } from '../exec/executor.js';
 
 const cfg = loadConfig();
 const bus = await connectBus(cfg.natsUrl);
@@ -36,3 +38,14 @@ await createEmitter({
 console.log(
   `[emitter] listening for votes (expectedAgents=${expectedAgents}, risk=${riskEnabled})`,
 );
+
+// IBKR paper-trading executor (ADR 0035): drains the order-intent outbox this
+// emitter writes. Unconfigured gateway or no gunvest → executor stays off and
+// intents accumulate as pending (visible on the dashboard order log).
+const broker = createBrokerFromConfig(cfg);
+if (broker && gunvest) {
+  createExecutor({ repo, broker, gunvest, cfg }).start();
+  console.log('[emitter] order executor started');
+} else {
+  console.log('[emitter] order executor disabled (no IBKR_GATEWAY_URL or gunvest)');
+}

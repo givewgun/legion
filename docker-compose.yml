@@ -103,6 +103,16 @@ services:
     env_file: .env
     restart: unless-stopped
 
+  # IBKR Client Portal gateway (ADR 0035): authenticates the paper account and
+  # exposes the REST API the broker adapter (src/broker/ibkr.js) talks to.
+  # Credentials come from .env.ibeam (IBEAM_ACCOUNT / IBEAM_PASSWORD, not
+  # committed — see .gitignore); legion .env points IBKR_GATEWAY_URL at it.
+  ibeam:
+    image: voyz/ibeam:latest
+    container_name: legion-ibeam
+    env_file: .env.ibeam
+    restart: unless-stopped
+
   web:
     build: ./web
     container_name: legion-web
