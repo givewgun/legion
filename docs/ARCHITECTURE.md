@@ -95,6 +95,37 @@ cap is not reached, it republishes the cycle for the next round **with the prior
 dissent**, so agents must confront disagreement before re-voting. A consensus reached only in a
 later round must still retain independent round-1 backing or it is rejected as herding (ADR 0016).
 
+### Order execution: emitter → executor → IBKR paper account
+
+A finalized signal doesn't stop at Telegram — it also drives a real (paper) broker order,
+decoupled from the emitter by an outbox table so a slow/unreachable broker can never stall
+signal emission (ADR 0035):
+
+```mermaid
+flowchart LR
+    emitter["emitter<br/>finalize()"]
+    intents[("legion.order_intents<br/>(outbox)")]
+    executor["executor<br/>(poll loop, inside emitter process)"]
+    ibeam["ibeam<br/>(IBKR Client Portal gateway)"]
+    ibkr[["IBKR paper account"]]
+
+    emitter -->|"INSERT pending intent<br/>(guarded, never blocks emission)"| intents
+    executor -->|"drain pending/submitted"| intents
+    executor -->|"size vs actual position<br/>(computeSizing)"| executor
+    executor -->|"place DAY market order<br/>(cOID = intent id)"| ibeam
+    ibeam --> ibkr
+```
+
+The **executor** (`src/exec/executor.js`) runs inside the emitter process, not its own
+container — it polls the outbox (~15s), gates on the dashboard kill switch
+(`trading_enabled`) and dry-run flag (`trading_dry_run`), sizes each intent against the
+account's actual equity/position via the shared `computeSizing` engine, and submits DAY market
+orders whose client order id (`cOID`) is the intent's own id — the broker's duplicate-`cOID`
+rejection is what makes a mid-crash resubmit safe. **IBeam** (`voyz/ibeam`, its own Compose
+service) owns the IBKR login/session keepalive so the adapter (`src/broker/ibkr.js`) is a plain
+REST client; a red gateway chip on the dashboard degrades trading (intents queue as `pending`)
+without affecting signal emission, Telegram delivery, or Legion's own `/ready` liveness check.
+
 ### Data-aperture audit — who reads what
 
 The diverse-panel thesis assumes the lenses are *actually distinct*. Shared inputs drive
@@ -246,9 +277,10 @@ flowchart TB
             nats["nats"]
             ollama["ollama"]
             ag["agents ×4 + risk"]
-            emitter["emitter"]
+            emitter["emitter<br/>(+ order executor)"]
             sched["scheduler"]
             crons["reliability + summary crons"]
+            ibeam["ibeam<br/>(IBKR gateway)"]
         end
 
         subgraph shared["shared gunvest network"]
@@ -260,15 +292,23 @@ flowchart TB
     cf --> web
     web -->|LEGION_API_PROXY| api
     api --> gvdb
+    api --> ibeam
     ag --> gvapi
     ag --> ollama
     emitter --> gvdb
+    emitter -->|IBKR_GATEWAY_URL| ibeam
     sched --> nats
     crons --> gvdb
 ```
 
 GunVest's Postgres binds only to loopback, so the host gateway cannot reach it — joining the
 shared network (not `host.docker.internal`) is what lets Legion talk to `gunvest-db`.
+
+`ibeam` (ADR 0035) sits on the internal `legion` network only — no host port, no tunnel ingress —
+and needs its own credentials file (`.env.ibeam`, git-ignored, not templated from GitHub
+Secrets) alongside egress to IBKR's Client Portal servers over the internet. Both `api` (to read
+gateway/account status for `/api/portfolio`) and `emitter` (via the executor, to place orders)
+reach it by its compose service name.
 
 ---
 
