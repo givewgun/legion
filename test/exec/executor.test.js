@@ -462,7 +462,9 @@ describe('executor', () => {
       const broker = makeBroker({
         equity: 100000,
         positions: [],
-        orderStatusByCoid: { 20: { found: true, status: 'submitted' } },
+        // The IBKR adapter always returns a numeric fillQty (0 for a resting
+        // order) -- a zero fill must NOT be recorded as submittedQty 0.
+        orderStatusByCoid: { 20: { found: true, status: 'submitted', fillQty: 0, avgFillPrice: 0 } },
       });
       const gunvest = makeGunvest({ AAPL: 200 });
       const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
@@ -471,6 +473,7 @@ describe('executor', () => {
 
       expect(broker.calls.placeOrder).toHaveLength(0);
       expect(intent.status).toBe('submitted');
+      expect(intent.submittedQty).toBeNull(); // resting, qty unknown -- not 0
     });
 
     it('pending intent with a filled order at broker: marked filled + equity snapshot, no resubmit', async () => {
@@ -650,6 +653,10 @@ describe('executor', () => {
       expect(intent.skipReason).toBe('hold');
       expect(broker.calls.placeOrder).toHaveLength(0);
       expect(broker.calls.getPositions).toBe(0); // short-circuits before the sizing fetch
+      // A HOLD intent can never have placed an order, so it skips before the
+      // reconcile probe too -- no wasted getOrderStatus call, and a HOLD is
+      // never left pending just because the gateway is down.
+      expect(broker.calls.getOrderStatus).toHaveLength(0);
     });
 
     it('HOLD intent with no position: skipped(hold), no orders', async () => {
@@ -685,6 +692,30 @@ describe('executor', () => {
       expect(middle.skipReason).toBe('superseded');
       expect(newest.status).toBe('submitted');
       expect(broker.calls.placeOrder).toEqual([{ symbol: 'AAPL', side: 'BUY', qty: 25, clientOrderId: '32' }]);
+    });
+
+    it('older pending intent secretly owning a live order is reconciled to submitted, not skipped; newer deferred', async () => {
+      // The persist-failure and placeOrder-throw+probe-throw paths can leave a
+      // pending intent that already owns a live order at the broker under its
+      // cOID. Blindly superseding it would orphan that live order under skipped
+      // AND let the newer intent double-place against a stale position.
+      const older = mkIntent({ id: 70, symbol: 'AAPL' });
+      const newer = mkIntent({ id: 71, symbol: 'AAPL' });
+      const repo = makeRepo([older, newer], { trading_enabled: 'true', trading_dry_run: 'false' });
+      const broker = makeBroker({
+        equity: 100000,
+        positions: [],
+        orderStatusByCoid: { 70: { found: true, status: 'submitted' } }, // older's order is live
+      });
+      const gunvest = makeGunvest({ AAPL: 200 });
+      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+
+      await executor.tick();
+
+      expect(older.status).toBe('submitted'); // reconciled, NOT skipped(superseded)
+      expect(older.skipReason).toBeUndefined();
+      expect(newer.status).toBe('pending'); // deferred behind the just-discovered in-flight order
+      expect(broker.calls.placeOrder).toHaveLength(0);
     });
 
     it('pending intent is deferred while a same-symbol submitted order is unfilled; processed once it resolves', async () => {

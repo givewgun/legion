@@ -65,11 +65,12 @@ export function createExecutor({
       logger.info?.(`[executor] recovered pending intent ${intent.id}: already filled ${probe.fillQty} ${intent.symbol} @ ${probe.avgFillPrice}`);
       await snapshotEquity();
     } else if (probe.status === 'submitted') {
-      // Qty is otherwise unknown for a pending intent recovered this way -- store
-      // whatever the probe gives (fill-so-far or a remaining-qty field), else null.
+      // Qty is otherwise unknown for a pending intent recovered this way -- the
+      // adapter always returns a numeric fillQty (0 for a resting order), so a
+      // nonzero fill-so-far is the only qty signal worth storing; else null.
       await repo.updateOrderIntent(intent.id, {
         status: 'submitted',
-        submittedQty: probe.fillQty ?? probe.remaining ?? null,
+        submittedQty: probe.fillQty || null,
       });
       logger.info?.(`[executor] recovered pending intent ${intent.id}: already submitted at broker`);
     } else if (probe.status === 'cancelled') {
@@ -79,16 +80,19 @@ export function createExecutor({
   }
 
   async function processPending(intent, trading) {
-    if (await reconcilePendingAtBroker(intent)) return;
-
     // HOLD (a genuine consensus hold, or risk's blockBuy downgrade) is a no-action
     // band -- computeSizing would otherwise size it as a target weight of zero
     // (same as SELL/NO_CONSENSUS) and generate a closing order. Only SELL/
     // STRONG_SELL/NO_CONSENSUS close a position; HOLD must never liquidate.
+    // Checked before the reconcile probe: a HOLD intent can never have placed
+    // an order, so probing would waste a call and leave HOLDs pending whenever
+    // the gateway is down.
     if (intent.band === 'HOLD') {
       await repo.updateOrderIntent(intent.id, { status: 'skipped', skipReason: 'hold' });
       return;
     }
+
+    if (await reconcilePendingAtBroker(intent)) return;
 
     let equity, positions, price;
     try {
@@ -301,6 +305,15 @@ export function createExecutor({
 
     for (const intent of pending) {
       if (newestIdBySymbol.get(intent.symbol) !== intent.id) {
+        // An older pending intent may secretly own a live order at the broker
+        // (persist-failure or placeOrder-throw+probe-throw paths) -- reconcile
+        // before writing it off, or that live order is orphaned under skipped
+        // while the newer intent double-places. When the probe finds (or can't
+        // rule out) a live order, defer the symbol for the rest of this tick.
+        if (await reconcilePendingAtBroker(intent)) {
+          submittedSymbols.add(intent.symbol);
+          continue;
+        }
         await repo.updateOrderIntent(intent.id, { status: 'skipped', skipReason: 'superseded' });
         continue;
       }
