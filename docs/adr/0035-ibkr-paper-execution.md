@@ -150,3 +150,8 @@ kill trading instantly if something looks wrong.
   interface (`init`/`isAuthenticated`/`getAccountSummary`/`getPositions`/`placeOrder`/
   `getOrderStatus`) behind `createBrokerFromConfig` (`src/broker/broker.js`) — nothing above
   the adapter layer changes.
+- A SELL/closing order caps its quantity at `Math.floor(held.qty)` — whole shares only. A
+  fractional held quantity (e.g. a prior partial fill leaving 29.6 shares) therefore always
+  leaves a sub-share dust remainder (0.6 shares) sitting in the account rather than shorting
+  past zero. This remainder has no independent unwind mechanism — the same signal-driven-exits
+  gap above — but is economically negligible at typical position sizes.

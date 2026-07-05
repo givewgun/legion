@@ -3,7 +3,7 @@
 // poll interval. Sequential by design — one intent at a time, so per-symbol
 // ordering is inherent and a mid-crash leaves at most one order in flight,
 // recoverable via cOID (= intent id) broker-side dedupe.
-import { computeSizing } from '../sizing/engine.js';
+import { computeSizing, BAND_LONG } from '../sizing/engine.js';
 import { applyRuntimeOverrides } from '../config/runtime-overrides.js';
 
 const DefaultIntervalMs = 15000;
@@ -30,6 +30,17 @@ export function createExecutor({
     return applyRuntimeOverrides(cfg, overrides, { warn: logger.warn?.bind(logger) ?? (() => {}) }).trading;
   }
 
+  // A cancelled/expired order sometimes carries a nonzero partial fill (the resting
+  // qty was cancelled, not the whole order) -- record it instead of discarding it.
+  function cancelledPatch(status) {
+    const patch = { status: 'failed', error: 'order cancelled/expired unfilled' };
+    if (status.fillQty) {
+      patch.fillQty = status.fillQty;
+      patch.fillPrice = status.avgFillPrice;
+    }
+    return patch;
+  }
+
   // Guards the persist-failure hole: a pending intent may already have a live
   // order at the broker under cOID = intent id, if a prior tick's placeOrder
   // succeeded but the follow-up DB write (marking it 'submitted') then failed.
@@ -41,8 +52,12 @@ export function createExecutor({
     try {
       probe = await broker.getOrderStatus(String(intent.id));
     } catch (err) {
-      logger.warn?.(`[executor] order status probe failed for intent ${intent.id}; proceeding with submission: ${err.message}`);
-      return false;
+      // Gateway flaky: we cannot tell whether a prior tick's placeOrder actually
+      // reached the broker. Resubmitting on a guess risks a live order getting
+      // mislabeled failed via a duplicate-cOID rejection -- hold instead of
+      // proceeding to submission.
+      logger.warn?.(`[executor] order status probe failed for intent ${intent.id}; holding (not resubmitting): ${err.message}`);
+      return true;
     }
     if (!probe.found) return false;
     if (probe.status === 'filled') {
@@ -50,16 +65,30 @@ export function createExecutor({
       logger.info?.(`[executor] recovered pending intent ${intent.id}: already filled ${probe.fillQty} ${intent.symbol} @ ${probe.avgFillPrice}`);
       await snapshotEquity();
     } else if (probe.status === 'submitted') {
-      await repo.updateOrderIntent(intent.id, { status: 'submitted' });
+      // Qty is otherwise unknown for a pending intent recovered this way -- store
+      // whatever the probe gives (fill-so-far or a remaining-qty field), else null.
+      await repo.updateOrderIntent(intent.id, {
+        status: 'submitted',
+        submittedQty: probe.fillQty ?? probe.remaining ?? null,
+      });
       logger.info?.(`[executor] recovered pending intent ${intent.id}: already submitted at broker`);
     } else if (probe.status === 'cancelled') {
-      await repo.updateOrderIntent(intent.id, { status: 'failed', error: 'order cancelled/expired unfilled' });
+      await repo.updateOrderIntent(intent.id, cancelledPatch(probe));
     }
     return true;
   }
 
   async function processPending(intent, trading) {
     if (await reconcilePendingAtBroker(intent)) return;
+
+    // HOLD (a genuine consensus hold, or risk's blockBuy downgrade) is a no-action
+    // band -- computeSizing would otherwise size it as a target weight of zero
+    // (same as SELL/NO_CONSENSUS) and generate a closing order. Only SELL/
+    // STRONG_SELL/NO_CONSENSUS close a position; HOLD must never liquidate.
+    if (intent.band === 'HOLD') {
+      await repo.updateOrderIntent(intent.id, { status: 'skipped', skipReason: 'hold' });
+      return;
+    }
 
     let equity, positions, price;
     try {
@@ -89,7 +118,8 @@ export function createExecutor({
 
     const side = sized.deltaShares >= 0 ? 'BUY' : 'SELL';
     let qty = Math.round(Math.abs(sized.deltaShares));
-    if (side === 'SELL' && held) qty = Math.min(qty, held.qty);
+    // Whole shares only: floor the held qty (never sell a fraction of a share).
+    if (side === 'SELL' && held) qty = Math.min(qty, Math.floor(held.qty));
 
     if (HoldActions.has(sized.action) || qty === 0 || Math.abs(sized.deltaUSD) < trading.minOrderNotional) {
       await repo.updateOrderIntent(intent.id, {
@@ -120,8 +150,37 @@ export function createExecutor({
         clientOrderId: String(intent.id),
       }));
     } catch (err) {
-      // Reached the broker and was rejected: terminal — a rejection carries
-      // information a human should read. Transport failures upstream stay pending.
+      // A placeOrder throw is not always a rejection -- e.g. a response timeout
+      // after the broker already accepted the order. Probe before concluding it
+      // failed, the same cOID-dedupe-aware discipline as reconcilePendingAtBroker.
+      let probe;
+      try {
+        probe = await broker.getOrderStatus(String(intent.id));
+      } catch (probeErr) {
+        // Can't tell whether the order reached the broker before the transport
+        // failure -- do not guess. Stay pending; the next tick's reconcile probe
+        // resolves the true state.
+        logger.warn?.(
+          `[executor] placeOrder failed for intent ${intent.id} (${intent.symbol}) and the follow-up order-status probe also failed; leaving pending: placeOrder error: ${err.message}; probe error: ${probeErr.message}`,
+        );
+        return;
+      }
+      if (probe.found) {
+        // The order IS live at the broker despite placeOrder throwing -- never
+        // mark a live order failed.
+        await repo.updateOrderIntent(intent.id, {
+          status: 'submitted',
+          brokerOrderId: probe.brokerOrderId ?? null,
+          submittedQty: qty,
+          targetWeight: sized.targetWeight,
+        });
+        logger.info?.(
+          `[executor] placeOrder threw for intent ${intent.id} (${intent.symbol}) but the order is live at the broker; marked submitted: ${err.message}`,
+        );
+        return;
+      }
+      // Reached the broker and was genuinely rejected: terminal — a rejection
+      // carries information a human should read. Transport failures upstream stay pending.
       await repo.updateOrderIntent(intent.id, { status: 'failed', error: err.message, targetWeight: sized.targetWeight });
       logger.error?.(`[executor] order failed for intent ${intent.id} (${intent.symbol}): ${err.message}`);
       return;
@@ -177,6 +236,21 @@ export function createExecutor({
   // cOID every tick, so a crash between placeOrder and the DB update cannot
   // double-order (the broker rejects a duplicate cOID) and a lost order surfaces
   // as failed rather than hanging forever.
+  // IBKR's orders endpoint is day-scoped: a cOID that filled and cleared earlier
+  // the same session can legitimately return not-found without the order having
+  // been "lost". Before concluding that, cross-check the account's actual position
+  // against the direction we submitted — kept deliberately simple: present for a
+  // BUY, absent for a SELL/closing intent is "consistent with a fill".
+  async function wasProbablyFilledDespiteNotFound(intent) {
+    const positions = await broker.getPositions().catch((err) => {
+      logger.warn?.(`[executor] position cross-check failed for intent ${intent.id}: ${err.message}`);
+      return null;
+    });
+    if (!positions) return false; // can't confirm -- keep the conservative failed path
+    const held = positions.find((p) => p.symbol === intent.symbol);
+    return BAND_LONG.has(intent.band) ? !!held : !held;
+  }
+
   async function trackSubmitted() {
     for (const intent of await repo.listOrderIntentsByStatus('submitted')) {
       let st;
@@ -187,7 +261,14 @@ export function createExecutor({
         continue;
       }
       if (!st.found) {
-        await repo.updateOrderIntent(intent.id, { status: 'failed', error: 'order not found at broker (lost after submit)' });
+        if (await wasProbablyFilledDespiteNotFound(intent)) {
+          await repo.updateOrderIntent(intent.id, { status: 'filled', fillQty: intent.submittedQty ?? null, fillPrice: null });
+          logger.warn?.(
+            `[executor] intent ${intent.id} (${intent.symbol}) not found on the day-scoped orders endpoint, but the account position is consistent with a fill; marking filled without a fill price (lost to day-scope)`,
+          );
+        } else {
+          await repo.updateOrderIntent(intent.id, { status: 'failed', error: 'order not found at broker (lost after submit)' });
+        }
         continue;
       }
       if (st.status === 'filled') {
@@ -195,9 +276,36 @@ export function createExecutor({
         logger.info?.(`[executor] filled intent ${intent.id}: ${st.fillQty} ${intent.symbol} @ ${st.avgFillPrice}`);
         await snapshotEquity();
       } else if (st.status === 'cancelled') {
-        await repo.updateOrderIntent(intent.id, { status: 'failed', error: 'order cancelled/expired unfilled' });
+        await repo.updateOrderIntent(intent.id, cancelledPatch(st));
       }
       // 'submitted' → still resting (e.g. overnight DAY order): leave as-is.
+    }
+  }
+
+  // Target weight is absolute, not incremental: if the same symbol has more than
+  // one pending intent (a backlog built up while the executor/gateway was slow),
+  // only the newest carries a target worth acting on -- the older ones are stale
+  // reads of a since-superseded signal.
+  // Separately, a symbol with an in-flight (submitted, unfilled) order must not
+  // have another pending intent sized against it this tick: computeSizing sizes
+  // against the account's *current* position, which doesn't yet reflect the
+  // in-flight order's eventual fill -- sizing now would double-count.
+  async function processPendingBacklog(trading) {
+    const pending = await repo.listOrderIntentsByStatus('pending');
+    const newestIdBySymbol = new Map();
+    for (const intent of pending) {
+      const prevId = newestIdBySymbol.get(intent.symbol);
+      if (prevId === undefined || intent.id > prevId) newestIdBySymbol.set(intent.symbol, intent.id);
+    }
+    const submittedSymbols = new Set((await repo.listOrderIntentsByStatus('submitted')).map((i) => i.symbol));
+
+    for (const intent of pending) {
+      if (newestIdBySymbol.get(intent.symbol) !== intent.id) {
+        await repo.updateOrderIntent(intent.id, { status: 'skipped', skipReason: 'superseded' });
+        continue;
+      }
+      if (submittedSymbols.has(intent.symbol)) continue; // in-flight order for this symbol: defer to a later tick
+      await processPending(intent, trading);
     }
   }
 
@@ -207,13 +315,13 @@ export function createExecutor({
       logger.info?.(`[executor] trading ${trading.enabled ? 'ENABLED' : 'disabled'}${trading.dryRun ? ' (dry-run)' : ''}`);
       lastEnabled = trading.enabled;
     }
+    // Snapshots are hourly-in-market, not gated on trading being enabled — the
+    // equity curve must not gap just because the kill switch is off.
+    await maybeSnapshot();
     if (!trading.enabled) return;
 
     await trackSubmitted();
-    for (const intent of await repo.listOrderIntentsByStatus('pending')) {
-      await processPending(intent, trading);
-    }
-    await maybeSnapshot();
+    await processPendingBacklog(trading);
   }
 
   async function guardedTick() {
