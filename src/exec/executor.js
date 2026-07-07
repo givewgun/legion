@@ -1,6 +1,6 @@
 // Executor worker (ADR 0035): drains the order-intent outbox into real DAY
-// market orders on the IBKR paper account. Runs inside the emitter process on a
-// poll interval. Sequential by design — one intent at a time, so per-symbol
+// market orders on the active broker connection (IBKR or Webull — ADR 0036).
+// Runs inside the emitter process on a poll interval. Sequential by design — one intent at a time, so per-symbol
 // ordering is inherent and a mid-crash leaves at most one order in flight,
 // recoverable via cOID (= intent id) broker-side dedupe.
 import { computeSizing, BAND_LONG } from '../sizing/engine.js';
@@ -13,7 +13,7 @@ const SnapshotEveryMs = 60 * 60 * 1000;
 
 export function createExecutor({
   repo,
-  broker,
+  brokers,
   gunvest,
   cfg,
   logger = console,
@@ -24,6 +24,11 @@ export function createExecutor({
   let ticking = false;
   let lastEnabled = null;
   let lastSnapshotMs = 0;
+  let lastBrokerKey = null;
+  // Resolved at the top of each tick from the active broker connection (ADR
+  // 0036) — a dashboard switch takes effect next tick, no restart. All helpers
+  // below read this tick-scoped instance.
+  let broker = null;
 
   async function tradingCfg() {
     const overrides = await repo.getRuntimeConfig();
@@ -323,6 +328,20 @@ export function createExecutor({
   }
 
   async function tick() {
+    const resolved = await brokers.getBroker();
+    broker = resolved.broker;
+    // Log broker availability transitions, not every idle tick.
+    const brokerKey = broker ? `${resolved.connection.broker}:${resolved.connection.name}` : null;
+    if (brokerKey !== lastBrokerKey) {
+      logger.info?.(
+        broker
+          ? `[executor] broker connected: ${brokerKey}${resolved.connection.paper ? ' (paper)' : ' (LIVE)'}`
+          : '[executor] no active broker connection; executor idle',
+      );
+      lastBrokerKey = brokerKey;
+    }
+    if (!broker) return; // intents accumulate as pending until a connection is activated
+
     const trading = await tradingCfg();
     if (trading.enabled !== lastEnabled) {
       logger.info?.(`[executor] trading ${trading.enabled ? 'ENABLED' : 'disabled'}${trading.dryRun ? ' (dry-run)' : ''}`);

@@ -10,6 +10,7 @@ import { holdingsRoutes } from './routes/holdings.js';
 import { portfolioRoutes } from './routes/portfolio.js';
 import { watchlistRoutes } from './routes/watchlist.js';
 import { settingsRoutes } from './routes/settings.js';
+import { brokerRoutes } from './routes/broker.js';
 import { authRoutes } from '../auth/routes.js';
 import { requireUser } from '../auth/middleware.js';
 import { httpMetricsMiddleware } from '../instrumentation/metrics.js';
@@ -27,7 +28,8 @@ export function createApp({
   auth = null,
   cfg = {},
   quality = null,
-  broker = null,
+  brokers = null,
+  brokerFactory = undefined,
 }) {
   const app = express();
   app.use(express.json());
@@ -56,8 +58,9 @@ export function createApp({
   app.use('/api/agents', agentRoutes(repo));
   app.use('/api/watchlist', watchlistRoutes(repo));
   app.use('/api/holdings', holdingsRoutes(repo, gunvest, quality));
-  app.use('/api/portfolio', portfolioRoutes(repo, gunvest, broker));
+  app.use('/api/portfolio', portfolioRoutes(repo, gunvest, brokers));
   app.use('/api/settings', settingsRoutes(repo, cfg));
+  app.use('/api/broker', brokerRoutes(repo, cfg, brokerFactory));
 
   app.use((err, req, res, _next) => {
     res.status(500).json({ error: err.message });

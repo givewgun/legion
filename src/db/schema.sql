@@ -376,3 +376,24 @@ CREATE TABLE IF NOT EXISTS legion.paper_equity_snapshots (
   equity NUMERIC NOT NULL,
   cash   NUMERIC
 );
+
+-- ── Broker connections (ADR 0036) ─────────────────────────────────────────────
+-- Broker linkage configured from the dashboard instead of env. Many rows (IBKR
+-- paper, Webull TH paper, Webull TH live…), at most one active — the executor
+-- and /api/portfolio resolve the active row per tick/request. `credentials` is
+-- an AES-256-GCM blob of the broker-specific credentials JSON (key derived from
+-- SESSION_SECRET; see src/broker/credentials.js) — never returned by the API.
+CREATE TABLE IF NOT EXISTS legion.broker_connections (
+  id          BIGSERIAL PRIMARY KEY,
+  name        TEXT NOT NULL,
+  broker      TEXT NOT NULL,                 -- 'ibkr' | 'webull'
+  paper       BOOLEAN NOT NULL DEFAULT true,
+  active      BOOLEAN NOT NULL DEFAULT false,
+  credentials TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Partial unique index: the executor is a single instance-level book (ADR 0035),
+-- so "which broker?" must have exactly zero or one answer.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_broker_connections_one_active
+  ON legion.broker_connections (active) WHERE active;

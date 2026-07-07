@@ -3,10 +3,20 @@ import express from 'express';
 import request from 'supertest';
 import { portfolioRoutes } from '../../src/api/routes/portfolio.js';
 
+// Wraps a broker stub in the manager surface the route consumes (ADR 0036).
+function asManager(broker) {
+  return {
+    getBroker: async () => ({
+      broker,
+      connection: broker ? { id: 1, broker: 'ibkr', name: 'IBKR paper', paper: true } : null,
+    }),
+  };
+}
+
 function build(repo, gunvest, broker) {
   const app = express();
   app.use((req, _res, next) => { req.user = { id: 1 }; next(); });
-  app.use('/api/portfolio', portfolioRoutes(repo, gunvest, broker));
+  app.use('/api/portfolio', portfolioRoutes(repo, gunvest, asManager(broker)));
   app.use((err, req, res, _next) => res.status(500).json({ error: err.message }));
   return app;
 }
@@ -63,7 +73,7 @@ describe('/api/portfolio (IBKR-backed book)', () => {
     const res = await request(build(repoStub(), gunvestStub(), brokerStub())).get('/api/portfolio');
     expect(res.status).toBe(200);
 
-    expect(res.body.gateway).toEqual({ configured: true, authenticated: true, accountId: 'DU123456' });
+    expect(res.body.gateway).toEqual({ configured: true, authenticated: true, accountId: 'DU123456', broker: 'ibkr', connectionName: 'IBKR paper', paper: true });
 
     // Curve bucketed to one point per calendar day (2 days, not 3 snapshots).
     expect(res.body.curve).toHaveLength(2);
@@ -107,7 +117,7 @@ describe('/api/portfolio (IBKR-backed book)', () => {
   it('degrades gracefully when no broker is configured (broker === null)', async () => {
     const res = await request(build(repoStub(), gunvestStub(), null)).get('/api/portfolio');
     expect(res.status).toBe(200);
-    expect(res.body.gateway).toEqual({ configured: false, authenticated: false, accountId: null });
+    expect(res.body.gateway).toEqual({ configured: false, authenticated: false, accountId: null, broker: null, connectionName: null, paper: null });
     expect(res.body.positions).toEqual([]);
     expect(res.body.stats).toEqual({ equity: null, cash: null, totalReturn: null, spyReturn: null, qqqReturn: null });
     // History keeps serving even with no gateway.
@@ -119,7 +129,7 @@ describe('/api/portfolio (IBKR-backed book)', () => {
     const broker = brokerStub({ isAuthenticated: vi.fn(async () => false) });
     const res = await request(build(repoStub(), gunvestStub(), broker)).get('/api/portfolio');
     expect(res.status).toBe(200);
-    expect(res.body.gateway).toEqual({ configured: true, authenticated: false, accountId: null });
+    expect(res.body.gateway).toEqual({ configured: true, authenticated: false, accountId: null, broker: 'ibkr', connectionName: 'IBKR paper', paper: true });
     expect(res.body.positions).toEqual([]);
     expect(res.body.stats).toEqual({ equity: null, cash: null, totalReturn: null, spyReturn: null, qqqReturn: null });
     expect(broker.getPositions).not.toHaveBeenCalled();

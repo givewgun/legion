@@ -58,4 +58,11 @@ export const api = {
   setSettings: (body) => send('PUT', '/api/settings', body),
   getPcModels: () => get('/api/settings/pc-models'),
   getOracleModels: () => get('/api/settings/oracle-models'),
+  listBrokerConnections: () => get('/api/broker'),
+  addBrokerConnection: (body) => send('POST', '/api/broker', body),
+  updateBrokerConnection: (id, body) => send('PUT', `/api/broker/${id}`, body),
+  deleteBrokerConnection: (id) => send('DELETE', `/api/broker/${id}`),
+  activateBrokerConnection: (id) => send('POST', `/api/broker/${id}/activate`, {}),
+  deactivateBrokerConnection: () => send('POST', '/api/broker/deactivate', {}),
+  testBrokerConnection: (id) => send('POST', `/api/broker/${id}/test`, {}),
 };

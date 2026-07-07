@@ -143,22 +143,23 @@ describe('loadConfig', () => {
     expect(loadConfig({}).home.fallback).toBe(true);
   });
 
-  it('trading + broker defaults', () => {
+  it('trading defaults (broker linkage itself lives in the DB — ADR 0036)', () => {
     const cfg = loadConfig({});
     expect(cfg.trading).toEqual({
       enabled: false, dryRun: true, minOrderNotional: 50, baseWeight: 0.05, maxPerName: 0.10,
+      allowLive: false,
     });
-    expect(cfg.broker).toEqual({ gatewayUrl: '', allowLive: false });
+    expect(cfg.broker).toBeUndefined();
   });
 
   it('trading env overrides', () => {
     const cfg = loadConfig({
       LEGION_TRADING_ENABLED: 'true', LEGION_TRADING_DRY_RUN: 'false',
-      LEGION_TRADING_MIN_NOTIONAL: '100', IBKR_GATEWAY_URL: 'https://ibeam:5000/v1/api',
+      LEGION_TRADING_MIN_NOTIONAL: '100', LEGION_ALLOW_LIVE_BROKER: 'true',
     });
     expect(cfg.trading.enabled).toBe(true);
     expect(cfg.trading.dryRun).toBe(false);
     expect(cfg.trading.minOrderNotional).toBe(100);
-    expect(cfg.broker.gatewayUrl).toBe('https://ibeam:5000/v1/api');
+    expect(cfg.trading.allowLive).toBe(true);
   });
 });

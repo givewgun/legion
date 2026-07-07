@@ -1,5 +1,26 @@
 # Session log
 
+## 2026-07-07 — DB broker connections + Webull TH adapter (ADR 0036)
+
+- New PR (claude/webull-broker-integration-364stm → claude/ibkr-paper-trading): broker
+  linkage moved out of env into `legion.broker_connections` — multiple rows (IBKR paper,
+  Webull TH paper/live), one active, credentials AES-256-GCM-encrypted under SESSION_SECRET,
+  managed on the Config page (CRUD + activate + test-connection; secrets write-only/masked).
+  `IBKR_GATEWAY_URL` deleted from env/CI; `LEGION_ALLOW_LIVE_BROKER` kept as the sole hard
+  gate for paper=false connections.
+- `src/broker/webull.js`: Webull OpenAPI adapter (default host api.webull.co.th), HMAC-SHA256
+  per-request signing reverse-engineered from webull-inc/webull-openapi-python-sdk (docs site
+  is blocked from the CCR environment; SDK + webull-openapi-mcp were the reference). Same
+  six-method surface as ibkr.js; intent id ↔ `legion<id>` client_order_id keeps cOID dedupe.
+- `src/broker/manager.js` resolves the active connection per executor tick / portfolio
+  request, cached on (id, updated_at) — dashboard switch takes effect within one 15s tick.
+- Verified for the user: order intents are written in the same finalize() path as the signal
+  and drained on the 15s executor tick — placement is immediate on signal fire; the 17:00 ET
+  post-close sweep's orders rest at the broker until next open (signal cadence, not executor
+  delay).
+- User context: trades a real Webull Thailand portfolio; wants to paper trade Webull first,
+  then flip the same plumbing to the real account.
+
 ## 2026-07-02 — Ops controls PR: stop cycles, per-ticker run/stop, reliability reset; 1.7b downgrade
 
 - New PR (claude/cycle-stop-controls): Stop-all + per-ticker Run/Stop on the Config page's
