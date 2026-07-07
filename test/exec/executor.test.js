@@ -45,6 +45,17 @@ function makeRepo(intents, runtimeConfig = {}) {
   };
 }
 
+// Wraps a fake broker in the manager surface the executor consumes (ADR 0036):
+// the executor resolves the broker per tick via brokers.getBroker().
+function asManager(broker) {
+  return {
+    getBroker: async () => ({
+      broker,
+      connection: broker ? { broker: 'test', name: 'test', paper: true } : null,
+    }),
+  };
+}
+
 // Fake broker recording every call (optionally into a shared `log` for ordering
 // assertions) and returning a fixed account/position snapshot. `orderStatusByCoid`
 // maps clientOrderId (string) -> getOrderStatus response; `getOrderStatusImpl`
@@ -108,7 +119,7 @@ describe('executor', () => {
     // MINOR-d) now runs regardless of the kill switch -- pin outside market hours
     // so the only thing under test here is the pending-intents/kill-switch gate.
     const now = new Date('2026-07-04T12:00:00-04:00'); // Saturday
-    const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger, clock: () => now });
+    const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger, clock: () => now });
 
     await executor.tick();
 
@@ -123,7 +134,7 @@ describe('executor', () => {
     const repo = makeRepo([intent], { trading_enabled: 'true' }); // dryRun stays default (true)
     const broker = makeBroker({ equity: 100000, positions: [] });
     const gunvest = makeGunvest({ AAPL: 200 });
-    const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+    const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
     await executor.tick();
 
@@ -140,7 +151,7 @@ describe('executor', () => {
     const repo = makeRepo([intent], { trading_enabled: 'true', trading_dry_run: 'false' });
     const broker = makeBroker({ equity: 100000, positions: [] });
     const gunvest = makeGunvest({ AAPL: 200 });
-    const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+    const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
     await executor.tick();
 
@@ -160,7 +171,7 @@ describe('executor', () => {
       positions: [{ symbol: 'AAPL', qty: 30, avgCost: 150, conid: 1 }],
     });
     const gunvest = makeGunvest({ AAPL: 200 });
-    const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+    const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
     await executor.tick();
 
@@ -179,7 +190,7 @@ describe('executor', () => {
       positions: [{ symbol: 'AAPL', qty: heldQty, avgCost: 150, conid: 1 }],
     });
     const gunvest = makeGunvest({ AAPL: 200 });
-    const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+    const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
     await executor.tick();
 
@@ -193,7 +204,7 @@ describe('executor', () => {
     const repo = makeRepo([intent], { trading_enabled: 'true', trading_dry_run: 'false' });
     const broker = makeBroker({ equity: 1000, positions: [] });
     const gunvest = makeGunvest({ AAPL: 10 });
-    const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+    const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
     await executor.tick();
 
@@ -212,7 +223,7 @@ describe('executor', () => {
       positions: [{ symbol: 'AAPL', qty: 5, avgCost: 100 }],
     });
     const gunvest = makeGunvest({ AAPL: 100 });
-    const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+    const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
     await executor.tick();
 
@@ -230,7 +241,7 @@ describe('executor', () => {
       throw new Error('gateway timeout');
     };
     const gunvest = makeGunvest({ AAPL: 200 });
-    const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+    const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
     await executor.tick();
 
@@ -250,7 +261,7 @@ describe('executor', () => {
       },
     });
     const gunvest = makeGunvest({ AAPL: 200 });
-    const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+    const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
     await executor.tick();
 
@@ -277,7 +288,7 @@ describe('executor', () => {
     const gunvest = makeGunvest({ AAPL: 200 });
     const errors = [];
     const logger = { ...silentLogger, error: (msg) => errors.push(msg) };
-    const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger });
+    const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger });
 
     await executor.tick();
 
@@ -306,7 +317,7 @@ describe('executor', () => {
     const repo = makeRepo([newer, older], { trading_enabled: 'true', trading_dry_run: 'false' });
     const broker = makeBroker({ equity: 100000, positions: [], log });
     const gunvest = makeGunvest({ AAPL: 200, MSFT: 100 }, log);
-    const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+    const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
     await executor.tick();
 
@@ -333,7 +344,7 @@ describe('executor', () => {
       const gunvest = makeGunvest({ AAPL: 200 });
       // Off-hours clock isolates the fill-triggered snapshot from the hourly gate.
       const now = new Date('2026-07-02T22:00:00-04:00');
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger, clock: () => now });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger, clock: () => now });
 
       await executor.tick();
 
@@ -352,7 +363,7 @@ describe('executor', () => {
         orderStatusByCoid: { 11: { found: true, status: 'submitted' } },
       });
       const gunvest = makeGunvest({ AAPL: 200 });
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
       await executor.tick();
 
@@ -370,7 +381,7 @@ describe('executor', () => {
         orderStatusByCoid: { 12: { found: true, status: 'cancelled' } },
       });
       const gunvest = makeGunvest({ AAPL: 200 });
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
       await executor.tick();
 
@@ -386,7 +397,7 @@ describe('executor', () => {
       const repo = makeRepo([intent], { trading_enabled: 'true', trading_dry_run: 'false' });
       const broker = makeBroker({ equity: 100000, positions: [] }); // no orderStatusByCoid entry -> found:false
       const gunvest = makeGunvest({ AAPL: 200 });
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
       await executor.tick();
 
@@ -404,7 +415,7 @@ describe('executor', () => {
       const gunvest = makeGunvest({ AAPL: 200 });
       const warnings = [];
       const logger = { ...silentLogger, warn: (msg) => warnings.push(msg) };
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger });
 
       await executor.tick();
 
@@ -423,7 +434,7 @@ describe('executor', () => {
         orderStatusByCoid: { 17: { found: true, status: 'cancelled', fillQty: 10, avgFillPrice: 199.5 } },
       });
       const gunvest = makeGunvest({ AAPL: 200 });
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
       await executor.tick();
 
@@ -446,7 +457,7 @@ describe('executor', () => {
       const gunvest = makeGunvest({ AAPL: 200 });
       const warnings = [];
       const logger = { ...silentLogger, warn: (msg) => warnings.push(msg) };
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger });
 
       await executor.tick();
 
@@ -467,7 +478,7 @@ describe('executor', () => {
         orderStatusByCoid: { 20: { found: true, status: 'submitted', fillQty: 0, avgFillPrice: 0 } },
       });
       const gunvest = makeGunvest({ AAPL: 200 });
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
       await executor.tick();
 
@@ -486,7 +497,7 @@ describe('executor', () => {
       });
       const gunvest = makeGunvest({ AAPL: 200 });
       const now = new Date('2026-07-02T22:00:00-04:00'); // off-hours: isolates the fill-triggered snapshot
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger, clock: () => now });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger, clock: () => now });
 
       await executor.tick();
 
@@ -506,7 +517,7 @@ describe('executor', () => {
         orderStatusByCoid: { 23: { found: true, status: 'cancelled' } },
       });
       const gunvest = makeGunvest({ AAPL: 200 });
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
       await executor.tick();
 
@@ -528,7 +539,7 @@ describe('executor', () => {
       const gunvest = makeGunvest({ AAPL: 200 });
       const warnings = [];
       const logger = { ...silentLogger, warn: (msg) => warnings.push(msg) };
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger });
 
       await executor.tick();
 
@@ -546,7 +557,7 @@ describe('executor', () => {
         orderStatusByCoid: { 24: { found: true, status: 'submitted', fillQty: 12 } },
       });
       const gunvest = makeGunvest({ AAPL: 200 });
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
       await executor.tick();
 
@@ -575,7 +586,7 @@ describe('executor', () => {
         },
       });
       const gunvest = makeGunvest({ AAPL: 200 });
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
       await executor.tick();
 
@@ -604,7 +615,7 @@ describe('executor', () => {
       const gunvest = makeGunvest({ AAPL: 200 });
       const warnings = [];
       const logger = { ...silentLogger, warn: (msg) => warnings.push(msg) };
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger });
 
       await executor.tick();
 
@@ -627,7 +638,7 @@ describe('executor', () => {
         },
       });
       const gunvest = makeGunvest({ AAPL: 200 });
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
       await executor.tick();
 
@@ -645,7 +656,7 @@ describe('executor', () => {
         positions: [{ symbol: 'AAPL', qty: 25, avgCost: 150 }],
       });
       const gunvest = makeGunvest({ AAPL: 200 });
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
       await executor.tick();
 
@@ -664,7 +675,7 @@ describe('executor', () => {
       const repo = makeRepo([intent], { trading_enabled: 'true', trading_dry_run: 'false' });
       const broker = makeBroker({ equity: 100000, positions: [] });
       const gunvest = makeGunvest({ AAPL: 200 });
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
       await executor.tick();
 
@@ -682,7 +693,7 @@ describe('executor', () => {
       const repo = makeRepo([oldest, middle, newest], { trading_enabled: 'true', trading_dry_run: 'false' });
       const broker = makeBroker({ equity: 100000, positions: [] });
       const gunvest = makeGunvest({ AAPL: 200 });
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
       await executor.tick();
 
@@ -708,7 +719,7 @@ describe('executor', () => {
         orderStatusByCoid: { 70: { found: true, status: 'submitted' } }, // older's order is live
       });
       const gunvest = makeGunvest({ AAPL: 200 });
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
       await executor.tick();
 
@@ -728,7 +739,7 @@ describe('executor', () => {
         orderStatusByCoid: { 40: { found: true, status: 'submitted' } },
       });
       const gunvest = makeGunvest({ AAPL: 200 });
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger });
 
       await executor.tick();
 
@@ -751,7 +762,7 @@ describe('executor', () => {
       const broker = makeBroker({ equity: 100000, positions: [] });
       const gunvest = makeGunvest({});
       let now = new Date('2026-07-02T12:00:00-04:00'); // Thursday, market open
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger, clock: () => now });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger, clock: () => now });
 
       await executor.tick(); // first tick ever: lastSnapshotMs starts at 0 -> snapshot taken
       expect(repo.equitySnapshots).toHaveLength(1);
@@ -777,7 +788,7 @@ describe('executor', () => {
       const broker = makeBroker({ equity: 100000, positions: [] });
       const gunvest = makeGunvest({});
       const now = new Date('2026-07-02T12:00:00-04:00'); // Thursday, market open
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger: silentLogger, clock: () => now });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger: silentLogger, clock: () => now });
 
       await executor.tick();
 
@@ -795,7 +806,7 @@ describe('executor', () => {
       const warnings = [];
       const logger = { ...silentLogger, warn: (msg) => warnings.push(msg) };
       const now = new Date('2026-07-02T15:00:00-04:00'); // market open
-      const executor = createExecutor({ repo, broker, gunvest, cfg: baseCfg(), logger, clock: () => now });
+      const executor = createExecutor({ repo, brokers: asManager(broker), gunvest, cfg: baseCfg(), logger, clock: () => now });
 
       await expect(executor.tick()).resolves.toBeUndefined();
 

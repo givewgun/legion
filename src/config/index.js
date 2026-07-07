@@ -142,12 +142,11 @@ export function loadConfig(env = process.env) {
       minOrderNotional: num(env, 'LEGION_TRADING_MIN_NOTIONAL', 50),
       baseWeight: num(env, 'LEGION_TRADING_BASE_WEIGHT', 0.05),
       maxPerName: num(env, 'LEGION_TRADING_MAX_PER_NAME', 0.10),
-    },
-    // IBeam gateway for the IBKR Client Portal API. Empty url = broker unconfigured
-    // (executor idles, /api/portfolio reports gateway down). allowLive must stay
-    // false: the adapter refuses non-paper (non-D) accounts without it.
-    broker: {
-      gatewayUrl: env.IBKR_GATEWAY_URL || '',
+      // The one broker knob that stays in env (ADR 0036): the hard safety gate.
+      // Broker linkage itself (which broker, credentials, paper/live) lives in
+      // legion.broker_connections and is managed from the dashboard — but a
+      // paper=false connection refuses to build without this flag, so flipping
+      // to real money always takes a deliberate redeploy-level act.
       allowLive: env.LEGION_ALLOW_LIVE_BROKER === 'true',
     },
     consensus: {

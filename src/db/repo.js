@@ -18,6 +18,20 @@ const OrderIntentColumns = {
   fillQty: 'fill_qty', fillPrice: 'fill_price', error: 'error',
 };
 
+// ── Broker connections (ADR 0036) ─────────────────────────────────────────────
+// Column → JS patch-key map doubles as the whitelist for updateBrokerConnection.
+const BrokerConnectionColumns = {
+  name: 'name', paper: 'paper', credentials: 'credentials',
+};
+
+function mapBrokerConnection(r) {
+  return {
+    id: Number(r.id), name: r.name, broker: r.broker,
+    paper: r.paper, active: r.active, credentials: r.credentials,
+    createdAt: r.created_at, updatedAt: r.updated_at,
+  };
+}
+
 function mapOrderIntent(r) {
   return {
     id: Number(r.id), signalId: r.signal_id == null ? null : Number(r.signal_id),
@@ -943,6 +957,64 @@ export function createRepo(db) {
         `SELECT ts, equity, cash FROM legion.paper_equity_snapshots ORDER BY ts ASC`,
       );
       return rows.map((r) => ({ ts: r.ts, equity: Number(r.equity), cash: r.cash == null ? null : Number(r.cash) }));
+    },
+
+    // ── Broker connections (ADR 0036) ─────────────────────────────────────────
+    // `credentials` is the opaque encrypted blob (src/broker/credentials.js);
+    // the repo never sees plaintext secrets.
+    async listBrokerConnections() {
+      const rows = await db.query(`SELECT * FROM legion.broker_connections ORDER BY id ASC`);
+      return rows.map(mapBrokerConnection);
+    },
+
+    async getBrokerConnection(id) {
+      const rows = await db.query(`SELECT * FROM legion.broker_connections WHERE id = $1`, [id]);
+      return rows[0] ? mapBrokerConnection(rows[0]) : null;
+    },
+
+    async getActiveBrokerConnection() {
+      const rows = await db.query(`SELECT * FROM legion.broker_connections WHERE active LIMIT 1`);
+      return rows[0] ? mapBrokerConnection(rows[0]) : null;
+    },
+
+    async addBrokerConnection({ name, broker, paper, credentials }) {
+      const rows = await db.query(
+        `INSERT INTO legion.broker_connections (name, broker, paper, credentials)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [name, broker, paper, credentials],
+      );
+      return Number(rows[0].id);
+    },
+
+    async updateBrokerConnection(id, patch) {
+      const keys = Object.keys(patch);
+      if (keys.length === 0) throw new Error('updateBrokerConnection: empty patch');
+      const cols = keys.map((k) => {
+        if (!BrokerConnectionColumns[k]) throw new Error(`updateBrokerConnection: unknown key ${k}`);
+        return BrokerConnectionColumns[k];
+      });
+      const sets = cols.map((c, i) => `${c} = $${i + 2}`).join(', ');
+      await db.query(
+        `UPDATE legion.broker_connections SET ${sets}, updated_at = now() WHERE id = $1`,
+        [id, ...keys.map((k) => patch[k])],
+      );
+    },
+
+    async deleteBrokerConnection(id) {
+      await db.query(`DELETE FROM legion.broker_connections WHERE id = $1`, [id]);
+    },
+
+    // Single statement flips the previous active off and the target on, so a
+    // crash mid-switch can't strand two actives (the partial unique index would
+    // reject) or zero on a failed activate. `id = null` deactivates all
+    // (IS NOT DISTINCT FROM keeps the boolean non-null in that case).
+    async activateBrokerConnection(id) {
+      await db.query(
+        `UPDATE legion.broker_connections
+            SET active = (id IS NOT DISTINCT FROM $1::bigint), updated_at = now()
+          WHERE active OR id IS NOT DISTINCT FROM $1::bigint`,
+        [id],
+      );
     },
   };
 }

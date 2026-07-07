@@ -9,7 +9,7 @@ import { createGunvestFromConfig } from '../data/gunvest.js';
 import { createQualityService } from '../quality/index.js';
 import { createGoogleAuth } from '../auth/google.js';
 import { createSessionMiddleware } from '../auth/session.js';
-import { createBrokerFromConfig } from '../broker/broker.js';
+import { createBrokerManager } from '../broker/manager.js';
 
 const cfg = loadConfig();
 const db = connectDb(cfg.databaseUrl);
@@ -26,8 +26,13 @@ try {
 
 const gunvest = createGunvestFromConfig(cfg);
 const quality = createQualityService({ gunvest });
-const broker = createBrokerFromConfig(cfg);
-if (!broker) console.warn('[api] no IBKR gateway configured — /api/portfolio serves history only');
+// Broker linkage lives in the DB (ADR 0036); the manager resolves the active
+// connection per request, so /api/portfolio follows dashboard switches live.
+const brokers = createBrokerManager({
+  repo,
+  credentialsSecret: cfg.auth.sessionSecret,
+  allowLive: cfg.trading.allowLive,
+});
 
 // Build the auth stack. Secure cookies in production (HTTPS terminates at the
 // Cloudflare edge); plain HTTP only for local dev.
@@ -47,5 +52,5 @@ const auth = {
   repo,
 };
 
-const app = createApp({ repo, orchestrator, gunvest, auth, cfg, quality, broker });
+const app = createApp({ repo, orchestrator, gunvest, auth, cfg, quality, brokers });
 app.listen(cfg.apiPort, () => console.log(`[api] listening on :${cfg.apiPort}`));

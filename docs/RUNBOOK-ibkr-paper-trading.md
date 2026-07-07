@@ -51,21 +51,14 @@ auth until `.env.ibeam` is created and the container is restarted. Still create 
 *before* the first deploy/up on any host, dev or prod, so the gateway chip goes green immediately
 instead of sitting red.
 
-Legion's own `.env` (not `.env.ibeam`) needs the gateway URL pointed at the `ibeam` service by
-its compose service name:
-
-```
-IBKR_GATEWAY_URL=https://ibeam:5000/v1/api
-```
-
-`.github/workflows/ci.yml`'s deploy job regenerates `.env` on the VM from GitHub Secrets on
-*every* deploy (the same `HOME_OLLAMA_URL`-style templating used for the PC model server). The
-`sudo tee .env` heredoc includes the literal `IBKR_GATEWAY_URL=https://ibeam:5000/v1/api` line, so
-it survives every redeploy without a hand-edit. The `LEGION_TRADING_*` / `LEGION_ALLOW_LIVE_BROKER`
-vars are deliberately **not** templated into `.env` — their safe-by-default values
-(`enabled=false`, `dryRun=true`) come from `.env.example`/code defaults, and any non-default
-override belongs in `runtime_config` (toggled from the dashboard), not baked into the deploy
-template.
+Legion is pointed at the gateway from the **dashboard**, not env (ADR 0036): on the Config
+page, add a broker connection with broker `IBKR (IBeam)`, paper ✓, and gateway URL
+`https://ibeam:5000/v1/api` (the `ibeam` compose service name), then activate it. The
+connection is stored encrypted in the DB and survives every redeploy — nothing to template
+into `.env`. The `LEGION_TRADING_*` / `LEGION_ALLOW_LIVE_BROKER` vars are deliberately
+**not** templated into `.env` — their safe-by-default values (`enabled=false`,
+`dryRun=true`) come from `.env.example`/code defaults, and any non-default override belongs
+in `runtime_config` (toggled from the dashboard), not baked into the deploy template.
 
 `.env.ibeam` itself is **not** part of the CI-generated `.env` and is unaffected by deploys —
 it only needs to exist once on the VM's `/opt/legion/app` directory.

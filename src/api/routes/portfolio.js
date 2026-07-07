@@ -105,22 +105,26 @@ function mapOrder(intent) {
 
 const NullStats = { equity: null, cash: null, totalReturn: null, spyReturn: null, qqqReturn: null };
 
-// Global (instance-level) IBKR-backed book — one paper account for the whole
-// deployment, not per user (ADR 0035). Gateway health only gates the live
+// Global (instance-level) broker-backed book — one account for the whole
+// deployment, not per user (ADR 0035), resolved from the active broker
+// connection per request (ADR 0036). Broker health only gates the live
 // positions/stats: the curve (DB equity snapshots) and orders (DB intent
-// history) keep serving through a gateway blip so history never disappears.
-export function portfolioRoutes(repo, gunvest, broker) {
+// history) keep serving through a broker blip so history never disappears.
+export function portfolioRoutes(repo, gunvest, brokers) {
   const router = Router();
   let cache = null; // single instance-wide entry: { at, key, payload }
 
   router.get('/', async (req, res, next) => {
     try {
+      const { broker, connection } = brokers
+        ? await brokers.getBroker()
+        : { broker: null, connection: null };
       // Cheap freshness reads happen every request — they drive the cache key.
       const [snapshots, intents] = await Promise.all([
         repo.listEquitySnapshots(),
         repo.listOrderIntents(100),
       ]);
-      const key = `${intents.length}:${snapshots.length}`;
+      const key = `${intents.length}:${snapshots.length}:${connection?.id ?? 'none'}`;
       if (cache && cache.key === key && Date.now() - cache.at < CacheTtlMs) return res.json(cache.payload);
 
       const dailyPoints = bucketDaily(snapshots);
@@ -154,14 +158,21 @@ export function portfolioRoutes(repo, gunvest, broker) {
             stats = { equity: summary.equity, cash: summary.cash, ...computeReturns(dailyPoints, spySorted, qqqSorted) };
           }
         } catch (err) {
-          // Gateway blip: keep the request at 200 with degraded live data —
+          // Broker blip: keep the request at 200 with degraded live data —
           // curve/orders (DB-backed) are unaffected.
           console.warn(`[portfolio] broker read failed: ${err.message}`);
         }
       }
 
       const payload = {
-        gateway: { configured: !!broker, authenticated, accountId },
+        gateway: {
+          configured: !!connection,
+          authenticated,
+          accountId,
+          broker: connection?.broker ?? null,
+          connectionName: connection?.name ?? null,
+          paper: connection?.paper ?? null,
+        },
         stats,
         curve,
         positions,

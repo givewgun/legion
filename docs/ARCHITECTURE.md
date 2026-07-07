@@ -95,11 +95,13 @@ cap is not reached, it republishes the cycle for the next round **with the prior
 dissent**, so agents must confront disagreement before re-voting. A consensus reached only in a
 later round must still retain independent round-1 backing or it is rejected as herding (ADR 0016).
 
-### Order execution: emitter → executor → IBKR paper account
+### Order execution: emitter → executor → broker account
 
 A finalized signal doesn't stop at Telegram — it also drives a real (paper) broker order,
 decoupled from the emitter by an outbox table so a slow/unreachable broker can never stall
-signal emission (ADR 0035):
+signal emission (ADR 0035). Which brokerage account it trades is a dashboard-managed
+**broker connection** (IBKR via IBeam, or Webull TH via signed OpenAPI calls) stored in
+`legion.broker_connections` and resolved per executor tick (ADR 0036):
 
 ```mermaid
 flowchart LR
@@ -109,10 +111,13 @@ flowchart LR
     ibeam["ibeam<br/>(IBKR Client Portal gateway)"]
     ibkr[["IBKR paper account"]]
 
+    webull[["Webull TH account<br/>(signed OpenAPI calls, no gateway)"]]
+
     emitter -->|"INSERT pending intent<br/>(guarded, never blocks emission)"| intents
     executor -->|"drain pending/submitted"| intents
     executor -->|"size vs actual position<br/>(computeSizing)"| executor
     executor -->|"place DAY market order<br/>(cOID = intent id)"| ibeam
+    executor -.->|"active connection = webull"| webull
     ibeam --> ibkr
 ```
 
@@ -121,10 +126,12 @@ container — it polls the outbox (~15s), gates on the dashboard kill switch
 (`trading_enabled`) and dry-run flag (`trading_dry_run`), sizes each intent against the
 account's actual equity/position via the shared `computeSizing` engine, and submits DAY market
 orders whose client order id (`cOID`) is the intent's own id — the broker's duplicate-`cOID`
-rejection is what makes a mid-crash resubmit safe. **IBeam** (`voyz/ibeam`, its own Compose
-service) owns the IBKR login/session keepalive so the adapter (`src/broker/ibkr.js`) is a plain
-REST client; a red gateway chip on the dashboard degrades trading (intents queue as `pending`)
-without affecting signal emission, Telegram delivery, or Legion's own `/ready` liveness check.
+rejection is what makes a mid-crash resubmit safe. For IBKR connections, **IBeam**
+(`voyz/ibeam`, its own Compose service) owns the login/session keepalive so the adapter
+(`src/broker/ibkr.js`) is a plain REST client; Webull connections (`src/broker/webull.js`)
+need no gateway at all — every request is HMAC-signed with the connection's app key/secret.
+A red gateway chip on the dashboard degrades trading (intents queue as `pending`) without
+affecting signal emission, Telegram delivery, or Legion's own `/ready` liveness check.
 
 ### Data-aperture audit — who reads what
 
@@ -296,7 +303,7 @@ flowchart TB
     ag --> gvapi
     ag --> ollama
     emitter --> gvdb
-    emitter -->|IBKR_GATEWAY_URL| ibeam
+    emitter -->|broker connection| ibeam
     sched --> nats
     crons --> gvdb
 ```
