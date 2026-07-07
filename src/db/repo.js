@@ -10,6 +10,43 @@ function nestByAgentModel(rows, valueKey) {
   return out;
 }
 
+// ── IBKR paper-trading execution (ADR 0035) ────────────────────────────────
+// Column → JS patch-key map doubles as the whitelist for updateOrderIntent.
+const OrderIntentColumns = {
+  status: 'status', skipReason: 'skip_reason', brokerOrderId: 'broker_order_id',
+  submittedQty: 'submitted_qty', targetWeight: 'target_weight',
+  fillQty: 'fill_qty', fillPrice: 'fill_price', error: 'error',
+};
+
+// ── Broker connections (ADR 0036) ─────────────────────────────────────────────
+// Column → JS patch-key map doubles as the whitelist for updateBrokerConnection.
+const BrokerConnectionColumns = {
+  name: 'name', paper: 'paper', credentials: 'credentials',
+};
+
+function mapBrokerConnection(r) {
+  return {
+    id: Number(r.id), name: r.name, broker: r.broker,
+    paper: r.paper, active: r.active, credentials: r.credentials,
+    createdAt: r.created_at, updatedAt: r.updated_at,
+  };
+}
+
+function mapOrderIntent(r) {
+  return {
+    id: Number(r.id), signalId: r.signal_id == null ? null : Number(r.signal_id),
+    symbol: r.symbol, band: r.band,
+    conviction: r.conviction == null ? null : Number(r.conviction),
+    qualityMult: r.quality_mult == null ? null : Number(r.quality_mult),
+    targetWeight: r.target_weight == null ? null : Number(r.target_weight),
+    status: r.status, skipReason: r.skip_reason, brokerOrderId: r.broker_order_id,
+    submittedQty: r.submitted_qty == null ? null : Number(r.submitted_qty),
+    fillQty: r.fill_qty == null ? null : Number(r.fill_qty),
+    fillPrice: r.fill_price == null ? null : Number(r.fill_price),
+    error: r.error, createdAt: r.created_at,
+  };
+}
+
 // Persistence over the legion schema. Each method maps to one INSERT/UPDATE.
 export function createRepo(db) {
   return {
@@ -866,6 +903,118 @@ export function createRepo(db) {
 
     async deleteRuntimeConfig(key) {
       await db.query(`DELETE FROM legion.runtime_config WHERE key = $1`, [key]);
+    },
+
+    // ── IBKR paper-trading execution (ADR 0035) ────────────────────────────────
+    async addOrderIntent({ signalId, symbol, band, conviction, qualityMult }) {
+      const rows = await db.query(
+        `INSERT INTO legion.order_intents (signal_id, symbol, band, conviction, quality_mult)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [signalId, symbol, band, conviction, qualityMult],
+      );
+      return Number(rows[0].id);
+    },
+
+    async listOrderIntentsByStatus(status) {
+      const rows = await db.query(
+        `SELECT * FROM legion.order_intents WHERE status = $1 ORDER BY created_at ASC`,
+        [status],
+      );
+      return rows.map(mapOrderIntent);
+    },
+
+    async listOrderIntents(limit = 100) {
+      const rows = await db.query(
+        `SELECT * FROM legion.order_intents ORDER BY created_at DESC LIMIT $1`,
+        [limit],
+      );
+      return rows.map(mapOrderIntent);
+    },
+
+    async updateOrderIntent(id, patch) {
+      const keys = Object.keys(patch);
+      if (keys.length === 0) throw new Error('updateOrderIntent: empty patch');
+      const cols = keys.map((k) => {
+        if (!OrderIntentColumns[k]) throw new Error(`updateOrderIntent: unknown key ${k}`);
+        return OrderIntentColumns[k];
+      });
+      const sets = cols.map((c, i) => `${c} = $${i + 2}`).join(', ');
+      await db.query(
+        `UPDATE legion.order_intents SET ${sets}, updated_at = now() WHERE id = $1`,
+        [id, ...keys.map((k) => patch[k])],
+      );
+    },
+
+    async addEquitySnapshot({ equity, cash }) {
+      await db.query(
+        `INSERT INTO legion.paper_equity_snapshots (equity, cash) VALUES ($1, $2)`,
+        [equity, cash],
+      );
+    },
+
+    async listEquitySnapshots() {
+      const rows = await db.query(
+        `SELECT ts, equity, cash FROM legion.paper_equity_snapshots ORDER BY ts ASC`,
+      );
+      return rows.map((r) => ({ ts: r.ts, equity: Number(r.equity), cash: r.cash == null ? null : Number(r.cash) }));
+    },
+
+    // ── Broker connections (ADR 0036) ─────────────────────────────────────────
+    // `credentials` is the opaque encrypted blob (src/broker/credentials.js);
+    // the repo never sees plaintext secrets.
+    async listBrokerConnections() {
+      const rows = await db.query(`SELECT * FROM legion.broker_connections ORDER BY id ASC`);
+      return rows.map(mapBrokerConnection);
+    },
+
+    async getBrokerConnection(id) {
+      const rows = await db.query(`SELECT * FROM legion.broker_connections WHERE id = $1`, [id]);
+      return rows[0] ? mapBrokerConnection(rows[0]) : null;
+    },
+
+    async getActiveBrokerConnection() {
+      const rows = await db.query(`SELECT * FROM legion.broker_connections WHERE active LIMIT 1`);
+      return rows[0] ? mapBrokerConnection(rows[0]) : null;
+    },
+
+    async addBrokerConnection({ name, broker, paper, credentials }) {
+      const rows = await db.query(
+        `INSERT INTO legion.broker_connections (name, broker, paper, credentials)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [name, broker, paper, credentials],
+      );
+      return Number(rows[0].id);
+    },
+
+    async updateBrokerConnection(id, patch) {
+      const keys = Object.keys(patch);
+      if (keys.length === 0) throw new Error('updateBrokerConnection: empty patch');
+      const cols = keys.map((k) => {
+        if (!BrokerConnectionColumns[k]) throw new Error(`updateBrokerConnection: unknown key ${k}`);
+        return BrokerConnectionColumns[k];
+      });
+      const sets = cols.map((c, i) => `${c} = $${i + 2}`).join(', ');
+      await db.query(
+        `UPDATE legion.broker_connections SET ${sets}, updated_at = now() WHERE id = $1`,
+        [id, ...keys.map((k) => patch[k])],
+      );
+    },
+
+    async deleteBrokerConnection(id) {
+      await db.query(`DELETE FROM legion.broker_connections WHERE id = $1`, [id]);
+    },
+
+    // Single statement flips the previous active off and the target on, so a
+    // crash mid-switch can't strand two actives (the partial unique index would
+    // reject) or zero on a failed activate. `id = null` deactivates all
+    // (IS NOT DISTINCT FROM keeps the boolean non-null in that case).
+    async activateBrokerConnection(id) {
+      await db.query(
+        `UPDATE legion.broker_connections
+            SET active = (id IS NOT DISTINCT FROM $1::bigint), updated_at = now()
+          WHERE active OR id IS NOT DISTINCT FROM $1::bigint`,
+        [id],
+      );
     },
   };
 }

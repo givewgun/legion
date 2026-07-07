@@ -522,6 +522,20 @@ export function createEmitter({
       // in its own regime bucket (ADR 0023).
       regime,
     });
+    // Order-intent outbox (ADR 0035): hand the emitted signal to the executor.
+    // Guarded like the entryPrice/quality fetches — a failed write logs loudly
+    // and never blocks emission (visible later as a signal without an intent).
+    try {
+      await repo.addOrderIntent?.({
+        signalId,
+        symbol: entry.symbol,
+        band: signal.band,
+        conviction: signal.conviction,
+        qualityMult,
+      });
+    } catch (err) {
+      logger.error(`[emitter] order intent write failed for ${entry.symbol}: ${err.message}`);
+    }
     // Snapshot RAW self-reported conviction (from `scaled`, which leaves conviction
     // untouched) so the calibration learner scores what the agent actually claimed.
     await repo.addSignalVotes?.(

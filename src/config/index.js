@@ -132,6 +132,23 @@ export function loadConfig(env = process.env) {
     emitter: {
       staleEntryMs: num(env, 'LEGION_EMITTER_STALE_MS', 5400000),
     },
+    // IBKR paper-trading execution (ADR 0035). enabled/dryRun are static defaults;
+    // the dashboard toggles (trading_enabled / trading_dry_run runtime knobs)
+    // override them per executor tick. Rollout: enabled=false → enabled+dryRun
+    // (observe logged would-be orders) → dryRun=false for live-paper.
+    trading: {
+      enabled: env.LEGION_TRADING_ENABLED === 'true',
+      dryRun: env.LEGION_TRADING_DRY_RUN !== 'false',
+      minOrderNotional: num(env, 'LEGION_TRADING_MIN_NOTIONAL', 50),
+      baseWeight: num(env, 'LEGION_TRADING_BASE_WEIGHT', 0.05),
+      maxPerName: num(env, 'LEGION_TRADING_MAX_PER_NAME', 0.10),
+      // The one broker knob that stays in env (ADR 0036): the hard safety gate.
+      // Broker linkage itself (which broker, credentials, paper/live) lives in
+      // legion.broker_connections and is managed from the dashboard — but a
+      // paper=false connection refuses to build without this flag, so flipping
+      // to real money always takes a deliberate redeploy-level act.
+      allowLive: env.LEGION_ALLOW_LIVE_BROKER === 'true',
+    },
     consensus: {
       thetaV: num(env, 'CONSENSUS_THETA_V', 0.75),
       quorum: num(env, 'CONSENSUS_QUORUM', 0.6667),

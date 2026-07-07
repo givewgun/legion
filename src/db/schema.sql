@@ -343,3 +343,57 @@ ALTER TABLE legion.votes ADD COLUMN IF NOT EXISTS thought TEXT;
 -- never gated on — high drift with no new evidence is the herding smell the
 -- independent-backing guard (ADR 0016) cannot see.
 ALTER TABLE legion.rounds ADD COLUMN IF NOT EXISTS drift DOUBLE PRECISION;
+
+-- ── IBKR paper-trading execution (ADR 0035) ──────────────────────────────────
+-- Order-intent outbox: the emitter INSERTs one row per emitted signal; the
+-- executor worker polls, sizes against the real IBKR position, submits, and
+-- records the outcome. status: pending → submitted → filled | skipped | failed.
+CREATE TABLE IF NOT EXISTS legion.order_intents (
+  id              BIGSERIAL PRIMARY KEY,
+  signal_id       BIGINT REFERENCES legion.signals(id),
+  symbol          TEXT NOT NULL,
+  band            TEXT NOT NULL,
+  conviction      NUMERIC,
+  quality_mult    NUMERIC,
+  target_weight   NUMERIC,
+  status          TEXT NOT NULL DEFAULT 'pending',
+  skip_reason     TEXT,
+  broker_order_id TEXT,
+  submitted_qty   NUMERIC,
+  fill_qty        NUMERIC,
+  fill_price      NUMERIC,
+  error           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_order_intents_status ON legion.order_intents (status);
+
+-- Own equity history for the IBKR paper book (CP API history is shallow and
+-- resets with the paper account). Executor snapshots hourly in-market + per fill.
+CREATE TABLE IF NOT EXISTS legion.paper_equity_snapshots (
+  id     BIGSERIAL PRIMARY KEY,
+  ts     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  equity NUMERIC NOT NULL,
+  cash   NUMERIC
+);
+
+-- ── Broker connections (ADR 0036) ─────────────────────────────────────────────
+-- Broker linkage configured from the dashboard instead of env. Many rows (IBKR
+-- paper, Webull TH paper, Webull TH live…), at most one active — the executor
+-- and /api/portfolio resolve the active row per tick/request. `credentials` is
+-- an AES-256-GCM blob of the broker-specific credentials JSON (key derived from
+-- SESSION_SECRET; see src/broker/credentials.js) — never returned by the API.
+CREATE TABLE IF NOT EXISTS legion.broker_connections (
+  id          BIGSERIAL PRIMARY KEY,
+  name        TEXT NOT NULL,
+  broker      TEXT NOT NULL,                 -- 'ibkr' | 'webull'
+  paper       BOOLEAN NOT NULL DEFAULT true,
+  active      BOOLEAN NOT NULL DEFAULT false,
+  credentials TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Partial unique index: the executor is a single instance-level book (ADR 0035),
+-- so "which broker?" must have exactly zero or one answer.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_broker_connections_one_active
+  ON legion.broker_connections (active) WHERE active;

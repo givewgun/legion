@@ -18,6 +18,7 @@ function fakeRepo() {
     addSignal: vi.fn(async () => 1000),
     finishCycle: vi.fn(async () => {}),
     addSignalVotes: vi.fn(async () => {}),
+    addOrderIntent: vi.fn(async () => {}),
     getAllReliability: vi.fn(async () => ({})),
   };
 }
@@ -581,6 +582,75 @@ describe('createEmitter (v2)', () => {
     await vi.waitFor(() => expect(repo.addSignal).toHaveBeenCalledTimes(1));
     const [, signal] = repo.addSignal.mock.calls[0];
     expect(signal.plan.qualityMult).toBe(1.0);
+  });
+
+  it('writes an order intent after persisting the signal', async () => {
+    const bus = createMemoryBus();
+    const repo = fakeRepo();
+
+    createEmitter({
+      bus,
+      repo,
+      telegram: vi.fn(async () => {}),
+      consensus,
+      expectedAgents: 2,
+    }).start();
+
+    emitVote(bus, {
+      cycleId: 90,
+      symbol: 'AAPL',
+      round: 1,
+      vote: { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'breakout' },
+    });
+    emitVote(bus, {
+      cycleId: 90,
+      symbol: 'AAPL',
+      round: 1,
+      vote: { agentId: 'news', stance: 2, conviction: 0.8, weight: 1, rationale: 'beat' },
+    });
+
+    await vi.waitFor(() => expect(repo.addSignal).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(repo.addOrderIntent).toHaveBeenCalledTimes(1));
+    expect(repo.addOrderIntent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        signalId: 1000,
+        symbol: 'AAPL',
+        band: expect.any(String),
+        conviction: expect.any(Number),
+        qualityMult: expect.any(Number),
+      }),
+    );
+  });
+
+  it('intent write failure never blocks emission', async () => {
+    const bus = createMemoryBus();
+    const repo = fakeRepo();
+    repo.addOrderIntent.mockRejectedValue(new Error('db down'));
+
+    createEmitter({
+      bus,
+      repo,
+      telegram: vi.fn(async () => {}),
+      consensus,
+      expectedAgents: 2,
+      logger: { ...console, error: () => {} },
+    }).start();
+
+    emitVote(bus, {
+      cycleId: 91,
+      symbol: 'AAPL',
+      round: 1,
+      vote: { agentId: 'technical', stance: 2, conviction: 0.9, weight: 1, rationale: 'breakout' },
+    });
+    emitVote(bus, {
+      cycleId: 91,
+      symbol: 'AAPL',
+      round: 1,
+      vote: { agentId: 'news', stance: 2, conviction: 0.8, weight: 1, rationale: 'beat' },
+    });
+
+    await vi.waitFor(() => expect(repo.finishCycle).toHaveBeenCalledWith(91, 'converged'));
+    expect(repo.addSignal).toHaveBeenCalled();
   });
 
   it('times out abandoned running cycles in the DB on sweep, sparing cycles still active in memory', async () => {

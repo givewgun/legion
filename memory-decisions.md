@@ -1,5 +1,17 @@
 # Decisions
 
+- **2026-07-07 — Broker linkage is DB data, not env (ADR 0036).** `legion.broker_connections`
+  holds every configured brokerage account (IBKR paper, Webull TH paper/live) with
+  AES-256-GCM-encrypted credentials (key = SHA-256 of SESSION_SECRET); a partial unique
+  index keeps ≤1 active, and `src/broker/manager.js` rebuilds the adapter when
+  (id, updated_at) changes, so switching brokers is a dashboard act picked up on the next
+  15s executor tick. `IBKR_GATEWAY_URL` is gone; `LEGION_ALLOW_LIVE_BROKER` survives as the
+  single env safety gate — a paper=false connection refuses to build or activate without
+  it, so the dashboard alone can never flip Legion onto real money. Webull TH adapter
+  (`src/broker/webull.js`) signs each request (HMAC-SHA256, scheme from the official
+  Python SDK) — no gateway container; client_order_id = `legion<intent id>` preserves the
+  cOID dedupe/reconcile discipline of ADR 0035 unchanged.
+
 - **2026-07-02 — Cycle stop + reliability reset are emitter/DB-owned operations.** Stop is
   publish-only from the API (`DELETE /api/trigger[/:symbol]` → `legion.stop.<SYM>`): the
   emitter drops the round buffers, closes running cycles as `stopped` (new status), frees

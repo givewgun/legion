@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import { RuntimeSettings } from './RuntimeSettings.jsx';
+import { BrokerConnections } from './BrokerConnections.jsx';
 
 const PROVIDERS = ['local', 'gemini', 'openai'];
 
@@ -174,6 +175,7 @@ export function AgentConfig() {
     <>
       <Operations />
       <RuntimeSettings />
+      <BrokerConnections />
       <table className="w-full text-left">
       <thead>
         <tr className="border-b">

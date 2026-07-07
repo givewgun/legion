@@ -5,6 +5,8 @@ import { RUNTIME_KEYS } from '../../src/config/runtime-keys.js';
 const baseCfg = () => ({
   home: { enabled: true, model: 'qwen3:14b', fallback: true, think: true, timeoutMs: 3600000, probeTimeoutMs: 1500 },
   ollama: { model: 'qwen2.5:7b-instruct', timeoutMs: 3600000, think: null },
+  trading: { enabled: false, dryRun: true, minOrderNotional: 50, baseWeight: 0.05, maxPerName: 0.10 },
+  broker: { gatewayUrl: '', allowLive: false },
 });
 
 describe('coerceRuntimeValue', () => {

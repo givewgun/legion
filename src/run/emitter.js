@@ -7,6 +7,8 @@ import { createGunvestFromConfig } from '../data/gunvest.js';
 import { createEmitter } from '../emit/emitter.js';
 import { createQualityService } from '../quality/index.js';
 import { sendTelegram } from '../emit/telegram.js';
+import { createBrokerManager } from '../broker/manager.js';
+import { createExecutor } from '../exec/executor.js';
 
 const cfg = loadConfig();
 const bus = await connectBus(cfg.natsUrl);
@@ -36,3 +38,20 @@ await createEmitter({
 console.log(
   `[emitter] listening for votes (expectedAgents=${expectedAgents}, risk=${riskEnabled})`,
 );
+
+// Order executor (ADR 0035/0036): drains the order-intent outbox this emitter
+// writes, trading on the active broker connection (dashboard-managed, ADR 0036).
+// It always starts when gunvest exists — a connection activated at runtime is
+// picked up on the next tick; until then intents accumulate as pending
+// (visible on the dashboard order log).
+if (gunvest) {
+  const brokers = createBrokerManager({
+    repo,
+    credentialsSecret: cfg.auth.sessionSecret,
+    allowLive: cfg.trading.allowLive,
+  });
+  createExecutor({ repo, brokers, gunvest, cfg }).start();
+  console.log('[emitter] order executor started');
+} else {
+  console.log('[emitter] order executor disabled (no gunvest)');
+}
