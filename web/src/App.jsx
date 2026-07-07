@@ -6,6 +6,7 @@ import { TickerConfig } from './pages/TickerConfig.jsx';
 import { ReliabilityBoard } from './pages/ReliabilityBoard.jsx';
 import { BacktestPage } from './pages/BacktestPage.jsx';
 import { PortfolioPage } from './pages/PortfolioPage.jsx';
+import { SimulatedPortfolioPage } from './pages/SimulatedPortfolioPage.jsx';
 import { HoldingsPage } from './pages/HoldingsPage.jsx';
 import { LearnPage } from './pages/LearnPage.jsx';
 import { AgentConfig } from './pages/AgentConfig.jsx';
@@ -30,6 +31,7 @@ export function App() {
                 <Route path="/reliability" element={<ReliabilityBoard />} />
                 <Route path="/backtest" element={<BacktestPage />} />
                 <Route path="/portfolio" element={<PortfolioPage />} />
+                <Route path="/simulated" element={<SimulatedPortfolioPage />} />
                 <Route path="/holdings" element={<HoldingsPage />} />
                 <Route path="/watchlist" element={<WatchlistPage />} />
                 <Route path="/config" element={<TickerConfig />} />

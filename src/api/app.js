@@ -8,6 +8,7 @@ import { triggerRoutes } from './routes/trigger.js';
 import { agentRoutes } from './routes/agents.js';
 import { holdingsRoutes } from './routes/holdings.js';
 import { portfolioRoutes } from './routes/portfolio.js';
+import { simulatedPortfolioRoutes } from './routes/simulated-portfolio.js';
 import { watchlistRoutes } from './routes/watchlist.js';
 import { settingsRoutes } from './routes/settings.js';
 import { brokerRoutes } from './routes/broker.js';
@@ -59,6 +60,10 @@ export function createApp({
   app.use('/api/watchlist', watchlistRoutes(repo));
   app.use('/api/holdings', holdingsRoutes(repo, gunvest, quality));
   app.use('/api/portfolio', portfolioRoutes(repo, gunvest, brokers));
+  // Per-user deterministic simulated book — replays the shared signals against
+  // each user's watchlist + starting cash, no broker needed. Coexists with the
+  // broker-backed /api/portfolio above.
+  app.use('/api/simulated-portfolio', simulatedPortfolioRoutes(repo, gunvest, { horizonDays: cfg.horizonDays }));
   app.use('/api/settings', settingsRoutes(repo, cfg));
   app.use('/api/broker', brokerRoutes(repo, cfg, brokerFactory));
 

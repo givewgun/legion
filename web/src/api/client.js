@@ -36,6 +36,7 @@ export const api = {
   getBacktest: (symbol) =>
     get(symbol ? `/api/backtest?symbol=${encodeURIComponent(symbol)}` : '/api/backtest'),
   getPortfolio: () => get('/api/portfolio'),
+  getSimulatedPortfolio: () => get('/api/simulated-portfolio'),
   getHoldings: () => get('/api/holdings'),
   getSizing: () => get('/api/holdings/sizing'),
   saveHolding: (ticker, body) => send('PUT', `/api/holdings/${ticker}`, body),
