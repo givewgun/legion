@@ -205,12 +205,17 @@ jobs:
           HOME_THINK: ${{ secrets.HOME_THINK }}
           # HOME_FALLBACK=false pins the PC (no Oracle fallback); unset/true = tiered.
           HOME_FALLBACK: ${{ secrets.HOME_FALLBACK }}
+          # IBeam (IBKR gateway) login for the 'ibkr' broker connection (ADR 0036).
+          # Both empty => .env.ibeam is left untouched (dev/manual-file setup keeps
+          # working); both set => the deploy writes .env.ibeam and IBeam logs in.
+          IBEAM_ACCOUNT: ${{ secrets.IBEAM_ACCOUNT }}
+          IBEAM_PASSWORD: ${{ secrets.IBEAM_PASSWORD }}
         with:
           host: ${{ secrets.ORACLE_VM_HOST }}
           username: ubuntu
           key: ${{ secrets.ORACLE_VM_SSH_KEY }}
           port: 22
-          envs: DATABASE_URL,FINNHUB_API_KEY,TELEGRAM_BOT_TOKEN,TELEGRAM_CHAT_ID,REPO_CLONE_TOKEN,GH_REPO,GOOGLE_OAUTH_CLIENT_ID,GOOGLE_OAUTH_CLIENT_SECRET,SESSION_SECRET,LEGION_ALLOWED_EMAILS,LEGION_PUBLIC_URL,HOME_OLLAMA_URL,HOME_MODEL,HOME_THINK,HOME_FALLBACK
+          envs: DATABASE_URL,FINNHUB_API_KEY,TELEGRAM_BOT_TOKEN,TELEGRAM_CHAT_ID,REPO_CLONE_TOKEN,GH_REPO,GOOGLE_OAUTH_CLIENT_ID,GOOGLE_OAUTH_CLIENT_SECRET,SESSION_SECRET,LEGION_ALLOWED_EMAILS,LEGION_PUBLIC_URL,HOME_OLLAMA_URL,HOME_MODEL,HOME_THINK,HOME_FALLBACK,IBEAM_ACCOUNT,IBEAM_PASSWORD
           script: |
             set -euo pipefail
             APP_DIR=/opt/legion/app
@@ -279,6 +284,23 @@ jobs:
             LEGION_PUBLIC_URL=${LEGION_PUBLIC_URL}
             EOF
             sudo chmod 600 .env
+
+            # IBeam (IBKR gateway) credentials for the 'ibkr' broker connection
+            # (ADR 0036). Templated from GitHub Secrets so IBKR login is managed
+            # centrally like the rest of the deploy — no hand-created host file.
+            # Guarded: only written when BOTH secrets are set, so a deploy without
+            # them never clobbers an existing .env.ibeam (or writes empty creds).
+            # Webull connections need nothing here — they sign requests directly.
+            if [ -n "${IBEAM_ACCOUNT:-}" ] && [ -n "${IBEAM_PASSWORD:-}" ]; then
+              sudo tee .env.ibeam > /dev/null <<EOF
+            IBEAM_ACCOUNT=${IBEAM_ACCOUNT}
+            IBEAM_PASSWORD=${IBEAM_PASSWORD}
+            EOF
+              sudo chmod 600 .env.ibeam
+              echo "Wrote .env.ibeam from GitHub Secrets"
+            else
+              echo "IBEAM_ACCOUNT/IBEAM_PASSWORD unset; leaving any existing .env.ibeam untouched"
+            fi
 
             COMPOSE="sudo docker compose -f docker-compose.prod.yml --env-file .env"
 

@@ -29,11 +29,27 @@ real DAY market orders against that account. Design/rationale: [ADR 0035](adr/00
 
 ---
 
-## 2. `.env.ibeam` Creation
+## 2. IBeam Credentials (`.env.ibeam`)
 
-IBeam needs its own credentials file — **never commit it** (`.env.ibeam` is already in
-`.gitignore` alongside `private/`). On the host running Legion's Docker Compose stack (dev
-machine or the prod VM), create it next to `docker-compose.yml`:
+IBeam needs your **paper** username/password (not your live login, not Legion's dashboard —
+IBKR's Client Portal API is session-based, so IBeam logs in on Legion's behalf and Legion
+only ever talks to the already-authenticated gateway). There are two ways to supply them.
+
+**Prod (recommended): GitHub Secrets.** Add two repository secrets in
+**GitHub → Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+| --- | --- |
+| `IBEAM_ACCOUNT` | your IBKR **paper** username |
+| `IBEAM_PASSWORD` | your IBKR **paper** password |
+
+The deploy job templates `.env.ibeam` on the VM from these on every deploy (guarded: it only
+writes the file when **both** are set, so a deploy without them never clobbers an existing
+file). Nothing to hand-edit on the host, and the credentials never touch the repo. Trigger a
+deploy (push to `main`, or re-run the deploy workflow) after adding them.
+
+**Dev / local (or prod without CI secrets): a host file.** Create `.env.ibeam` next to
+`docker-compose.yml` — **never commit it** (`.env.ibeam` is already in `.gitignore`):
 
 ```bash
 cat > .env.ibeam <<'EOF'
@@ -47,9 +63,9 @@ Both compose files (`docker-compose.yml` and `docker-compose.prod.yml`) declare 
 service with `env_file: [{ path: .env.ibeam, required: false }]`, so **`docker compose up`
 degrades gracefully if this file is missing** — the rest of the stack (including a fresh deploy)
 comes up normally; only the `ibeam` container itself starts without credentials and fails IBKR
-auth until `.env.ibeam` is created and the container is restarted. Still create `.env.ibeam`
-*before* the first deploy/up on any host, dev or prod, so the gateway chip goes green immediately
-instead of sitting red.
+auth until `.env.ibeam` is created and the container is restarted. Set the GitHub Secrets (or
+create the host file) *before* the first deploy/up on any host, dev or prod, so the gateway
+chip goes green immediately instead of sitting red.
 
 Legion is pointed at the gateway from the **dashboard**, not env (ADR 0036): on the Config
 page, add a broker connection with broker `IBKR (IBeam)`, paper ✓, and gateway URL
@@ -60,8 +76,10 @@ into `.env`. The `LEGION_TRADING_*` / `LEGION_ALLOW_LIVE_BROKER` vars are delibe
 `dryRun=true`) come from `.env.example`/code defaults, and any non-default override belongs
 in `runtime_config` (toggled from the dashboard), not baked into the deploy template.
 
-`.env.ibeam` itself is **not** part of the CI-generated `.env` and is unaffected by deploys —
-it only needs to exist once on the VM's `/opt/legion/app` directory.
+`.env.ibeam` is written separately from `.env` (it is IBeam's own credentials file, not
+Legion's config). When `IBEAM_ACCOUNT` / `IBEAM_PASSWORD` are set as GitHub Secrets, the deploy
+regenerates it on every run; otherwise a host file at `/opt/legion/app/.env.ibeam` is used and
+left untouched by deploys.
 
 ---
 
